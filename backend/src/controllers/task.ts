@@ -18,11 +18,30 @@ const taskSchema = Joi.object({
   title: Joi.string().required().trim(),
   description: Joi.string().required(),
   answers: Joi.array().items(Joi.string()).min(1).required(),
-  hints: Joi.array().items(Joi.string()).optional(),
+  hints: Joi.array()
+    .items(
+      Joi.alternatives().try(
+        Joi.string(),
+        Joi.object({
+          text: Joi.string().required().trim(),
+          delayMinutes: Joi.number().min(0).default(0),
+        })
+      )
+    )
+    .optional(),
   orderIndex: Joi.number().required(),
   timeLimit: Joi.number().optional(),
   points: Joi.number().optional(),
 });
+
+const normalizeHints = (hints: Array<string | { text: string; delayMinutes?: number }> = []) =>
+  hints
+    .map((hint) =>
+      typeof hint === 'string'
+        ? { text: hint.trim(), delayMinutes: 0 }
+        : { text: hint.text.trim(), delayMinutes: hint.delayMinutes || 0 }
+    )
+    .filter((hint) => hint.text);
 
 export const createTask = async (
   req: AuthenticatedRequest,
@@ -49,6 +68,7 @@ export const createTask = async (
     const newTask = new Task({
       gameId,
       ...value,
+      hints: normalizeHints(value.hints),
     });
 
     await newTask.save();
@@ -124,7 +144,12 @@ export const updateTask = async (
       return;
     }
 
-    const task = await Task.findByIdAndUpdate(taskId, value, { new: true });
+    const nextValue = {
+      ...value,
+      ...(value.hints ? { hints: normalizeHints(value.hints) } : {}),
+    };
+
+    const task = await Task.findByIdAndUpdate(taskId, nextValue, { new: true });
 
     res.status(200).json({
       message: 'Задание обновлено успешно',

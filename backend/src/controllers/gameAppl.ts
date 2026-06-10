@@ -171,6 +171,14 @@ export const getGameAppls = async (
   try {
     const appls = await GameAppl.find({ gameId: req.params.gameId })
       .populate('userId', 'nickname firstName lastName city phone')
+      .populate({
+        path: 'team',
+        select: 'name captain members',
+        populate: [
+          { path: 'captain', select: 'nickname firstName lastName phone' },
+          { path: 'members', select: 'nickname firstName lastName' },
+        ],
+      })
       .populate('gameId', 'title');
 
     res.status(200).json(appls);

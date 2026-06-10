@@ -25,7 +25,7 @@ export default class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBo
     if (this.state.error) {
       return (
         <div className="max-w-3xl mx-auto p-6">
-          <div className="bg-red-50 border border-red-200 text-red-700 rounded p-4">
+          <div className="bg-red-50 border border-red-200 text-rose-300 rounded p-4">
             <h1 className="text-xl font-bold mb-2">Страница не смогла загрузиться</h1>
             <p>{this.state.error.message}</p>
           </div>

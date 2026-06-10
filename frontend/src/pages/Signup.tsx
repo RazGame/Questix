@@ -45,11 +45,11 @@ export default function Signup() {
   };
 
   return (
-    <div className="max-w-md mx-auto mt-10 p-6 bg-white rounded-lg shadow">
+    <div className="max-w-md mx-auto mt-10 p-6 glass">
       <h1 className="text-3xl font-bold mb-6 text-center">Регистрация</h1>
 
       {error && (
-        <div className="mb-4 p-3 bg-red-100 text-red-700 rounded">
+        <div className="mb-4 p-3 bg-rose-500/10 border border-rose-500/20 text-rose-300 rounded">
           {error}
         </div>
       )}
@@ -62,7 +62,7 @@ export default function Signup() {
           value={formData.firstName}
           onChange={handleChange}
           required
-          className="w-full border rounded px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary"
+          className="input-dark focus:outline-none focus:ring-2 focus:ring-primary"
         />
 
         <input
@@ -72,7 +72,7 @@ export default function Signup() {
           value={formData.lastName}
           onChange={handleChange}
           required
-          className="w-full border rounded px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary"
+          className="input-dark focus:outline-none focus:ring-2 focus:ring-primary"
         />
 
         <input
@@ -82,7 +82,7 @@ export default function Signup() {
           value={formData.nickname}
           onChange={handleChange}
           required
-          className="w-full border rounded px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary"
+          className="input-dark focus:outline-none focus:ring-2 focus:ring-primary"
         />
 
         <input
@@ -92,7 +92,7 @@ export default function Signup() {
           value={formData.username}
           onChange={handleChange}
           required
-          className="w-full border rounded px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary"
+          className="input-dark focus:outline-none focus:ring-2 focus:ring-primary"
         />
 
         <input
@@ -102,7 +102,7 @@ export default function Signup() {
           value={formData.city}
           onChange={handleChange}
           required
-          className="w-full border rounded px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary"
+          className="input-dark focus:outline-none focus:ring-2 focus:ring-primary"
         />
 
         <input
@@ -112,7 +112,7 @@ export default function Signup() {
           value={formData.phone}
           onChange={handleChange}
           required
-          className="w-full border rounded px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary"
+          className="input-dark focus:outline-none focus:ring-2 focus:ring-primary"
         />
 
         <input
@@ -123,19 +123,19 @@ export default function Signup() {
           onChange={handleChange}
           required
           minLength={6}
-          className="w-full border rounded px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary"
+          className="input-dark focus:outline-none focus:ring-2 focus:ring-primary"
         />
 
         <button
           type="submit"
           disabled={isLoading}
-          className="w-full bg-primary text-white py-2 rounded hover:bg-opacity-90 disabled:bg-gray-400 transition"
+          className="w-full btn-grad py-2 rounded disabled:opacity-50 transition"
         >
           {isLoading ? 'Загружается...' : 'Зарегистрироваться'}
         </button>
       </form>
 
-      <p className="mt-4 text-center text-gray-600">
+      <p className="mt-4 text-center text-zinc-400">
         Уже есть аккаунт?{' '}
         <a href="/login" className="text-primary hover:underline">
           Войдите

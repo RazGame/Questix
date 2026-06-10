@@ -20,12 +20,45 @@ const updateProfileSchema = Joi.object({
   phone: Joi.string().trim(),
 }).min(1);
 
+const searchUsersSchema = Joi.object({
+  q: Joi.string().trim().min(1).required(),
+});
+
 export const getAllUsers = async (
   req: AuthenticatedRequest,
   res: Response
 ): Promise<void> => {
   try {
     const users = await User.find().select('-hashed_pwd');
+    res.status(200).json(users);
+  } catch (error) {
+    res.status(500).json({ error: 'Ошибка сервера' });
+  }
+};
+
+export const searchUsers = async (
+  req: AuthenticatedRequest,
+  res: Response
+): Promise<void> => {
+  try {
+    const { error, value } = searchUsersSchema.validate(req.query);
+
+    if (error) {
+      res.status(400).json({ errors: error.details.map((d) => d.message) });
+      return;
+    }
+
+    const query = value.q.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const users = await User.find({
+      $or: [
+        { nickname: { $regex: query, $options: 'i' } },
+        { firstName: { $regex: query, $options: 'i' } },
+        { lastName: { $regex: query, $options: 'i' } },
+      ],
+    })
+      .select('nickname firstName lastName city')
+      .limit(8);
+
     res.status(200).json(users);
   } catch (error) {
     res.status(500).json({ error: 'Ошибка сервера' });

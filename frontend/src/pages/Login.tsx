@@ -41,50 +41,50 @@ export default function Login() {
   };
 
   return (
-    <div className="max-w-md mx-auto mt-10 p-6 bg-white rounded-lg shadow">
+    <div className="max-w-md mx-auto mt-10 p-6 glass">
       <h1 className="text-3xl font-bold mb-6 text-center">Вход</h1>
 
       {error && (
-        <div className="mb-4 p-3 bg-red-100 text-red-700 rounded">
+        <div className="mb-4 p-3 bg-rose-500/10 border border-rose-500/20 text-rose-300 rounded">
           {error}
         </div>
       )}
 
       <form onSubmit={handleSubmit} className="space-y-4">
         <div>
-          <label className="block text-gray-700 mb-2">Email</label>
+          <label className="block text-zinc-300 mb-2">Email</label>
           <input
             type="email"
             name="username"
             value={formData.username}
             onChange={handleChange}
             required
-            className="w-full border rounded px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary"
+            className="input-dark focus:outline-none focus:ring-2 focus:ring-primary"
           />
         </div>
 
         <div>
-          <label className="block text-gray-700 mb-2">Пароль</label>
+          <label className="block text-zinc-300 mb-2">Пароль</label>
           <input
             type="password"
             name="hashed_pwd"
             value={formData.hashed_pwd}
             onChange={handleChange}
             required
-            className="w-full border rounded px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary"
+            className="input-dark focus:outline-none focus:ring-2 focus:ring-primary"
           />
         </div>
 
         <button
           type="submit"
           disabled={isLoading}
-          className="w-full bg-primary text-white py-2 rounded hover:bg-opacity-90 disabled:bg-gray-400 transition"
+          className="w-full btn-grad py-2 rounded disabled:opacity-50 transition"
         >
           {isLoading ? 'Загружается...' : 'Войти'}
         </button>
       </form>
 
-      <p className="mt-4 text-center text-gray-600">
+      <p className="mt-4 text-center text-zinc-400">
         Нет аккаунта?{' '}
         <a href="/signup" className="text-primary hover:underline">
           Зарегистрируйтесь

@@ -205,15 +205,39 @@ export const getCurrentTask = async (
       return;
     }
 
+    const previousTaskId = progress.currentTaskIndex > 0
+      ? progress.taskOrder[progress.currentTaskIndex - 1]
+      : null;
+    const previousCompletedAt = previousTaskId
+      ? [...progress.completedTasks]
+          .reverse()
+          .find(
+            (completedTask) =>
+              completedTask.isCorrect &&
+              completedTask.taskId.toString() === previousTaskId.toString()
+          )?.completedAt
+      : null;
+    const taskStartedAt = previousCompletedAt || progress.gameStartedAt;
+    const currentTaskElapsedSeconds = Math.max(
+      0,
+      Math.floor((Date.now() - taskStartedAt.getTime()) / 1000)
+    );
+    const availableHints = (task.hints || []).filter((hint: any) => {
+      const delayMinutes = typeof hint === 'string' ? 0 : hint.delayMinutes || 0;
+      return delayMinutes * 60 <= currentTaskElapsedSeconds;
+    });
+
     // НЕ отправляем ответы клиенту!
     const taskWithoutAnswers = {
       _id: task._id,
       title: task.title,
       description: task.description,
-      hints: task.hints,
+      hints: availableHints,
       timeLimit: task.timeLimit,
       orderIndex: progress.currentTaskIndex + 1,
       totalTasks: progress.taskOrder.length,
+      taskStartedAt,
+      currentTaskElapsedSeconds,
     };
 
     res.status(200).json({

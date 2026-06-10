@@ -172,21 +172,21 @@ export const GameStatisticsPage: React.FC = () => {
 
   if (loading) {
     return (
-      <div className="flex justify-center items-center min-h-screen">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500"></div>
+      <div className="flex min-h-[calc(100dvh-4rem)] items-center justify-center">
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary"></div>
       </div>
     );
   }
 
   if (!stats) {
     return (
-      <div className="min-h-screen bg-gray-50 py-12 px-4">
+      <div className="min-h-[calc(100dvh-4rem)] px-4 py-12">
         <div className="text-center">
-          <h1 className="text-2xl font-bold text-gray-900 mb-4">Статистика недоступна</h1>
+          <h1 className="text-2xl font-bold text-zinc-100 mb-4">Статистика недоступна</h1>
           {error && <p className="text-yellow-700 mb-4">{error}</p>}
           <button
             onClick={() => navigate('/games')}
-            className="bg-blue-500 hover:bg-blue-600 text-white font-bold py-2 px-4 rounded"
+            className="btn-grad font-bold py-2 px-4 rounded"
           >
             Вернуться к играм
           </button>
@@ -196,17 +196,20 @@ export const GameStatisticsPage: React.FC = () => {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 py-12 px-4 sm:px-6 lg:px-8">
+    <div className="min-h-[calc(100dvh-4rem)] px-4 py-12 sm:px-6 lg:px-8">
       <div className="max-w-7xl mx-auto">
-        {error && <div className="mb-4 p-4 bg-red-100 border border-red-400 text-red-700 rounded">{error}</div>}
+        {error && <div className="mb-4 p-4 bg-rose-500/10 border border-rose-500/30 text-rose-300 rounded">{error}</div>}
 
         {/* Заголовок игры и контекст статистики */}
-        <div className="bg-white rounded-lg shadow p-6 mb-6">
+        <div className="glass p-6 mb-6">
           <div className="flex justify-between items-start mb-4">
             <div>
-              <h1 className="text-3xl font-bold text-gray-900">📊 {stats.game.title}</h1>
-              <p className="text-gray-600 mt-2">{stats.game.description}</p>
-              <p className="text-sm text-gray-500 mt-2">
+              <h1 className="text-3xl font-bold text-zinc-100">📊 {stats.game.title}</h1>
+              <div
+                className="rich-content mt-2 text-zinc-400"
+                dangerouslySetInnerHTML={{ __html: stats.game.description }}
+              />
+              <p className="text-sm text-zinc-500 mt-2">
                 {(stats.game.organizers || []).length > 0 ? 'Организаторы' : 'Организатор'}:{' '}
                 {[stats.game.createdBy?.nickname, ...(stats.game.organizers || []).map((o) => o.nickname)]
                   .filter(Boolean)
@@ -216,23 +219,23 @@ export const GameStatisticsPage: React.FC = () => {
             </div>
 
             <div className="text-right">
-              <div className="text-2xl font-bold text-gray-900">
+              <div className="text-2xl font-bold text-zinc-100">
                 {stats.completedTeams}/{stats.totalTeams}
               </div>
-              <p className="text-sm text-gray-600">команд завершили</p>
+              <p className="text-sm text-zinc-400">команд завершили</p>
 
               {isModerator && !stats.game.published && (
                 <button
                   onClick={handlePublishResults}
                   disabled={publishing}
-                  className="mt-4 bg-green-500 hover:bg-green-600 text-white font-bold py-2 px-4 rounded disabled:opacity-50"
+                  className="mt-4 bg-emerald-600 hover:bg-emerald-500 text-white font-bold py-2 px-4 rounded disabled:opacity-50"
                 >
                   {publishing ? 'Публикация...' : 'Опубликовать результаты'}
                 </button>
               )}
 
               {stats.game.published && (
-                <div className="mt-4 inline-block bg-green-100 text-green-800 text-xs px-3 py-1 rounded-full font-semibold">
+                <div className="mt-4 inline-block bg-emerald-400/10 text-emerald-300 text-xs px-3 py-1 rounded-full font-semibold">
                   ✓ Опубликовано
                 </div>
               )}
@@ -240,47 +243,47 @@ export const GameStatisticsPage: React.FC = () => {
           </div>
 
           {!stats.game.published && isModerator && (
-            <div className="p-3 bg-yellow-50 border border-yellow-200 rounded text-sm text-yellow-800">
+            <div className="p-3 bg-amber-500/10 border border-amber-500/30 rounded text-sm text-amber-200">
               Результаты пока видны только вам. Участники увидят их после публикации.
             </div>
           )}
         </div>
 
         {/* Подсказка по сортировке */}
-        <div className="mb-3 flex flex-wrap items-center gap-2 text-sm text-gray-600">
+        <div className="mb-3 flex flex-wrap items-center gap-2 text-sm text-zinc-400">
           <span>Сортировка:</span>
           <button
             onClick={() => setSortMode({ type: 'place' })}
             className={`px-3 py-1 rounded-full border ${
               sortMode.type === 'place'
-                ? 'bg-blue-500 text-white border-blue-500'
-                : 'bg-white border-gray-300 hover:bg-gray-100'
+                ? 'bg-primary/100 text-white border-primary'
+                : 'bg-white border-white/10 hover:bg-white/5'
             }`}
           >
             по итоговому месту
           </button>
           {sortMode.type !== 'place' && (
-            <span className="px-3 py-1 rounded-full bg-blue-100 text-blue-800">
+            <span className="px-3 py-1 rounded-full bg-sky-400/10 text-sky-300">
               шаг {sortMode.step + 1}:{' '}
               {sortMode.type === 'step-moment' ? 'по моменту прохождения' : 'по времени на задание'}
             </span>
           )}
-          <span className="text-gray-400">
+          <span className="text-zinc-500">
             — в шапке колонки: 🕐 сортировка по моменту, ⏱ по затраченному времени
           </span>
         </div>
 
         {/* Матрица: строки - команды, колонки - шаги прохождения */}
-        <div className="bg-white rounded-lg shadow overflow-hidden mb-8">
+        <div className="glass overflow-hidden mb-8">
           <div className="overflow-x-auto">
-            <table className="min-w-full divide-y divide-gray-200">
-              <thead className="bg-gray-100">
+            <table className="min-w-full divide-y divide-white/10">
+              <thead className="bg-white/5">
                 <tr>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-700 uppercase tracking-wider sticky left-0 bg-gray-100">
+                  <th className="px-4 py-3 text-left text-xs font-medium text-zinc-300 uppercase tracking-wider sticky left-0 bg-white/5">
                     Команда
                   </th>
                   {Array.from({ length: stepsCount }, (_, i) => (
-                    <th key={i} className="px-4 py-3 text-center text-xs font-medium text-gray-700 uppercase tracking-wider whitespace-nowrap">
+                    <th key={i} className="px-4 py-3 text-center text-xs font-medium text-zinc-300 uppercase tracking-wider whitespace-nowrap">
                       Шаг {i + 1}
                       <span className="block mt-1 font-normal normal-case">
                         <button
@@ -288,8 +291,8 @@ export const GameStatisticsPage: React.FC = () => {
                           onClick={() => setSortMode({ type: 'step-moment', step: i })}
                           className={`px-1 rounded ${
                             sortMode.type === 'step-moment' && sortMode.step === i
-                              ? 'bg-blue-500 text-white'
-                              : 'hover:bg-gray-200'
+                              ? 'bg-primary/100 text-white'
+                              : 'hover:bg-white/10'
                           }`}
                         >
                           🕐
@@ -299,8 +302,8 @@ export const GameStatisticsPage: React.FC = () => {
                           onClick={() => setSortMode({ type: 'step-time', step: i })}
                           className={`px-1 rounded ${
                             sortMode.type === 'step-time' && sortMode.step === i
-                              ? 'bg-blue-500 text-white'
-                              : 'hover:bg-gray-200'
+                              ? 'bg-primary/100 text-white'
+                              : 'hover:bg-white/10'
                           }`}
                         >
                           ⏱
@@ -308,32 +311,32 @@ export const GameStatisticsPage: React.FC = () => {
                       </span>
                     </th>
                   ))}
-                  <th className="px-4 py-3 text-center text-xs font-bold text-gray-900 uppercase tracking-wider bg-blue-50">
+                  <th className="px-4 py-3 text-center text-xs font-bold text-zinc-100 uppercase tracking-wider bg-primary/10">
                     Итоговое время
                   </th>
-                  <th className="px-4 py-3 text-center text-xs font-bold text-gray-900 uppercase tracking-wider bg-blue-50">
+                  <th className="px-4 py-3 text-center text-xs font-bold text-zinc-100 uppercase tracking-wider bg-primary/10">
                     Место
                   </th>
                 </tr>
               </thead>
-              <tbody className="bg-white divide-y divide-gray-200">
+              <tbody className="divide-y divide-white/10">
                 {sortedTeams.map((team) => (
-                  <tr key={team.teamId} className={team.place === 1 ? 'bg-yellow-50' : undefined}>
+                  <tr key={team.teamId} className={team.place === 1 ? 'bg-amber-400/[0.07]' : undefined}>
                     <td className="px-4 py-3 whitespace-nowrap sticky left-0 bg-inherit">
-                      <div className="text-sm font-bold text-gray-900">{team.teamName}</div>
-                      <div className="text-xs text-gray-600">
+                      <div className="text-sm font-bold text-zinc-100">{team.teamName}</div>
+                      <div className="text-xs text-zinc-400">
                         Капитан: @{team.captain?.nickname || '-'}
                       </div>
                       <div className="text-xs mt-1">
                         <span
                           className={`inline-block px-2 py-0.5 rounded-full font-semibold ${
                             team.status === 'completed'
-                              ? 'bg-green-100 text-green-800'
+                              ? 'bg-emerald-400/10 text-emerald-300'
                               : team.status === 'in_progress'
-                              ? 'bg-blue-100 text-blue-800'
+                              ? 'bg-sky-400/10 text-sky-300'
                               : team.status === 'abandoned'
-                              ? 'bg-red-100 text-red-800'
-                              : 'bg-gray-100 text-gray-800'
+                              ? 'bg-rose-400/10 text-rose-300'
+                              : 'bg-white/10 text-zinc-300'
                           }`}
                         >
                           {team.status === 'completed'
@@ -350,35 +353,35 @@ export const GameStatisticsPage: React.FC = () => {
                       const r = team.taskResults[i];
                       if (!r) {
                         return (
-                          <td key={i} className="px-4 py-3 text-center text-sm text-gray-400">
+                          <td key={i} className="px-4 py-3 text-center text-sm text-zinc-500">
                             —
                           </td>
                         );
                       }
                       return (
                         <td key={i} className="px-4 py-3 text-xs align-top min-w-[10rem]">
-                          <div className="font-semibold text-gray-900 mb-1">{r.taskTitle}</div>
+                          <div className="font-semibold text-zinc-100 mb-1">{r.taskTitle}</div>
                           {r.completed && r.isCorrect ? (
                             <>
-                              <div className="text-green-700">
+                              <div className="text-emerald-300">
                                 ✓ @{r.submittedBy?.nickname || '?'}
                               </div>
-                              <div className="text-gray-600">{formatMoment(r.completedAt)}</div>
-                              <div className="text-gray-600">
+                              <div className="text-zinc-400">{formatMoment(r.completedAt)}</div>
+                              <div className="text-zinc-400">
                                 ⏱ {formatTime(r.timeSpent)}
                                 {r.attempts > 1 && ` · попыток: ${r.attempts}`}
                               </div>
                             </>
                           ) : (
-                            <div className="text-gray-400">не пройдено</div>
+                            <div className="text-zinc-500">не пройдено</div>
                           )}
                         </td>
                       );
                     })}
-                    <td className="px-4 py-3 text-center text-sm font-bold text-blue-700 bg-blue-50 whitespace-nowrap">
+                    <td className="px-4 py-3 text-center text-sm font-bold text-violet-300 bg-primary/10 whitespace-nowrap">
                       {formatTime(team.totalTime)}
                     </td>
-                    <td className="px-4 py-3 text-center text-lg font-bold bg-blue-50 whitespace-nowrap">
+                    <td className="px-4 py-3 text-center text-lg font-bold bg-primary/10 whitespace-nowrap">
                       {placeBadge(team.place)}
                     </td>
                   </tr>
@@ -393,45 +396,45 @@ export const GameStatisticsPage: React.FC = () => {
           <div className="mb-8">
             <button
               onClick={handleToggleLogs}
-              className="bg-gray-700 hover:bg-gray-800 text-white font-bold py-2 px-4 rounded"
+              className="bg-white/10 hover:bg-white/20 text-zinc-200 border border-white/10 font-bold py-2 px-4 rounded"
             >
               {showLogs ? 'Скрыть логи команд' : '📜 Показать логи команд'}
             </button>
 
             {showLogs && (
-              <div className="mt-4 bg-white rounded-lg shadow overflow-hidden">
+              <div className="mt-4 glass overflow-hidden">
                 {logsLoading ? (
-                  <div className="p-6 text-center text-gray-600">Загрузка логов...</div>
+                  <div className="p-6 text-center text-zinc-400">Загрузка логов...</div>
                 ) : !logs || logs.length === 0 ? (
-                  <div className="p-6 text-center text-gray-600">Логов пока нет</div>
+                  <div className="p-6 text-center text-zinc-400">Логов пока нет</div>
                 ) : (
                   <div className="overflow-x-auto max-h-[32rem] overflow-y-auto">
-                    <table className="min-w-full divide-y divide-gray-200 text-sm">
-                      <thead className="bg-gray-100 sticky top-0">
+                    <table className="min-w-full divide-y divide-white/10 text-sm">
+                      <thead className="bg-[#17112a] sticky top-0">
                         <tr>
-                          <th className="px-4 py-2 text-left text-xs font-medium text-gray-700 uppercase">Время</th>
-                          <th className="px-4 py-2 text-left text-xs font-medium text-gray-700 uppercase">Команда</th>
-                          <th className="px-4 py-2 text-left text-xs font-medium text-gray-700 uppercase">Участник</th>
-                          <th className="px-4 py-2 text-left text-xs font-medium text-gray-700 uppercase">Действие</th>
-                          <th className="px-4 py-2 text-left text-xs font-medium text-gray-700 uppercase">Задание</th>
-                          <th className="px-4 py-2 text-left text-xs font-medium text-gray-700 uppercase">Ответ</th>
+                          <th className="px-4 py-2 text-left text-xs font-medium text-zinc-300 uppercase">Время</th>
+                          <th className="px-4 py-2 text-left text-xs font-medium text-zinc-300 uppercase">Команда</th>
+                          <th className="px-4 py-2 text-left text-xs font-medium text-zinc-300 uppercase">Участник</th>
+                          <th className="px-4 py-2 text-left text-xs font-medium text-zinc-300 uppercase">Действие</th>
+                          <th className="px-4 py-2 text-left text-xs font-medium text-zinc-300 uppercase">Задание</th>
+                          <th className="px-4 py-2 text-left text-xs font-medium text-zinc-300 uppercase">Ответ</th>
                         </tr>
                       </thead>
-                      <tbody className="divide-y divide-gray-200">
+                      <tbody className="divide-y divide-white/10">
                         {logs.map((log) => (
-                          <tr key={log._id} className="hover:bg-gray-50">
-                            <td className="px-4 py-2 whitespace-nowrap text-gray-600">
+                          <tr key={log._id} className="hover:bg-white/5">
+                            <td className="px-4 py-2 whitespace-nowrap text-zinc-400">
                               {formatMoment(log.timestamp)}
                             </td>
-                            <td className="px-4 py-2 whitespace-nowrap font-medium text-gray-900">
+                            <td className="px-4 py-2 whitespace-nowrap font-medium text-zinc-100">
                               {log.team?.name || '-'}
                             </td>
-                            <td className="px-4 py-2 whitespace-nowrap text-gray-600">
+                            <td className="px-4 py-2 whitespace-nowrap text-zinc-400">
                               @{log.user?.nickname || '-'}
                             </td>
                             <td className="px-4 py-2 whitespace-nowrap">{actionLabels[log.action]}</td>
-                            <td className="px-4 py-2 text-gray-600">{log.task?.title || '-'}</td>
-                            <td className="px-4 py-2 text-gray-600">{log.answer || '-'}</td>
+                            <td className="px-4 py-2 text-zinc-400">{log.task?.title || '-'}</td>
+                            <td className="px-4 py-2 text-zinc-400">{log.answer || '-'}</td>
                           </tr>
                         ))}
                       </tbody>
@@ -444,8 +447,8 @@ export const GameStatisticsPage: React.FC = () => {
         )}
 
         {!stats.game.published && !isModerator && (
-          <div className="p-6 bg-yellow-50 border border-yellow-200 rounded-lg">
-            <p className="text-yellow-800">⏳ Результаты игры еще не опубликованы. Вернитесь позже.</p>
+          <div className="p-6 bg-amber-500/10 border border-amber-500/30 rounded-lg">
+            <p className="text-amber-200">⏳ Результаты игры еще не опубликованы. Вернитесь позже.</p>
           </div>
         )}
       </div>

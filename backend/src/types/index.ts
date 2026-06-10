@@ -55,6 +55,11 @@ export interface ITeam {
   updatedAt?: Date;
 }
 
+export interface ITaskHint {
+  text: string;
+  delayMinutes?: number;
+}
+
 export interface ITeamLog {
   _id?: string;
   team: Types.ObjectId; // ID Team

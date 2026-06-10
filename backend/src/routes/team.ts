@@ -2,11 +2,13 @@ import { Router } from 'express';
 import { authMiddleware } from '../middleware/auth';
 import {
   createTeam,
+  updateTeam,
   addMember,
   removeMember,
   leaveTeam,
   transferCaptain,
   getTeam,
+  getTeamByUser,
   getUserTeams,
 } from '../controllers/team';
 
@@ -22,8 +24,14 @@ router.post('/', createTeam);
 // Получить все команды текущего пользователя
 router.get('/my-teams', getUserTeams);
 
+// Получить команду конкретного пользователя
+router.get('/user/:userId', getTeamByUser);
+
 // Получить информацию о конкретной команде
 router.get('/:teamId', getTeam);
+
+// Обновить команду (требуется быть капитаном)
+router.put('/:teamId', updateTeam);
 
 // Добавить участника в команду (требуется быть капитаном)
 router.post('/:teamId/members', addMember);

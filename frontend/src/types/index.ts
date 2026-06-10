@@ -34,13 +34,43 @@ export interface Game {
 
 export interface GameAppl {
   _id: string;
-  userId: string;
+  userId:
+    | string
+    | {
+        _id: string;
+        nickname: string;
+        firstName?: string;
+        lastName?: string;
+        phone?: string;
+      };
   gameId: string;
   status: 'pending' | 'approved' | 'rejected' | 'completed';
+  team?: {
+    _id: string;
+    name: string;
+    captain?: {
+      _id: string;
+      nickname: string;
+      firstName?: string;
+      lastName?: string;
+      phone?: string;
+    };
+    members?: Array<{
+      _id: string;
+      nickname: string;
+      firstName?: string;
+      lastName?: string;
+    }>;
+  };
   teamName?: string;
   teamMembers?: string[];
   createdAt?: string;
   updatedAt?: string;
+}
+
+export interface TaskHint {
+  text: string;
+  delayMinutes?: number;
 }
 
 export interface Task {
@@ -49,7 +79,7 @@ export interface Task {
   title: string;
   description: string; // HTML контент
   answers: string[];
-  hints?: string[];
+  hints?: Array<string | TaskHint>;
   orderIndex: number;
   timeLimit?: number;
   points?: number;
@@ -85,10 +115,12 @@ export interface CurrentTaskResponse {
     _id: string;
     title: string;
     description: string;
-    hints?: string[];
+    hints?: Array<string | TaskHint>;
     timeLimit?: number;
     orderIndex: number;
     totalTasks: number;
+    taskStartedAt?: string;
+    currentTaskElapsedSeconds?: number;
   };
   message?: string;
   totalTime?: number;

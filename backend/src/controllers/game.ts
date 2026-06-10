@@ -19,6 +19,7 @@ const gameSchema = Joi.object({
   deposit: Joi.string().required().trim(),
   prize: Joi.string().required().trim(),
   description: Joi.string().required().trim(),
+  organizerNicknames: Joi.array().items(Joi.string().trim()).default([]),
 });
 
 // Для частичного обновления: presence: 'optional' в validate не снимает
@@ -102,12 +103,38 @@ export const createGame = async (
       return;
     }
 
+    const organizerNicknames = Array.from(
+      new Set((value.organizerNicknames as string[]).map((nickname) => nickname.trim()).filter(Boolean))
+    );
+    const organizers = organizerNicknames.length
+      ? await User.find({ nickname: { $in: organizerNicknames } })
+      : [];
+
+    if (organizers.length !== organizerNicknames.length) {
+      const foundNicknames = new Set(organizers.map((organizer) => organizer.nickname));
+      const missing = organizerNicknames.filter((nickname) => !foundNicknames.has(nickname));
+      res.status(404).json({ error: `Пользователи не найдены: ${missing.join(', ')}` });
+      return;
+    }
+
+    const organizerIds = organizers
+      .map((organizer) => organizer._id!)
+      .filter((id) => id.toString() !== req.user.id);
+
+    const gameData = { ...value };
+    delete gameData.organizerNicknames;
     const newGame = new Game({
-      ...value,
+      ...gameData,
+      organizers: organizerIds,
       createdBy: req.user.id,
     });
 
     await newGame.save();
+    await User.updateMany(
+      { _id: { $in: organizerIds } },
+      { $addToSet: { roles: 'organizer' } }
+    );
+    await newGame.populate('createdBy organizers', 'nickname firstName lastName');
 
     res.status(201).json({
       message: 'Квест создан успешно',

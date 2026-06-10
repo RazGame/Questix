@@ -2,6 +2,10 @@
 @tailwind components;
 @tailwind utilities;
 
+:root {
+  color-scheme: dark;
+}
+
 * {
   margin: 0;
   padding: 0;
@@ -9,7 +13,138 @@
 }
 
 body {
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen',
-    'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue',
-    sans-serif;
+  font-family: 'Manrope', system-ui, sans-serif;
+  color: #e4e4e7;
+  background-color: #0b0712;
+  /* Глубина: фиксированные радиальные свечения под контентом */
+  background-image:
+    radial-gradient(55% 45% at 15% 0%, rgba(139, 92, 246, 0.16) 0%, transparent 60%),
+    radial-gradient(45% 40% at 90% 10%, rgba(217, 70, 239, 0.1) 0%, transparent 55%),
+    radial-gradient(60% 50% at 50% 110%, rgba(76, 29, 149, 0.18) 0%, transparent 60%);
+  background-attachment: fixed;
+  min-height: 100vh;
+}
+
+@layer base {
+  h1 {
+    @apply font-display;
+  }
+
+  ::selection {
+    @apply bg-primary/40 text-white;
+  }
+}
+
+@layer components {
+  /* Стеклянная карточка - основная поверхность интерфейса */
+  .glass {
+    @apply bg-white/[0.04] border border-white/10 rounded-2xl shadow-xl shadow-black/30 backdrop-blur-md;
+  }
+
+  .glass-hover {
+    @apply transition duration-200 hover:bg-white/[0.07] hover:border-primary/30 hover:shadow-glow-sm;
+  }
+
+  /* Тёмное поле ввода */
+  .input-dark {
+    @apply w-full px-3 py-2 bg-white/[0.06] border border-white/10 rounded-lg text-zinc-100 placeholder-zinc-500 transition focus:outline-none focus:border-primary/60 focus:ring-1 focus:ring-primary/40;
+  }
+
+  /* Градиентная основная кнопка */
+  .btn-grad {
+    @apply bg-gradient-to-r from-violet-600 to-fuchsia-600 text-white shadow-lg shadow-violet-950/50 transition hover:from-violet-500 hover:to-fuchsia-500 hover:shadow-glow-sm;
+  }
+
+  /* Моноширинная техническая подпись (кибер-акцент) */
+  .tech-label {
+    @apply font-mono text-xs uppercase tracking-widest text-primary/80;
+  }
+}
+
+.rich-content,
+.rich-editor-content {
+  line-height: 1.7;
+}
+
+.rich-content h2,
+.rich-editor-content h2 {
+  margin: 1.25rem 0 0.5rem;
+  font-size: 1.35rem;
+  font-weight: 800;
+  color: #f4f4f5;
+}
+
+.rich-content p,
+.rich-editor-content p {
+  margin: 0.65rem 0;
+}
+
+.rich-content ul,
+.rich-content ol,
+.rich-editor-content ul,
+.rich-editor-content ol {
+  margin: 0.75rem 0 0.75rem 1.25rem;
+}
+
+.rich-content ul,
+.rich-editor-content ul {
+  list-style: disc;
+}
+
+.rich-content ol,
+.rich-editor-content ol {
+  list-style: decimal;
+}
+
+.rich-content a,
+.rich-editor-content a {
+  color: #a78bfa;
+  text-decoration: underline;
+}
+
+.rich-content img,
+.rich-editor-content img {
+  display: block;
+  max-width: 100%;
+  height: auto;
+  margin: 1rem 0;
+  border-radius: 0.5rem;
+}
+
+.rich-content table,
+.rich-editor-content table {
+  width: 100%;
+  margin: 1rem 0;
+  border-collapse: collapse;
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+}
+
+.rich-content td,
+.rich-content th,
+.rich-editor-content td,
+.rich-editor-content th {
+  min-width: 5rem;
+  padding: 0.6rem 0.75rem;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  vertical-align: top;
+}
+
+/* Тонкий тёмный скроллбар */
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(139, 92, 246, 0.25);
+  border-radius: 8px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(139, 92, 246, 0.45);
 }

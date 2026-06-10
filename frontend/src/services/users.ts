@@ -11,6 +11,14 @@ export interface AdminUser {
   roles: string[];
 }
 
+export interface UserSearchResult {
+  _id: string;
+  firstName: string;
+  lastName: string;
+  nickname: string;
+  city?: string;
+}
+
 export interface ProfileUpdate {
   firstName?: string;
   lastName?: string;
@@ -23,6 +31,16 @@ export const userService = {
   // Все пользователи (admin)
   getAll: async (): Promise<AdminUser[]> => {
     const response = await api.get('/users');
+    return response.data;
+  },
+
+  search: async (query: string): Promise<UserSearchResult[]> => {
+    const response = await api.get('/users/search', { params: { q: query } });
+    return response.data;
+  },
+
+  getById: async (userId: string): Promise<AdminUser> => {
+    const response = await api.get(`/users/${userId}`);
     return response.data;
   },
 

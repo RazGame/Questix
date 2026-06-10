@@ -18,6 +18,8 @@ const router = Router();
  */
 router.get('/', authMiddleware, adminMiddleware, userController.getAllUsers);
 
+router.get('/search', authMiddleware, userController.searchUsers);
+
 /**
  * @swagger
  * /users/profile:

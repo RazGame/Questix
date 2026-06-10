@@ -5,9 +5,11 @@ import { applService } from '../services/appls';
 import { progressService } from '../services/progress';
 import { userService, AdminUser } from '../services/users';
 import { Game, GameAppl, GameTeamProgress, GameOrganizer } from '../types';
-import { Trash2, Plus, Settings } from 'lucide-react';
+import { Plus, Save, Settings, Trash2, UserPlus, X } from 'lucide-react';
 import { dateTimeLocalToIso } from '../utils/date';
 import { useAuthStore } from '../store/authStore';
+import RichTextEditor from '../components/RichTextEditor';
+import UserSearchInput from '../components/UserSearchInput';
 
 const organizerId = (value: Game['createdBy']): string | undefined =>
   typeof value === 'object' ? value?._id : value;
@@ -17,6 +19,13 @@ const organizerId = (value: Game['createdBy']): string | undefined =>
 const ASSIGNABLE_ROLES: Array<{ value: string; label: string }> = [
   { value: 'admin', label: 'Администратор' },
   { value: 'organizer', label: 'Организатор' },
+];
+
+const APPL_STATUSES: Array<{ value: GameAppl['status']; label: string }> = [
+  { value: 'pending', label: 'На рассмотрении' },
+  { value: 'approved', label: 'Одобрено' },
+  { value: 'rejected', label: 'Отклонено' },
+  { value: 'completed', label: 'Завершено' },
 ];
 
 export default function AdminPanel() {
@@ -34,6 +43,8 @@ export default function AdminPanel() {
   const [users, setUsers] = useState<AdminUser[]>([]);
   const [usersLoaded, setUsersLoaded] = useState(false);
   const [newOrganizerNickname, setNewOrganizerNickname] = useState('');
+  const [draftOrganizerNickname, setDraftOrganizerNickname] = useState('');
+  const [draftOrganizerNicknames, setDraftOrganizerNicknames] = useState<string[]>([]);
 
   const isAdmin = !!user?.roles?.includes('admin');
 
@@ -56,6 +67,20 @@ export default function AdminPanel() {
     prize: '',
     description: '',
   });
+
+  const resetCreateForm = () => {
+    setFormData({
+      title: '',
+      city: '',
+      dateofstart: '',
+      dateofend: '',
+      deposit: '',
+      prize: '',
+      description: '',
+    });
+    setDraftOrganizerNickname('');
+    setDraftOrganizerNicknames([]);
+  };
 
   useEffect(() => {
     loadGames();
@@ -105,16 +130,9 @@ export default function AdminPanel() {
         ...formData,
         dateofstart: dateTimeLocalToIso(formData.dateofstart),
         dateofend: dateTimeLocalToIso(formData.dateofend),
-      } as any);
-      setFormData({
-        title: '',
-        city: '',
-        dateofstart: '',
-        dateofend: '',
-        deposit: '',
-        prize: '',
-        description: '',
+        organizerNicknames: draftOrganizerNicknames,
       });
+      resetCreateForm();
       setShowCreateForm(false);
       loadGames();
     } catch (err: any) {
@@ -124,6 +142,20 @@ export default function AdminPanel() {
           'Ошибка создания квеста'
       );
     }
+  };
+
+  const handleAddDraftOrganizer = () => {
+    const nickname = draftOrganizerNickname.trim();
+    if (!nickname) return;
+
+    if (!draftOrganizerNicknames.includes(nickname)) {
+      setDraftOrganizerNicknames((prev) => [...prev, nickname]);
+    }
+    setDraftOrganizerNickname('');
+  };
+
+  const handleRemoveDraftOrganizer = (nickname: string) => {
+    setDraftOrganizerNicknames((prev) => prev.filter((item) => item !== nickname));
   };
 
   const handleDeleteGame = async (id: string) => {
@@ -223,7 +255,7 @@ export default function AdminPanel() {
       <h1 className="text-4xl font-bold mb-8">{isAdmin ? 'Админ панель' : 'Мои игры'}</h1>
 
       {error && (
-        <div className="mb-4 p-3 bg-red-100 text-red-700 rounded">
+        <div className="mb-4 p-3 bg-rose-500/10 border border-rose-500/20 text-rose-300 rounded">
           {error}
         </div>
       )}
@@ -235,7 +267,7 @@ export default function AdminPanel() {
             className={`px-4 py-2 font-bold border-b-2 ${
               mainTab === 'games'
                 ? 'border-primary text-primary'
-                : 'border-transparent text-gray-600 hover:text-gray-900'
+                : 'border-transparent text-zinc-400 hover:text-zinc-100'
             }`}
           >
             Квесты
@@ -245,7 +277,7 @@ export default function AdminPanel() {
             className={`px-4 py-2 font-bold border-b-2 ${
               mainTab === 'users'
                 ? 'border-primary text-primary'
-                : 'border-transparent text-gray-600 hover:text-gray-900'
+                : 'border-transparent text-zinc-400 hover:text-zinc-100'
             }`}
           >
             Пользователи
@@ -254,32 +286,32 @@ export default function AdminPanel() {
       )}
 
       {mainTab === 'users' && (
-        <div className="bg-white rounded-lg shadow overflow-hidden">
+        <div className="glass overflow-hidden">
           {!usersLoaded ? (
-            <div className="p-6 text-center text-gray-600">Загрузка пользователей...</div>
+            <div className="p-6 text-center text-zinc-400">Загрузка пользователей...</div>
           ) : (
             <div className="overflow-x-auto">
-              <table className="min-w-full divide-y divide-gray-200 text-sm">
-                <thead className="bg-gray-100">
+              <table className="min-w-full divide-y divide-white/10 text-sm">
+                <thead className="bg-white/5">
                   <tr>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-700 uppercase">Пользователь</th>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-700 uppercase">Email</th>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-700 uppercase">Город</th>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-700 uppercase">Роли</th>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-700 uppercase">Назначить</th>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-zinc-300 uppercase">Пользователь</th>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-zinc-300 uppercase">Email</th>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-zinc-300 uppercase">Город</th>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-zinc-300 uppercase">Роли</th>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-zinc-300 uppercase">Назначить</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-gray-200">
+                <tbody className="divide-y divide-white/10">
                   {users.map((u) => (
-                    <tr key={u._id} className="hover:bg-gray-50">
+                    <tr key={u._id} className="hover:bg-white/5">
                       <td className="px-4 py-3 whitespace-nowrap">
-                        <div className="font-bold text-gray-900">@{u.nickname}</div>
-                        <div className="text-gray-600">
+                        <div className="font-bold text-zinc-100">@{u.nickname}</div>
+                        <div className="text-zinc-400">
                           {u.firstName} {u.lastName}
                         </div>
                       </td>
-                      <td className="px-4 py-3 whitespace-nowrap text-gray-600">{u.username}</td>
-                      <td className="px-4 py-3 whitespace-nowrap text-gray-600">{u.city}</td>
+                      <td className="px-4 py-3 whitespace-nowrap text-zinc-400">{u.username}</td>
+                      <td className="px-4 py-3 whitespace-nowrap text-zinc-400">{u.city}</td>
                       <td className="px-4 py-3">
                         <div className="flex flex-wrap gap-1">
                           {u.roles.map((role) => (
@@ -287,12 +319,12 @@ export default function AdminPanel() {
                               key={role}
                               className={`inline-block px-2 py-0.5 text-xs rounded-full font-semibold ${
                                 role === 'admin'
-                                  ? 'bg-red-100 text-red-800'
+                                  ? 'bg-rose-400/10 text-rose-300'
                                   : role === 'organizer'
-                                  ? 'bg-purple-100 text-purple-800'
+                                  ? 'bg-violet-400/10 text-violet-300'
                                   : role === 'team_captain'
-                                  ? 'bg-yellow-100 text-yellow-800'
-                                  : 'bg-gray-100 text-gray-800'
+                                  ? 'bg-amber-400/10 text-amber-300'
+                                  : 'bg-white/10 text-zinc-300'
                               }`}
                             >
                               {role}
@@ -309,7 +341,7 @@ export default function AdminPanel() {
                                 checked={u.roles.includes(value)}
                                 onChange={() => handleToggleRole(u, value)}
                               />
-                              <span className="text-xs text-gray-700">{label}</span>
+                              <span className="text-xs text-zinc-300">{label}</span>
                             </label>
                           ))}
                         </div>
@@ -323,124 +355,175 @@ export default function AdminPanel() {
         </div>
       )}
 
-      <div className={`grid md:grid-cols-3 gap-6 ${mainTab !== 'games' ? 'hidden' : ''}`}>
-        {/* Games List */}
-        <div className="col-span-1">
-          <div className="flex justify-between items-center mb-4">
-            <h2 className="text-2xl font-bold">Квесты</h2>
-            <button
-              onClick={() => setShowCreateForm(!showCreateForm)}
-              className="bg-primary text-white p-2 rounded hover:bg-opacity-90 transition"
-            >
-              <Plus size={20} />
-            </button>
+      {mainTab === 'games' && showCreateForm && (
+        <form onSubmit={handleCreateGame} className="glass mb-6 p-5">
+          <div className="mb-5 flex flex-wrap items-start justify-between gap-4">
+            <div>
+              <h2 className="text-2xl font-bold">Новый квест</h2>
+            </div>
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  resetCreateForm();
+                  setShowCreateForm(false);
+                }}
+                className="rounded-lg border border-white/10 bg-white/5 px-4 py-2 text-sm font-bold text-zinc-200 transition hover:bg-white/10"
+              >
+                Отмена
+              </button>
+              <button
+                type="submit"
+                className="btn-grad flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-bold"
+              >
+                <Save size={17} />
+                Создать
+              </button>
+            </div>
           </div>
 
-          {showCreateForm && (
-            <form onSubmit={handleCreateGame} className="bg-white p-4 rounded mb-4 space-y-3">
+          <div className="grid gap-5 lg:grid-cols-[minmax(20rem,25rem)_1fr]">
+            <div className="space-y-4">
               <label className="block">
-                <span className="block text-xs font-semibold text-gray-600 mb-1">Название квеста</span>
+                <span className="mb-1 block text-xs font-semibold text-zinc-400">Название квеста</span>
                 <input
                   type="text"
                   placeholder="Например, Ночной дозор"
                   value={formData.title}
-                  onChange={(e) =>
-                    setFormData({ ...formData, title: e.target.value })
-                  }
+                  onChange={(e) => setFormData({ ...formData, title: e.target.value })}
                   required
-                  className="w-full border rounded px-3 py-2 text-sm"
+                  className="input-dark text-sm"
                 />
               </label>
+
               <label className="block">
-                <span className="block text-xs font-semibold text-gray-600 mb-1">Город</span>
+                <span className="mb-1 block text-xs font-semibold text-zinc-400">Город</span>
                 <input
                   type="text"
                   placeholder="Санкт-Петербург"
                   value={formData.city}
-                  onChange={(e) =>
-                    setFormData({ ...formData, city: e.target.value })
-                  }
+                  onChange={(e) => setFormData({ ...formData, city: e.target.value })}
                   required
-                  className="w-full border rounded px-3 py-2 text-sm"
+                  className="input-dark text-sm"
                 />
               </label>
-              <div className="grid sm:grid-cols-2 gap-3">
+
+              <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-1">
                 <label className="block">
-                  <span className="block text-xs font-semibold text-gray-600 mb-1">Дата и время начала</span>
+                  <span className="mb-1 block text-xs font-semibold text-zinc-400">Дата и время начала</span>
                   <input
                     type="datetime-local"
                     value={formData.dateofstart}
-                    onChange={(e) =>
-                      setFormData({ ...formData, dateofstart: e.target.value })
-                    }
+                    onChange={(e) => setFormData({ ...formData, dateofstart: e.target.value })}
                     required
-                    className="w-full border rounded px-3 py-2 text-sm"
+                    className="input-dark text-sm"
                   />
                 </label>
                 <label className="block">
-                  <span className="block text-xs font-semibold text-gray-600 mb-1">Дата и время окончания</span>
+                  <span className="mb-1 block text-xs font-semibold text-zinc-400">Дата и время окончания</span>
                   <input
                     type="datetime-local"
                     value={formData.dateofend}
-                    onChange={(e) =>
-                      setFormData({ ...formData, dateofend: e.target.value })
-                    }
+                    onChange={(e) => setFormData({ ...formData, dateofend: e.target.value })}
                     required
-                    className="w-full border rounded px-3 py-2 text-sm"
+                    className="input-dark text-sm"
                   />
                 </label>
               </div>
-              <p className="text-xs text-gray-500">
-                Окончание должно быть позже начала. Время указывается в вашем часовом поясе.
-              </p>
-              <div className="grid sm:grid-cols-2 gap-3">
+
+              <div className="grid gap-3 sm:grid-cols-2">
                 <label className="block">
-                  <span className="block text-xs font-semibold text-gray-600 mb-1">Депозит</span>
+                  <span className="mb-1 block text-xs font-semibold text-zinc-400">Депозит</span>
                   <input
                     type="text"
                     placeholder="0"
                     value={formData.deposit}
-                    onChange={(e) =>
-                      setFormData({ ...formData, deposit: e.target.value })
-                    }
+                    onChange={(e) => setFormData({ ...formData, deposit: e.target.value })}
                     required
-                    className="w-full border rounded px-3 py-2 text-sm"
+                    className="input-dark text-sm"
                   />
                 </label>
                 <label className="block">
-                  <span className="block text-xs font-semibold text-gray-600 mb-1">Приз</span>
+                  <span className="mb-1 block text-xs font-semibold text-zinc-400">Приз</span>
                   <input
                     type="text"
                     placeholder="100"
                     value={formData.prize}
-                    onChange={(e) =>
-                      setFormData({ ...formData, prize: e.target.value })
-                    }
+                    onChange={(e) => setFormData({ ...formData, prize: e.target.value })}
                     required
-                    className="w-full border rounded px-3 py-2 text-sm"
+                    className="input-dark text-sm"
                   />
                 </label>
               </div>
-              <label className="block">
-                <span className="block text-xs font-semibold text-gray-600 mb-1">Описание</span>
-                <textarea
-                  placeholder="Краткое описание квеста"
-                  value={formData.description}
-                  onChange={(e) =>
-                    setFormData({ ...formData, description: e.target.value })
-                  }
-                  required
-                  className="w-full border rounded px-3 py-2 text-sm"
-                />
-              </label>
-              <button
-                type="submit"
-                className="w-full bg-green-600 text-white py-1 rounded text-sm"
-              >
-                Создать
-              </button>
-            </form>
-          )}
+
+              <div>
+                <span className="mb-1 block text-xs font-semibold text-zinc-400">Соорганизаторы</span>
+                <div className="flex gap-2">
+                  <UserSearchInput
+                    value={draftOrganizerNickname}
+                    onChange={setDraftOrganizerNickname}
+                    onSelect={(selectedUser) => {
+                      if (!draftOrganizerNicknames.includes(selectedUser.nickname)) {
+                        setDraftOrganizerNicknames((prev) => [...prev, selectedUser.nickname]);
+                      }
+                      setDraftOrganizerNickname('');
+                    }}
+                  />
+                  <button
+                    type="button"
+                    onClick={handleAddDraftOrganizer}
+                    className="rounded-lg bg-white/10 px-3 text-zinc-200 transition hover:bg-white/20"
+                    title="Добавить соорганизатора"
+                  >
+                    <UserPlus size={18} />
+                  </button>
+                </div>
+                {draftOrganizerNicknames.length > 0 && (
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    {draftOrganizerNicknames.map((nickname) => (
+                      <span
+                        key={nickname}
+                        className="inline-flex items-center gap-2 rounded-full bg-primary/15 px-3 py-1 text-xs font-bold text-violet-200"
+                      >
+                        @{nickname}
+                        <button
+                          type="button"
+                          onClick={() => handleRemoveDraftOrganizer(nickname)}
+                          className="text-violet-200 hover:text-white"
+                          title="Убрать"
+                        >
+                          <X size={13} />
+                        </button>
+                      </span>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+
+            <label className="block">
+              <span className="mb-1 block text-xs font-semibold text-zinc-400">Описание</span>
+              <RichTextEditor
+                value={formData.description}
+                onChange={(description) => setFormData({ ...formData, description })}
+              />
+            </label>
+          </div>
+        </form>
+      )}
+
+      <div className={`grid gap-6 lg:grid-cols-[minmax(22rem,28rem)_1fr] ${mainTab !== 'games' ? 'hidden' : ''}`}>
+        {/* Games List */}
+        <div>
+          <div className="flex justify-between items-center mb-4">
+            <h2 className="text-2xl font-bold">Квесты</h2>
+            <button
+              onClick={() => setShowCreateForm(!showCreateForm)}
+              className="btn-grad p-2 rounded transition"
+            >
+              <Plus size={20} />
+            </button>
+          </div>
 
           <div className="space-y-2 max-h-96 overflow-y-auto">
             {visibleGames.map((game) => (
@@ -449,7 +532,7 @@ export default function AdminPanel() {
                 className={`p-3 rounded cursor-pointer transition ${
                   selectedGame === game._id
                     ? 'bg-primary text-white'
-                    : 'bg-gray-100 hover:bg-gray-200'
+                    : 'bg-white/5 hover:bg-white/10'
                 }`}
                 onClick={() => setSelectedGame(game._id)}
               >
@@ -464,7 +547,7 @@ export default function AdminPanel() {
                         e.stopPropagation();
                         navigate(`/admin/game/${game._id}/tasks`);
                       }}
-                      className="text-blue-600 hover:text-blue-800 p-1"
+                      className="text-violet-400 hover:text-violet-300 p-1"
                       title="Управление заданиями"
                     >
                       <Settings size={16} />
@@ -474,7 +557,7 @@ export default function AdminPanel() {
                         e.stopPropagation();
                         handleDeleteGame(game._id);
                       }}
-                      className="text-red-600 hover:text-red-800 p-1"
+                      className="text-rose-400 hover:text-rose-300 p-1"
                     >
                       <Trash2 size={16} />
                     </button>
@@ -486,7 +569,7 @@ export default function AdminPanel() {
         </div>
 
         {/* Main Panel */}
-        <div className="col-span-2">
+        <div>
           {selectedGame ? (
             <div>
               <div className="flex gap-2 mb-4 border-b">
@@ -495,7 +578,7 @@ export default function AdminPanel() {
                   className={`px-4 py-2 font-bold border-b-2 ${
                     activeTab === 'appls'
                       ? 'border-primary text-primary'
-                      : 'border-transparent text-gray-600 hover:text-gray-900'
+                      : 'border-transparent text-zinc-400 hover:text-zinc-100'
                   }`}
                 >
                   Заявки ({gameAppls.length})
@@ -505,7 +588,7 @@ export default function AdminPanel() {
                   className={`px-4 py-2 font-bold border-b-2 ${
                     activeTab === 'results'
                       ? 'border-primary text-primary'
-                      : 'border-transparent text-gray-600 hover:text-gray-900'
+                      : 'border-transparent text-zinc-400 hover:text-zinc-100'
                   }`}
                 >
                   Результаты ({gameResults.length})
@@ -515,7 +598,7 @@ export default function AdminPanel() {
                   className={`px-4 py-2 font-bold border-b-2 ${
                     activeTab === 'organizers'
                       ? 'border-primary text-primary'
-                      : 'border-transparent text-gray-600 hover:text-gray-900'
+                      : 'border-transparent text-zinc-400 hover:text-zinc-100'
                   }`}
                 >
                   Организаторы ({1 + (currentGame?.organizers?.length || 0)})
@@ -526,41 +609,65 @@ export default function AdminPanel() {
               {activeTab === 'appls' && (
                 <div>
                   {gameAppls.length === 0 ? (
-                    <p className="text-gray-600">Заявок нет</p>
+                    <p className="text-zinc-400">Заявок нет</p>
                   ) : (
                     <div className="space-y-3 max-h-96 overflow-y-auto">
-                      {gameAppls.map((appl) => (
-                        <div key={appl._id} className="bg-white p-4 rounded shadow">
-                          <div className="grid grid-cols-2 gap-4">
-                            <div>
-                              <p className="font-bold">
-                                {(appl as any).userId?.nickname}
-                              </p>
-                              <p className="text-sm text-gray-600">
-                                {(appl as any).userId?.firstName}{' '}
-                                {(appl as any).userId?.lastName}
-                              </p>
-                              <p className="text-sm text-gray-600">
-                                {(appl as any).userId?.phone}
-                              </p>
-                            </div>
-                            <div>
-                              <select
-                                value={appl.status}
-                                onChange={(e) =>
-                                  handleUpdateApplStatus(appl._id, e.target.value)
-                                }
-                                className="w-full border rounded px-2 py-1"
-                              >
-                                <option value="pending">На рассмотрении</option>
-                                <option value="approved">Одобрено</option>
-                                <option value="rejected">Отклонено</option>
-                                <option value="completed">Завершено</option>
-                              </select>
+                      {gameAppls.map((appl) => {
+                        const captain = appl.team?.captain;
+                        const fallbackUser =
+                          typeof appl.userId === 'object' ? appl.userId : null;
+                        const captainName =
+                          captain
+                            ? `${captain.firstName || ''} ${captain.lastName || ''}`.trim() || captain.nickname
+                            : fallbackUser
+                              ? `${fallbackUser.firstName || ''} ${fallbackUser.lastName || ''}`.trim() || fallbackUser.nickname
+                              : '-';
+                        const captainPhone = captain?.phone || fallbackUser?.phone;
+
+                        return (
+                          <div key={appl._id} className="glass p-4">
+                            <div className="grid gap-4 xl:grid-cols-[1fr_auto]">
+                              <div>
+                                <p className="text-xs font-semibold uppercase text-zinc-500">Команда</p>
+                                <p className="text-lg font-bold text-zinc-100">
+                                  {appl.team?.name || appl.teamName || 'Без названия'}
+                                </p>
+                                <div className="mt-2 grid gap-2 text-sm text-zinc-400 sm:grid-cols-2">
+                                  <div>
+                                    <span className="block text-xs text-zinc-500">Капитан</span>
+                                    <span>{captainName}</span>
+                                    {captain?.nickname && <span className="ml-1">@{captain.nickname}</span>}
+                                  </div>
+                                  <div>
+                                    <span className="block text-xs text-zinc-500">Контакт</span>
+                                    <span>{captainPhone || '-'}</span>
+                                  </div>
+                                  <div>
+                                    <span className="block text-xs text-zinc-500">Участников</span>
+                                    <span>{appl.team?.members?.length || appl.teamMembers?.length || '-'}</span>
+                                  </div>
+                                </div>
+                              </div>
+                              <div className="flex flex-wrap content-start gap-2 xl:max-w-md xl:justify-end">
+                                {APPL_STATUSES.map((status) => (
+                                  <button
+                                    key={status.value}
+                                    type="button"
+                                    onClick={() => handleUpdateApplStatus(appl._id, status.value)}
+                                    className={`rounded-lg border px-3 py-2 text-sm font-bold transition ${
+                                      appl.status === status.value
+                                        ? 'border-primary bg-primary text-white'
+                                        : 'border-white/10 bg-white/5 text-zinc-300 hover:bg-white/10 hover:text-white'
+                                    }`}
+                                  >
+                                    {status.label}
+                                  </button>
+                                ))}
+                              </div>
                             </div>
                           </div>
-                        </div>
-                      ))}
+                        );
+                      })}
                     </div>
                   )}
                 </div>
@@ -569,21 +676,21 @@ export default function AdminPanel() {
               {/* Организаторы Tab */}
               {activeTab === 'organizers' && currentGame && (
                 <div className="space-y-4">
-                  <p className="text-sm text-gray-600">
+                  <p className="text-sm text-zinc-400">
                     Организаторы могут править игру, задания, модерировать заявки,
                     смотреть логи и публиковать результаты.
                   </p>
 
-                  <div className="bg-white p-4 rounded shadow flex justify-between items-center">
+                  <div className="glass p-4 flex justify-between items-center">
                     <div>
                       <p className="font-bold">
                         @{typeof currentGame.createdBy === 'object'
                           ? currentGame.createdBy?.nickname
                           : '-'}
                       </p>
-                      <p className="text-sm text-gray-600">Создатель игры</p>
+                      <p className="text-sm text-zinc-400">Создатель игры</p>
                     </div>
-                    <span className="inline-block bg-yellow-100 text-yellow-800 text-xs px-3 py-1 rounded-full font-semibold">
+                    <span className="inline-block bg-amber-400/10 text-amber-300 text-xs px-3 py-1 rounded-full font-semibold">
                       Создатель
                     </span>
                   </div>
@@ -591,18 +698,18 @@ export default function AdminPanel() {
                   {(currentGame.organizers || []).map((org: GameOrganizer) => (
                     <div
                       key={org._id}
-                      className="bg-white p-4 rounded shadow flex justify-between items-center"
+                      className="glass p-4 flex justify-between items-center"
                     >
                       <div>
                         <p className="font-bold">@{org.nickname}</p>
-                        <p className="text-sm text-gray-600">
+                        <p className="text-sm text-zinc-400">
                           {org.firstName} {org.lastName}
                         </p>
                       </div>
                       {canManageOrganizers && (
                         <button
                           onClick={() => handleRemoveOrganizer(org._id)}
-                          className="bg-red-500 hover:bg-red-600 text-white font-bold py-1 px-3 rounded text-sm"
+                          className="bg-rose-600/90 hover:bg-rose-500 text-white font-bold py-1 px-3 rounded text-sm"
                         >
                           Убрать
                         </button>
@@ -611,26 +718,23 @@ export default function AdminPanel() {
                   ))}
 
                   {canManageOrganizers ? (
-                    <div className="bg-white p-4 rounded shadow">
+                    <div className="glass p-4">
                       <p className="font-bold mb-2">Добавить организатора</p>
                       <div className="flex gap-2">
-                        <input
-                          type="text"
-                          placeholder="Никнейм пользователя"
+                        <UserSearchInput
                           value={newOrganizerNickname}
-                          onChange={(e) => setNewOrganizerNickname(e.target.value)}
-                          className="flex-1 border rounded px-3 py-2 text-sm"
+                          onChange={setNewOrganizerNickname}
                         />
                         <button
                           onClick={handleAddOrganizer}
-                          className="bg-green-600 hover:bg-green-700 text-white font-bold py-2 px-4 rounded text-sm"
+                          className="bg-emerald-600 hover:bg-emerald-500 text-white font-bold py-2 px-4 rounded text-sm"
                         >
                           Добавить
                         </button>
                       </div>
                     </div>
                   ) : (
-                    <p className="text-sm text-gray-500">
+                    <p className="text-sm text-zinc-500">
                       Изменять список организаторов может администратор или создатель игры.
                     </p>
                   )}
@@ -641,11 +745,11 @@ export default function AdminPanel() {
               {activeTab === 'results' && (
                 <div>
                   {gameResults.length === 0 ? (
-                    <p className="text-gray-600">Результатов еще нет</p>
+                    <p className="text-zinc-400">Результатов еще нет</p>
                   ) : (
                     <div className="overflow-x-auto max-h-96">
                       <table className="w-full text-sm">
-                        <thead className="bg-gray-100 sticky top-0">
+                        <thead className="bg-[#17112a] sticky top-0">
                           <tr>
                             <th className="px-4 py-2 text-left">Команда</th>
                             <th className="px-4 py-2 text-left">Капитан</th>
@@ -656,7 +760,7 @@ export default function AdminPanel() {
                         </thead>
                         <tbody>
                           {gameResults.map((result, idx) => (
-                            <tr key={result._id} className={idx % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
+                            <tr key={result._id} className={idx % 2 === 0 ? '' : 'bg-white/[0.02]'}>
                               <td className="px-4 py-2">#{idx + 1}</td>
                               <td className="px-4 py-2">
                                 {(result as any).userId?.nickname}
@@ -682,7 +786,7 @@ export default function AdminPanel() {
               )}
             </div>
           ) : (
-            <p className="text-gray-600 text-center">Выберите квест</p>
+            <p className="text-zinc-400 text-center">Выберите квест</p>
           )}
         </div>
       </div>

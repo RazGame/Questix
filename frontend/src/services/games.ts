@@ -1,6 +1,10 @@
 import api from './api';
 import { Game } from '../types';
 
+type CreateGameData = Omit<Game, '_id' | 'gameAppls' | 'createdBy' | 'organizers'> & {
+  organizerNicknames?: string[];
+};
+
 export const gameService = {
   getAllGames: async (): Promise<Game[]> => {
     const response = await api.get('/games');
@@ -12,7 +16,7 @@ export const gameService = {
     return response.data;
   },
 
-  createGame: async (data: Omit<Game, '_id'>): Promise<Game> => {
+  createGame: async (data: CreateGameData): Promise<Game> => {
     const response = await api.post('/games', data);
     return response.data.game;
   },

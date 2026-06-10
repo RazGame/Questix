@@ -6,7 +6,7 @@ export interface ITask {
   title: string;
   description: string; // HTML контент задания
   answers: string[]; // массив правильных ответов (case-insensitive)
-  hints?: string[]; // подсказки
+  hints?: Array<string | { text: string; delayMinutes?: number }>; // подсказки
   orderIndex: number; // порядок в квесте (может быть переопределен для каждой команды)
   timeLimit?: number; // лимит времени в секундах (опционально)
   points?: number; // очки за задание
@@ -35,10 +35,18 @@ const taskSchema = new mongoose.Schema<ITask>(
       required: [true, 'Ответы обязательны'],
       set: (answers: string[]) => answers.map(a => a.toLowerCase().trim()),
     },
-    hints: {
-      type: [String],
-      default: [],
-    },
+    hints: [
+      {
+        text: {
+          type: String,
+          required: true,
+        },
+        delayMinutes: {
+          type: Number,
+          default: 0,
+        },
+      },
+    ],
     orderIndex: {
       type: Number,
       required: true,

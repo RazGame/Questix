@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { gameService } from '../services/games';
 import { applService } from '../services/appls';
+import { teams, ITeam } from '../services/teams';
 import { Game, GameAppl } from '../types';
 import { useAuthStore } from '../store/authStore';
 import { CalendarCheck, CalendarClock, MapPin, Trophy, Users, UserCog } from 'lucide-react';
@@ -10,7 +11,7 @@ import { formatDateTime, getQuestState } from '../utils/date';
 export default function GameDetail() {
   const { id } = useParams();
   const navigate = useNavigate();
-  const { token } = useAuthStore();
+  const { token, user } = useAuthStore();
 
   const [game, setGame] = useState<Game | null>(null);
   const [appls, setAppls] = useState<GameAppl[]>([]);
@@ -19,10 +20,21 @@ export default function GameDetail() {
   const [success, setSuccess] = useState('');
   const [isApplying, setIsApplying] = useState(false);
   const [now, setNow] = useState(() => new Date());
+  const [myTeams, setMyTeams] = useState<ITeam[]>([]);
+  const [isTeamsLoading, setIsTeamsLoading] = useState(false);
 
   useEffect(() => {
     loadGameDetails();
   }, [id]);
+
+  useEffect(() => {
+    if (!token) {
+      setMyTeams([]);
+      return;
+    }
+
+    loadMyTeams();
+  }, [token]);
 
   useEffect(() => {
     const interval = setInterval(() => setNow(new Date()), 1000);
@@ -43,9 +55,25 @@ export default function GameDetail() {
     }
   };
 
+  const loadMyTeams = async () => {
+    try {
+      setIsTeamsLoading(true);
+      const data = await teams.getUserTeams();
+      setMyTeams(data);
+    } catch {
+      setMyTeams([]);
+    } finally {
+      setIsTeamsLoading(false);
+    }
+  };
+
   const handleApply = async () => {
     if (!token) {
       navigate('/login');
+      return;
+    }
+
+    if (!isCaptain) {
       return;
     }
 
@@ -69,11 +97,23 @@ export default function GameDetail() {
   }
 
   if (!game) {
-    return <div className="text-center py-10 text-red-600">Квест не найден</div>;
+    return <div className="text-center py-10 text-rose-400">Квест не найден</div>;
   }
 
   const questState = getQuestState(game.dateofstart, game.dateofend, now);
-  const canApply = questState === 'scheduled';
+  const isCaptain = myTeams.some((team) => team.captain._id === user?.id);
+  const canApply = questState === 'scheduled' && isCaptain;
+  const applyButtonText = isTeamsLoading
+    ? 'Проверяем команду...'
+    : isApplying
+      ? 'Отправляется...'
+      : questState === 'finished'
+        ? 'Квест завершен'
+        : questState !== 'scheduled'
+          ? 'Подача заявок закрыта'
+          : isCaptain
+            ? 'Подать заявку'
+            : 'Подать заявку';
 
   // Создатель игры + соорганизаторы
   const organizerNames = [
@@ -90,16 +130,16 @@ export default function GameDetail() {
         ← Назад к квестам
       </button>
 
-      <div className="bg-white rounded-lg shadow-lg p-6">
+      <div className="glass p-6">
         <h1 className="text-4xl font-bold mb-4">{game.title}</h1>
 
         {error && (
-          <div className="mb-4 p-3 bg-red-100 text-red-700 rounded">
+          <div className="mb-4 p-3 bg-rose-500/10 border border-rose-500/20 text-rose-300 rounded">
             {error}
           </div>
         )}
         {success && (
-          <div className="mb-4 p-3 bg-green-100 text-green-700 rounded">
+          <div className="mb-4 p-3 bg-emerald-500/10 border border-emerald-500/20 text-emerald-300 rounded">
             {success}
           </div>
         )}
@@ -113,14 +153,14 @@ export default function GameDetail() {
             <div className="flex items-start text-lg">
               <CalendarClock className="mr-3 mt-1 text-primary" />
               <div>
-                <span className="block text-sm text-gray-500">Дата начала</span>
+                <span className="block text-sm text-zinc-500">Дата начала</span>
                 <span>{formatDateTime(game.dateofstart)}</span>
               </div>
             </div>
             <div className="flex items-start text-lg">
               <CalendarCheck className="mr-3 mt-1 text-primary" />
               <div>
-                <span className="block text-sm text-gray-500">Дата окончания</span>
+                <span className="block text-sm text-zinc-500">Дата окончания</span>
                 <span>{formatDateTime(game.dateofend)}</span>
               </div>
             </div>
@@ -136,7 +176,7 @@ export default function GameDetail() {
               <div className="flex items-start text-lg">
                 <UserCog className="mr-3 mt-1 text-primary" />
                 <div>
-                  <span className="block text-sm text-gray-500">
+                  <span className="block text-sm text-zinc-500">
                     {organizerNames.length > 1 ? 'Организаторы' : 'Организатор'}
                   </span>
                   <span>{organizerNames.join(', ')}</span>
@@ -145,44 +185,40 @@ export default function GameDetail() {
             )}
           </div>
 
-          <div className="bg-gray-50 p-4 rounded">
+          <div className="p-4 md:pl-6">
             <div className="mb-4">
-              <p className="text-gray-600">Депозит: <strong>{game.deposit}</strong></p>
+              <p className="text-zinc-400">Депозит: <strong>{game.deposit}</strong></p>
             </div>
             {token ? (
               <div className="space-y-3">
-                <p className="text-sm text-gray-600">
-                  Заявка подаётся от вашей команды. Подать её может только капитан —{' '}
-                  <button
-                    onClick={() => navigate('/teams')}
-                    className="text-primary underline"
-                  >
-                    управление командой
-                  </button>
-                  .
-                </p>
+                {!isTeamsLoading && !isCaptain && (
+                  <p className="text-sm text-zinc-400">
+                    Заявка подаётся от вашей команды. Подать её может только капитан —{' '}
+                    <button
+                      onClick={() => navigate('/teams')}
+                      className="text-primary underline"
+                    >
+                      управление командой
+                    </button>
+                    .
+                  </p>
+                )}
                 <button
                   onClick={handleApply}
-                  disabled={isApplying || !canApply}
-                  className="w-full bg-primary text-white py-2 rounded hover:bg-opacity-90 disabled:bg-gray-400 transition"
+                  disabled={isApplying || isTeamsLoading || !canApply}
+                  className="w-full btn-grad py-2 rounded transition disabled:cursor-not-allowed disabled:opacity-40 disabled:grayscale"
                 >
-                  {isApplying
-                    ? 'Отправляется...'
-                    : canApply
-                      ? 'Подать заявку'
-                      : questState === 'finished'
-                        ? 'Квест завершен'
-                        : 'Подача заявок закрыта'}
+                  {applyButtonText}
                 </button>
-                {!canApply && (
-                  <p className="text-sm text-gray-600">
+                {questState !== 'scheduled' && (
+                  <p className="text-sm text-zinc-400">
                     Заявку можно подать только до старта квеста.
                   </p>
                 )}
                 {game.published && (
                   <button
                     onClick={() => navigate(`/games/${game._id}/results`)}
-                    className="w-full bg-green-500 text-white py-2 rounded hover:bg-green-600 transition"
+                    className="w-full bg-emerald-600 text-white py-2 rounded hover:bg-emerald-500 transition"
                   >
                     📊 Посмотреть результаты
                   </button>
@@ -191,7 +227,7 @@ export default function GameDetail() {
             ) : (
               <button
                 onClick={() => navigate('/login')}
-                className="w-full bg-primary text-white py-2 rounded hover:bg-opacity-90 transition"
+                className="w-full btn-grad py-2 rounded transition"
               >
                 Войти для подачи заявки
               </button>
@@ -199,9 +235,12 @@ export default function GameDetail() {
           </div>
         </div>
 
-        <div className="border-t pt-6">
+        <div className="border-t border-white/10 pt-6">
           <h2 className="text-2xl font-bold mb-4">Описание</h2>
-          <p className="text-gray-700 leading-relaxed">{game.description}</p>
+          <div
+            className="rich-content text-zinc-300"
+            dangerouslySetInnerHTML={{ __html: game.description }}
+          />
         </div>
       </div>
     </div>

@@ -154,7 +154,7 @@ export default function QuestGame() {
   }
 
   if (!game) {
-    return <div className="text-center py-10 text-red-600">Квест не найден</div>;
+    return <div className="text-center py-10 text-rose-400">Квест не найден</div>;
   }
 
   const gameStartTime = parseDate(game.dateofstart);
@@ -163,7 +163,7 @@ export default function QuestGame() {
   if (!canStart) {
     return (
       <div className="max-w-2xl mx-auto p-4">
-        <div className="bg-blue-50 border border-blue-200 rounded-lg p-6 text-center">
+        <div className="bg-primary/10 border border-blue-200 rounded-lg p-6 text-center">
           <h1 className="text-3xl font-bold mb-4">{game.title}</h1>
           <div className="text-xl mb-4 space-y-2">
             <p>
@@ -174,7 +174,7 @@ export default function QuestGame() {
               <strong>Дата окончания:</strong> {formatDateTime(game.dateofend)}
             </p>
           </div>
-          <p className="text-gray-600">
+          <p className="text-zinc-400">
             {questState === 'finished'
               ? 'Вход в игру уже закрыт'
               : 'Эта страница сама обновится, когда наступит время старта'}
@@ -197,7 +197,7 @@ export default function QuestGame() {
           <p className="text-lg mb-4">Готовы начать квест?</p>
           <button
             onClick={startGame}
-            className="bg-primary text-white px-8 py-3 rounded-lg font-bold text-lg hover:bg-opacity-90"
+            className="btn-grad px-8 py-3 rounded-lg font-bold text-lg"
           >
             🎮 Начать игру
           </button>
@@ -225,7 +225,7 @@ export default function QuestGame() {
           </div>
           <button
             onClick={() => navigate('/my-appls')}
-            className="mt-6 bg-primary text-white px-6 py-2 rounded hover:bg-opacity-90"
+            className="mt-6 btn-grad px-6 py-2 rounded"
           >
             Вернуться к заявкам
           </button>
@@ -257,7 +257,7 @@ export default function QuestGame() {
 
       {/* Прогресс-бар */}
       <div className="mb-6">
-        <div className="w-full bg-gray-200 rounded-full h-2">
+        <div className="w-full bg-white/10 rounded-full h-2">
           <div
             className="bg-primary h-2 rounded-full transition-all duration-300"
             style={{
@@ -268,27 +268,29 @@ export default function QuestGame() {
       </div>
 
       {/* Задание */}
-      <div className="bg-white rounded-lg shadow-lg p-8 mb-6">
+      <div className="glass p-8 mb-6">
         <h2 className="text-2xl font-bold mb-4">{currentTask.task?.title}</h2>
 
         <div
-          className="prose prose-sm max-w-none mb-6 p-4 bg-gray-50 rounded"
+          className="rich-content mb-6 rounded bg-white/[0.03] p-4 text-zinc-300"
           dangerouslySetInnerHTML={{
             __html: currentTask.task?.description || '',
           }}
         />
 
-        {currentTask.task?.hints && currentTask.task.hints.length > 0 && (
+        {currentTask.task?.hints && currentTask.task.hints.length > 0 ? (
           <details className="mb-6 cursor-pointer">
-            <summary className="font-bold text-blue-600">💡 Подсказки</summary>
+            <summary className="font-bold text-violet-400">💡 Подсказки</summary>
             <ul className="list-disc list-inside mt-2 ml-2 space-y-1">
               {currentTask.task.hints.map((hint, idx) => (
-                <li key={idx} className="text-gray-700">
-                  {hint}
+                <li key={idx} className="text-zinc-300">
+                  {typeof hint === 'string' ? hint : hint.text}
                 </li>
               ))}
             </ul>
           </details>
+        ) : (
+          <p className="mb-6 text-sm text-zinc-500">Подсказки появятся позже, если они предусмотрены заданием.</p>
         )}
       </div>
 
@@ -297,8 +299,8 @@ export default function QuestGame() {
         <div
           className={`mb-6 p-4 rounded ${
             feedback.type === 'success'
-              ? 'bg-green-100 text-green-700 border border-green-300'
-              : 'bg-red-100 text-red-700 border border-red-300'
+              ? 'bg-emerald-500/10 border border-emerald-500/20 text-emerald-300 border border-green-300'
+              : 'bg-rose-500/10 border border-rose-500/20 text-rose-300 border border-red-300'
           }`}
         >
           {feedback.message}
@@ -306,7 +308,7 @@ export default function QuestGame() {
       )}
 
       {/* Форма ответа */}
-      <form onSubmit={handleSubmitAnswer} className="bg-white rounded-lg shadow-lg p-8">
+      <form onSubmit={handleSubmitAnswer} className="glass p-8">
         <label className="block font-bold mb-4">Ваш ответ:</label>
         <textarea
           value={answer}
@@ -319,7 +321,7 @@ export default function QuestGame() {
         <button
           type="submit"
           disabled={isSubmitting}
-          className="w-full bg-primary text-white py-3 rounded font-bold hover:bg-opacity-90 disabled:bg-gray-400 transition"
+          className="w-full btn-grad py-3 rounded font-bold disabled:opacity-50 transition"
         >
           {isSubmitting ? 'Отправка...' : 'Отправить ответ'}
         </button>

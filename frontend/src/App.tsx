@@ -22,7 +22,7 @@ function App() {
   return (
     <Router>
       <Navbar />
-      <main className="min-h-[calc(100vh-4rem)] bg-gray-50">
+      <main className="min-h-[calc(100dvh-4rem)] overflow-x-hidden">
         <ErrorBoundary>
           <Routes>
             <Route path="/" element={<Home />} />
@@ -36,6 +36,10 @@ function App() {
             />
             <Route
               path="/profile"
+              element={<PrivateRoute component={Profile} />}
+            />
+            <Route
+              path="/profile/:userId"
               element={<PrivateRoute component={Profile} />}
             />
             <Route

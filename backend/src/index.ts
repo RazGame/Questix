@@ -14,10 +14,19 @@ import progressRoutes from './routes/gameProgress';
 import teamRoutes from './routes/team';
 
 const app: Application = express();
+const devOriginPattern = /^https?:\/\/(localhost|127\.0\.0\.1|192\.168\.\d{1,3}\.\d{1,3}|10\.\d{1,3}\.\d{1,3}\.\d{1,3}|172\.(1[6-9]|2\d|3[0-1])\.\d{1,3}\.\d{1,3})(:\d+)?$/;
+const corsOrigin = config.corsOrigin || ((origin: string | undefined, callback: (err: Error | null, allow?: boolean) => void) => {
+  if (!origin || devOriginPattern.test(origin)) {
+    callback(null, true);
+    return;
+  }
+
+  callback(null, false);
+});
 
 // Middleware
 app.use(express.json());
-app.use(cors({ origin: config.corsOrigin }));
+app.use(cors({ origin: corsOrigin }));
 
 // Swagger
 const swaggerOptions = {

@@ -18,6 +18,10 @@ const transferCaptainSchema = Joi.object({
   newCaptainId: Joi.string().required(),
 });
 
+const updateTeamSchema = Joi.object({
+  name: Joi.string().required().trim(),
+});
+
 // Создание новой команды (капитан)
 export const createTeam = async (
   req: AuthenticatedRequest,
@@ -121,6 +125,44 @@ export const addMember = async (
     });
   } catch (error) {
     console.error('Ошибка добавления участника:', error);
+    res.status(500).json({ error: 'Ошибка сервера' });
+  }
+};
+
+export const updateTeam = async (
+  req: AuthenticatedRequest,
+  res: Response
+): Promise<void> => {
+  try {
+    const { error, value } = updateTeamSchema.validate(req.body);
+
+    if (error) {
+      res.status(400).json({ errors: error.details.map((d) => d.message) });
+      return;
+    }
+
+    const team = await Team.findById(req.params.teamId);
+
+    if (!team) {
+      res.status(404).json({ error: 'Команда не найдена' });
+      return;
+    }
+
+    if (team.captain.toString() !== req.user.id) {
+      res.status(403).json({ error: 'У вас нет прав для управления этой командой' });
+      return;
+    }
+
+    team.name = value.name;
+    await team.save();
+    await team.populate('captain members', 'nickname firstName lastName');
+
+    res.status(200).json({
+      message: 'Команда обновлена успешно',
+      team,
+    });
+  } catch (error) {
+    console.error('Ошибка обновления команды:', error);
     res.status(500).json({ error: 'Ошибка сервера' });
   }
 };
@@ -279,6 +321,32 @@ export const getTeam = async (
     res.status(200).json(team);
   } catch (error) {
     console.error('Ошибка загрузки команды:', error);
+    res.status(500).json({ error: 'Ошибка сервера' });
+  }
+};
+
+export const getTeamByUser = async (
+  req: AuthenticatedRequest,
+  res: Response
+): Promise<void> => {
+  try {
+    const userId = req.params.userId;
+
+    const team = await Team.findOne({
+      $or: [{ captain: userId }, { members: userId }],
+    })
+      .populate('captain', 'nickname firstName lastName')
+      .populate('members', 'nickname firstName lastName')
+      .populate('gameAppl');
+
+    if (!team) {
+      res.status(200).json(null);
+      return;
+    }
+
+    res.status(200).json(team);
+  } catch (error) {
+    console.error('Ошибка загрузки команды пользователя:', error);
     res.status(500).json({ error: 'Ошибка сервера' });
   }
 };
