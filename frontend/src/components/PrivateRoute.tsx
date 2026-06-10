@@ -5,16 +5,22 @@ import { useAuthStore } from '../store/authStore';
 interface PrivateRouteProps {
   component: ComponentType;
   role?: string;
+  roles?: string[]; // достаточно любой из перечисленных ролей
 }
 
-export default function PrivateRoute({ component: Component, role }: PrivateRouteProps) {
+export default function PrivateRoute({ component: Component, role, roles }: PrivateRouteProps) {
   const { token, user } = useAuthStore();
 
   if (!token) {
     return <Navigate to="/login" />;
   }
 
-  if (role && !user?.roles?.includes(role)) {
+  const requiredRoles = roles ?? (role ? [role] : []);
+
+  if (
+    requiredRoles.length > 0 &&
+    !requiredRoles.some((r) => user?.roles?.includes(r))
+  ) {
     return <Navigate to="/" />;
   }
 

@@ -138,6 +138,14 @@ export default function MyAppls() {
                   <Clock size={20} /> {questState === 'finished' ? 'Игра завершена' : 'Игра еще не началась'}
                 </button>
               )}
+              {questState === 'finished' && game?.published && (
+                <button
+                  onClick={() => navigate(`/games/${game._id}/results`)}
+                  className="w-full mt-2 bg-green-500 text-white py-2 rounded hover:bg-green-600 transition"
+                >
+                  📊 Результаты игры
+                </button>
+              )}
             </div>
             );
           })}

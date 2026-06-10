@@ -58,6 +58,10 @@ export const signup = async (req: any, res: Response): Promise<void> => {
         id: newUser._id,
         username: newUser.username,
         nickname: newUser.nickname,
+        firstName: newUser.firstName,
+        lastName: newUser.lastName,
+        city: newUser.city,
+        phone: newUser.phone,
         roles: newUser.roles,
       },
     });
@@ -102,6 +106,10 @@ export const login = async (req: any, res: Response): Promise<void> => {
         id: user._id,
         username: user.username,
         nickname: user.nickname,
+        firstName: user.firstName,
+        lastName: user.lastName,
+        city: user.city,
+        phone: user.phone,
         roles: user.roles,
       },
     });

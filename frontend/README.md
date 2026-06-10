@@ -38,8 +38,9 @@ Frontend слушает http://localhost:5173.
 ```text
 src/
 ├── components/   # Navbar, PrivateRoute, ErrorBoundary
-├── pages/        # Home, Login, Signup, Games, GameDetail, MyAppls, AdminPanel, TaskManager, QuestGame
-├── services/     # Axios API wrappers
+├── pages/        # Home, Login, Signup, Games, GameDetail, MyAppls, AdminPanel,
+│                 # TaskManager, QuestGame, TeamManager, GameResults, Profile
+├── services/     # Axios API wrappers (games, appls, progress, teams, results, users)
 ├── store/        # Zustand auth store
 ├── types/        # TypeScript types
 ├── utils/        # date helpers
@@ -50,8 +51,11 @@ src/
 ## Важные Экраны
 
 - `/games` - вкладки `Мои активные квесты`, `Предстоящие`, `Завершённые`.
-- `/games/:id` - детали квеста и подача заявки.
-- `/my-appls` - заявки пользователя и вход в активную игру.
-- `/admin` - квесты, заявки и результаты.
+- `/games/:id` - детали квеста; заявку от команды подаёт капитан.
+- `/my-appls` - заявки моих команд и вход в активную игру.
+- `/teams`, `/teams/:teamId` - мои команды, состав, управление (капитан), выход из команды.
+- `/profile` - редактирование своего профиля.
+- `/games/:gameId/results` - статистика игры: матрица «команды x шаги» с сортировками, публикация результатов и логи для модераторов.
+- `/admin` - квесты, заявки, результаты и назначение ролей (вкладка «Пользователи»).
 - `/admin/game/:gameId/tasks` - задания.
-- `/game/:gameId/play/:gameApplId` - прохождение.
+- `/game/:gameId/play/:gameApplId` - прохождение квеста командой.

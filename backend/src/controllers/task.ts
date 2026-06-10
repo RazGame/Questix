@@ -3,6 +3,16 @@ import Joi from 'joi';
 import { Task } from '../models/Task';
 import { Game } from '../models/Game';
 import { AuthenticatedRequest } from '../middleware/auth';
+import { isGameModerator } from '../services/gamePermissions';
+
+// Может ли пользователь модерировать игру задания: админ, создатель или соорганизатор
+const canModerateTaskGame = async (
+  gameId: any,
+  user: { id?: string; roles?: string[] }
+): Promise<boolean> => {
+  const game = await Game.findById(gameId);
+  return !!game && isGameModerator(game, user);
+};
 
 const taskSchema = Joi.object({
   title: Joi.string().required().trim(),
@@ -102,12 +112,19 @@ export const updateTask = async (
       return;
     }
 
-    const task = await Task.findByIdAndUpdate(taskId, value, { new: true });
+    const existingTask = await Task.findById(taskId);
 
-    if (!task) {
+    if (!existingTask) {
       res.status(404).json({ error: 'Задание не найдено' });
       return;
     }
+
+    if (!(await canModerateTaskGame(existingTask.gameId, req.user))) {
+      res.status(403).json({ error: 'У вас нет прав для редактирования заданий этой игры' });
+      return;
+    }
+
+    const task = await Task.findByIdAndUpdate(taskId, value, { new: true });
 
     res.status(200).json({
       message: 'Задание обновлено успешно',
@@ -125,12 +142,19 @@ export const deleteTask = async (
   try {
     const { taskId } = req.params;
 
-    const task = await Task.findByIdAndDelete(taskId);
+    const task = await Task.findById(taskId);
 
     if (!task) {
       res.status(404).json({ error: 'Задание не найдено' });
       return;
     }
+
+    if (!(await canModerateTaskGame(task.gameId, req.user))) {
+      res.status(403).json({ error: 'У вас нет прав для удаления заданий этой игры' });
+      return;
+    }
+
+    await Task.findByIdAndDelete(taskId);
 
     res.status(200).json({ message: 'Задание удалено успешно' });
   } catch (error) {

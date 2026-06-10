@@ -10,6 +10,13 @@ export interface User {
   gameAppls: string[];
 }
 
+export interface GameOrganizer {
+  _id: string;
+  nickname: string;
+  firstName?: string;
+  lastName?: string;
+}
+
 export interface Game {
   _id: string;
   title: string;
@@ -19,7 +26,9 @@ export interface Game {
   deposit: string;
   prize: string;
   description: string;
-  createdBy?: string;
+  published?: boolean;
+  createdBy?: GameOrganizer | string; // populated-документ или ID
+  organizers?: GameOrganizer[]; // соорганизаторы
   gameAppls: GameAppl[];
 }
 

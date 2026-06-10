@@ -42,7 +42,7 @@ const userSchema = new mongoose.Schema<IUser>(
     roles: {
       type: [String],
       default: ['user'],
-      enum: ['user', 'admin'],
+      enum: ['user', 'admin', 'organizer', 'team_captain'],
     },
     gameAppls: [
       {

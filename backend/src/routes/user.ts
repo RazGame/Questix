@@ -20,6 +20,70 @@ router.get('/', authMiddleware, adminMiddleware, userController.getAllUsers);
 
 /**
  * @swagger
+ * /users/profile:
+ *   put:
+ *     tags: [Users]
+ *     summary: Обновить свой профиль
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               firstName:
+ *                 type: string
+ *               lastName:
+ *                 type: string
+ *               nickname:
+ *                 type: string
+ *               city:
+ *                 type: string
+ *               phone:
+ *                 type: string
+ *     responses:
+ *       200:
+ *         description: Профиль обновлен
+ */
+router.put('/profile', authMiddleware, userController.updateProfile);
+
+/**
+ * @swagger
+ * /users/{id}/roles:
+ *   patch:
+ *     tags: [Users]
+ *     summary: Назначить роли пользователю (только admin)
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [roles]
+ *             properties:
+ *               roles:
+ *                 type: array
+ *                 items:
+ *                   type: string
+ *                   enum: [user, admin, organizer, team_captain]
+ *     responses:
+ *       200:
+ *         description: Роли обновлены
+ */
+router.patch('/:id/roles', authMiddleware, adminMiddleware, userController.updateUserRoles);
+
+/**
+ * @swagger
  * /users/{id}:
  *   get:
  *     tags: [Users]

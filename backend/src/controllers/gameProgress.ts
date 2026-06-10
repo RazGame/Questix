@@ -3,8 +3,36 @@ import { GameTeamProgress, IGameTeamProgress } from '../models/GameTeamProgress'
 import { Task } from '../models/Task';
 import { Game } from '../models/Game';
 import { GameAppl } from '../models/GameAppl';
+import { Team } from '../models/Team';
+import { TeamLog } from '../models/TeamLog';
 import { AuthenticatedRequest } from '../middleware/auth';
 import { canPlayQuest } from '../services/questState';
+
+// Проверка: пользователь — капитан или участник команды, подавшей заявку.
+// Все участники команды могут играть и отправлять ответы.
+const isTeamMember = async (
+  gameAppl: { team?: any; userId: any },
+  userId: string
+): Promise<boolean> => {
+  if (gameAppl.userId?.toString() === userId) {
+    return true;
+  }
+
+  if (!gameAppl.team) {
+    return false;
+  }
+
+  const team = await Team.findById(gameAppl.team);
+
+  if (!team) {
+    return false;
+  }
+
+  return (
+    team.captain.toString() === userId ||
+    team.members.some((id) => id.toString() === userId)
+  );
+};
 
 // Начать игру - создать прогресс с рандомным или установленным порядком заданий
 export const startGame = async (
@@ -22,9 +50,14 @@ export const startGame = async (
       return;
     }
 
-    // Проверить, что текущий пользователь - капитан команды
-    if (gameAppl.userId.toString() !== req.user.id) {
-      res.status(403).json({ error: 'Доступ запрещен' });
+    // Играть могут все участники команды, а не только капитан
+    if (!(await isTeamMember(gameAppl, req.user.id))) {
+      res.status(403).json({ error: 'Доступ запрещен: вы не состоите в команде этой заявки' });
+      return;
+    }
+
+    if (!gameAppl.team) {
+      res.status(400).json({ error: 'Заявка не привязана к команде' });
       return;
     }
 
@@ -66,11 +99,11 @@ export const startGame = async (
 
     const taskOrder = tasks.map(t => t._id!);
 
-    // Создать прогресс
+    // Создать прогресс: он привязан к команде и к заявке команды
     const progress = new GameTeamProgress({
       gameApplId,
       gameId: gameAppl.gameId,
-      teamId: gameAppl._id,
+      teamId: gameAppl.team,
       userId: gameAppl.userId,
       taskOrder,
       status: 'in_progress',
@@ -78,6 +111,19 @@ export const startGame = async (
     });
 
     await progress.save();
+
+    // Логировать старт игры
+    const teamLog = new TeamLog({
+      team: gameAppl.team,
+      gameAppl: gameApplId,
+      game: gameAppl.gameId,
+      user: req.user.id,
+      task: taskOrder[0], // Первое задание
+      action: 'game_started',
+      timestamp: new Date(),
+    });
+
+    await teamLog.save();
 
     res.status(201).json({
       message: 'Игра начата',
@@ -115,8 +161,10 @@ export const getCurrentTask = async (
       return;
     }
 
-    // Проверить доступ
-    if (progress.userId.toString() !== req.user.id) {
+    // Доступ есть у всех участников команды
+    const gameAppl = await GameAppl.findById(gameApplId);
+
+    if (!gameAppl || !(await isTeamMember(gameAppl, req.user.id))) {
       res.status(403).json({ error: 'Доступ запрещен' });
       return;
     }
@@ -200,8 +248,10 @@ export const submitAnswer = async (
       return;
     }
 
-    // Проверить доступ
-    if (progress.userId.toString() !== req.user.id) {
+    // Отправлять ответы могут все участники команды
+    const gameAppl = await GameAppl.findById(gameApplId);
+
+    if (!gameAppl || !(await isTeamMember(gameAppl, req.user.id))) {
       res.status(403).json({ error: 'Доступ запрещен' });
       return;
     }
@@ -255,13 +305,27 @@ export const submitAnswer = async (
       ? Math.floor((new Date().getTime() - lastCompletedTask.completedAt.getTime()) / 1000)
       : Math.floor((new Date().getTime() - progress.gameStartedAt.getTime()) / 1000);
 
-    // Добавить результат
+    // Добавить результат: фиксируем, кто из команды отправил ответ
     progress.completedTasks.push({
       taskId: currentTaskId,
       answer: normalizedAnswer,
       isCorrect,
+      submittedBy: req.user.id,
       timeSpent,
       completedAt: new Date(),
+    });
+
+    // Логировать попытку ответа
+    const answerLog = new TeamLog({
+      team: progress.teamId,
+      gameAppl: gameApplId,
+      game: progress.gameId,
+      user: req.user.id,
+      task: currentTaskId,
+      action: 'task_answered',
+      answer: normalizedAnswer,
+      isCorrect,
+      timestamp: new Date(),
     });
 
     if (isCorrect) {
@@ -270,6 +334,10 @@ export const submitAnswer = async (
       // Перейти к следующему заданию
       progress.currentTaskIndex += 1;
 
+      // Логировать правильный ответ
+      answerLog.action = 'task_correct';
+      await answerLog.save();
+
       // Если это было последнее задание
       if (progress.currentTaskIndex >= progress.taskOrder.length) {
         progress.status = 'completed';
@@ -277,7 +345,37 @@ export const submitAnswer = async (
         progress.totalTime = Math.floor(
           (progress.gameFinishedAt.getTime() - progress.gameStartedAt.getTime()) / 1000
         );
+
+        // Логировать завершение игры
+        const finishLog = new TeamLog({
+          team: progress.teamId,
+          gameAppl: gameApplId,
+          game: progress.gameId,
+          user: req.user.id,
+          task: currentTaskId,
+          action: 'game_finished',
+          timestamp: new Date(),
+        });
+
+        await finishLog.save();
+      } else {
+        // Логировать переход к следующему заданию
+        const nextTaskLog = new TeamLog({
+          team: progress.teamId,
+          gameAppl: gameApplId,
+          game: progress.gameId,
+          user: req.user.id,
+          task: progress.taskOrder[progress.currentTaskIndex],
+          action: 'task_passed',
+          timestamp: new Date(),
+        });
+
+        await nextTaskLog.save();
       }
+    } else {
+      // Логировать неправильный ответ
+      answerLog.action = 'task_incorrect';
+      await answerLog.save();
     }
 
     await progress.save();
@@ -303,11 +401,23 @@ export const getProgress = async (
 
     const progress = await GameTeamProgress.findOne({ gameApplId })
       .populate('taskOrder')
-      .populate('userId', 'nickname');
+      .populate('userId', 'nickname')
+      .populate('completedTasks.submittedBy', 'nickname firstName lastName');
 
     if (!progress) {
       res.status(404).json({ error: 'Прогресс не найден' });
       return;
+    }
+
+    // Доступ: участники команды или администратор
+    const roles = req.user?.roles || [];
+    if (!roles.includes('admin')) {
+      const gameAppl = await GameAppl.findById(gameApplId);
+
+      if (!gameAppl || !(await isTeamMember(gameAppl, req.user.id))) {
+        res.status(403).json({ error: 'Доступ запрещен' });
+        return;
+      }
     }
 
     res.status(200).json(progress);

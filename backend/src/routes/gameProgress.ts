@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import * as progressController from '../controllers/gameProgress';
-import { authMiddleware, adminMiddleware } from '../middleware/auth';
+import { authMiddleware, adminMiddleware, canModerateGame } from '../middleware/auth';
 
 const router = Router();
 
@@ -160,7 +160,7 @@ router.post(
 router.get(
   '/game/:gameId/results',
   authMiddleware,
-  adminMiddleware,
+  canModerateGame,
   progressController.getGameResults
 );
 

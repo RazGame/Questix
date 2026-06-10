@@ -31,9 +31,12 @@ export default function Navbar() {
                 <Link to="/my-appls" className="hover:text-gray-200 transition">
                   Мои заявки
                 </Link>
-                {user?.roles?.includes('admin') && (
+                <Link to="/teams" className="hover:text-gray-200 transition">
+                  Моя команда
+                </Link>
+                {(user?.roles?.includes('admin') || user?.roles?.includes('organizer')) && (
                   <Link to="/admin" className="hover:text-gray-200 transition">
-                    Админ
+                    {user?.roles?.includes('admin') ? 'Админ' : 'Мои игры'}
                   </Link>
                 )}
               </>
@@ -53,10 +56,14 @@ export default function Navbar() {
               </>
             ) : (
               <div className="flex items-center space-x-4">
-                <div className="flex items-center space-x-2">
+                <Link
+                  to="/profile"
+                  className="flex items-center space-x-2 hover:text-gray-200 transition"
+                  title="Мой профиль"
+                >
                   <User size={20} />
                   <span>{user?.nickname}</span>
-                </div>
+                </Link>
                 <button
                   onClick={handleLogout}
                   className="flex items-center space-x-2 hover:text-gray-200 transition"
@@ -93,12 +100,24 @@ export default function Navbar() {
                 >
                   Мои заявки
                 </Link>
-                {user?.roles?.includes('admin') && (
+                <Link
+                  to="/teams"
+                  className="block hover:text-gray-200 transition py-2"
+                >
+                  Моя команда
+                </Link>
+                <Link
+                  to="/profile"
+                  className="block hover:text-gray-200 transition py-2"
+                >
+                  Мой профиль
+                </Link>
+                {(user?.roles?.includes('admin') || user?.roles?.includes('organizer')) && (
                   <Link
                     to="/admin"
                     className="block hover:text-gray-200 transition py-2"
                   >
-                    Админ
+                    {user?.roles?.includes('admin') ? 'Админ' : 'Мои игры'}
                   </Link>
                 )}
               </>

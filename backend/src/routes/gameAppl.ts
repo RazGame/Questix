@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import * as applController from '../controllers/gameAppl';
-import { authMiddleware, adminMiddleware } from '../middleware/auth';
+import { authMiddleware, canModerateGame } from '../middleware/auth';
 
 const router = Router();
 
@@ -77,10 +77,11 @@ router.get('/my', authMiddleware, applController.getMyAppls);
  *       200:
  *         description: Статус обновлен успешно
  */
+// Права (админ или организатор-создатель игры) проверяются в контроллере,
+// так как в параметрах роута ID заявки, а не игры
 router.patch(
   '/:id/status',
   authMiddleware,
-  adminMiddleware,
   applController.updateApplStatus
 );
 
@@ -105,7 +106,7 @@ router.patch(
 router.get(
   '/game/:gameId',
   authMiddleware,
-  adminMiddleware,
+  canModerateGame,
   applController.getGameAppls
 );
 

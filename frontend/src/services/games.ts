@@ -25,4 +25,16 @@ export const gameService = {
   deleteGame: async (id: string): Promise<void> => {
     await api.delete(`/games/${id}`);
   },
+
+  // Добавить соорганизатора по никнейму (админ или создатель игры)
+  addOrganizer: async (gameId: string, nickname: string): Promise<Game> => {
+    const response = await api.post(`/games/${gameId}/organizers`, { nickname });
+    return response.data.game;
+  },
+
+  // Удалить соорганизатора (админ или создатель игры)
+  removeOrganizer: async (gameId: string, userId: string): Promise<Game> => {
+    const response = await api.delete(`/games/${gameId}/organizers/${userId}`);
+    return response.data.game;
+  },
 };

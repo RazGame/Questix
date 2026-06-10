@@ -37,3 +37,59 @@ export const adminMiddleware = (
   }
   next();
 };
+
+export const organizerMiddleware = (
+  req: AuthenticatedRequest,
+  res: Response,
+  next: NextFunction
+): void => {
+  const roles = req.user?.roles || [];
+  if (!roles.includes('admin') && !roles.includes('organizer')) {
+    res.status(403).json({ error: 'Доступ запрещен. Требуется роль организатора или администратора' });
+    return;
+  }
+  next();
+};
+
+export const teamCaptainMiddleware = (
+  req: AuthenticatedRequest,
+  res: Response,
+  next: NextFunction
+): void => {
+  const roles = req.user?.roles || [];
+  if (!roles.includes('team_captain')) {
+    res.status(403).json({ error: 'Доступ запрещен. Требуется роль капитана команды' });
+    return;
+  }
+  next();
+};
+
+// Проверка, может ли пользователь модерировать эту игру:
+// админ - любую, организатор - созданную им или где он соорганизатор
+export const canModerateGame = async (
+  req: AuthenticatedRequest,
+  res: Response,
+  next: NextFunction
+): Promise<void> => {
+  try {
+    const { Game } = await import('../models/Game');
+    const { isGameModerator } = await import('../services/gamePermissions');
+    const gameId = req.params.gameId || req.params.id;
+    const game = await Game.findById(gameId);
+
+    if (!game) {
+      res.status(404).json({ error: 'Игра не найдена' });
+      return;
+    }
+
+    if (isGameModerator(game, req.user)) {
+      next();
+      return;
+    }
+
+    res.status(403).json({ error: 'У вас нет прав для модерирования этой игры' });
+  } catch (error) {
+    console.error('Ошибка проверки прав:', error);
+    res.status(500).json({ error: 'Ошибка сервера' });
+  }
+};

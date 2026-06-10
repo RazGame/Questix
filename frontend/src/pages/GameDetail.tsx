@@ -4,7 +4,7 @@ import { gameService } from '../services/games';
 import { applService } from '../services/appls';
 import { Game, GameAppl } from '../types';
 import { useAuthStore } from '../store/authStore';
-import { CalendarCheck, CalendarClock, MapPin, Trophy, Users } from 'lucide-react';
+import { CalendarCheck, CalendarClock, MapPin, Trophy, Users, UserCog } from 'lucide-react';
 import { formatDateTime, getQuestState } from '../utils/date';
 
 export default function GameDetail() {
@@ -18,7 +18,6 @@ export default function GameDetail() {
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
   const [isApplying, setIsApplying] = useState(false);
-  const [teamName, setTeamName] = useState('');
   const [now, setNow] = useState(() => new Date());
 
   useEffect(() => {
@@ -35,10 +34,8 @@ export default function GameDetail() {
       setIsLoading(true);
       const data = await gameService.getGameById(id!);
       setGame(data);
-      if (token) {
-        const appls = await applService.getGameAppls(id!);
-        setAppls(appls);
-      }
+      // Заявки приходят вместе с игрой; отдельный endpoint доступен только модераторам
+      setAppls(Array.isArray(data.gameAppls) ? data.gameAppls : []);
     } catch (err: any) {
       setError('Ошибка загрузки квеста');
     } finally {
@@ -55,12 +52,8 @@ export default function GameDetail() {
     setIsApplying(true);
     setError('');
     try {
-      await applService.createAppl({
-        gameId: id!,
-        teamName: teamName || undefined,
-      });
+      await applService.createAppl({ gameId: id! });
       setSuccess('Заявка подана успешно!');
-      setTeamName('');
       setTimeout(() => navigate('/my-appls'), 1500);
     } catch (err: any) {
       setError(
@@ -81,6 +74,12 @@ export default function GameDetail() {
 
   const questState = getQuestState(game.dateofstart, game.dateofend, now);
   const canApply = questState === 'scheduled';
+
+  // Создатель игры + соорганизаторы
+  const organizerNames = [
+    typeof game.createdBy === 'object' ? game.createdBy?.nickname : null,
+    ...(game.organizers || []).map((o) => o.nickname),
+  ].filter(Boolean) as string[];
 
   return (
     <div className="max-w-4xl mx-auto p-4">
@@ -133,6 +132,17 @@ export default function GameDetail() {
               <Users className="mr-3 text-primary" />
               <span>Участников: {appls.length}</span>
             </div>
+            {organizerNames.length > 0 && (
+              <div className="flex items-start text-lg">
+                <UserCog className="mr-3 mt-1 text-primary" />
+                <div>
+                  <span className="block text-sm text-gray-500">
+                    {organizerNames.length > 1 ? 'Организаторы' : 'Организатор'}
+                  </span>
+                  <span>{organizerNames.join(', ')}</span>
+                </div>
+              </div>
+            )}
           </div>
 
           <div className="bg-gray-50 p-4 rounded">
@@ -141,14 +151,16 @@ export default function GameDetail() {
             </div>
             {token ? (
               <div className="space-y-3">
-                <input
-                  type="text"
-                  placeholder="Название команды (опционально)"
-                  value={teamName}
-                  onChange={(e) => setTeamName(e.target.value)}
-                  disabled={!canApply}
-                  className="w-full border rounded px-3 py-2"
-                />
+                <p className="text-sm text-gray-600">
+                  Заявка подаётся от вашей команды. Подать её может только капитан —{' '}
+                  <button
+                    onClick={() => navigate('/teams')}
+                    className="text-primary underline"
+                  >
+                    управление командой
+                  </button>
+                  .
+                </p>
                 <button
                   onClick={handleApply}
                   disabled={isApplying || !canApply}
@@ -166,6 +178,14 @@ export default function GameDetail() {
                   <p className="text-sm text-gray-600">
                     Заявку можно подать только до старта квеста.
                   </p>
+                )}
+                {game.published && (
+                  <button
+                    onClick={() => navigate(`/games/${game._id}/results`)}
+                    className="w-full bg-green-500 text-white py-2 rounded hover:bg-green-600 transition"
+                  >
+                    📊 Посмотреть результаты
+                  </button>
                 )}
               </div>
             ) : (

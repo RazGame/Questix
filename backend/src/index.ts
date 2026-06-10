@@ -11,6 +11,7 @@ import applRoutes from './routes/gameAppl';
 import userRoutes from './routes/user';
 import taskRoutes from './routes/task';
 import progressRoutes from './routes/gameProgress';
+import teamRoutes from './routes/team';
 
 const app: Application = express();
 
@@ -56,6 +57,7 @@ app.use('/appls', applRoutes);
 app.use('/users', userRoutes);
 app.use('/tasks', taskRoutes);
 app.use('/progress', progressRoutes);
+app.use('/teams', teamRoutes);
 
 // Health check
 app.get('/health', (req, res) => {

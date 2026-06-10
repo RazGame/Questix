@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import * as taskController from '../controllers/task';
-import { authMiddleware, adminMiddleware } from '../middleware/auth';
+import { authMiddleware, canModerateGame } from '../middleware/auth';
 
 const router = Router();
 
@@ -89,7 +89,7 @@ router.get('/:taskId', taskController.getTaskById);
 router.post(
   '/game/:gameId',
   authMiddleware,
-  adminMiddleware,
+  canModerateGame,
   taskController.createTask
 );
 
@@ -126,10 +126,10 @@ router.post(
  *       200:
  *         description: Задание обновлено
  */
+// Права (админ или организатор-создатель игры) проверяются в контроллере
 router.put(
   '/:taskId',
   authMiddleware,
-  adminMiddleware,
   taskController.updateTask
 );
 
@@ -151,10 +151,10 @@ router.put(
  *       200:
  *         description: Задание удалено
  */
+// Права (админ или организатор-создатель игры) проверяются в контроллере
 router.delete(
   '/:taskId',
   authMiddleware,
-  adminMiddleware,
   taskController.deleteTask
 );
 
@@ -191,7 +191,7 @@ router.delete(
 router.post(
   '/game/:gameId/reorder',
   authMiddleware,
-  adminMiddleware,
+  canModerateGame,
   taskController.reorderTasks
 );
 

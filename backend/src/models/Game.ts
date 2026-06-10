@@ -33,6 +33,10 @@ const gameSchema = new mongoose.Schema<IGame>(
       type: String,
       required: [true, 'Описание обязательно'],
     },
+    published: {
+      type: Boolean,
+      default: false,
+    },
     gameAppls: [
       {
         type: mongoose.Schema.Types.ObjectId,
@@ -43,6 +47,12 @@ const gameSchema = new mongoose.Schema<IGame>(
       type: mongoose.Schema.Types.ObjectId,
       ref: 'User',
     },
+    organizers: [
+      {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'User',
+      },
+    ],
   },
   { timestamps: true }
 );

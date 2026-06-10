@@ -7,7 +7,7 @@
 - [API.md](API.md) - REST API и бизнес-правила.
 - [ARCHITECTURE.md](ARCHITECTURE.md) - структура приложения, модели и потоки данных.
 - [DEPLOYMENT.md](DEPLOYMENT.md) - Docker, переменные окружения, backup.
-- [TODO.md](TODO.md) - запланированные изменения продукта и архитектуры.
+- [TODO.md](TODO.md) - запланированные изменения продукта и архитектуры (сейчас пусто: командный функционал, логи и статистика реализованы).
 - [../backend/README.md](../backend/README.md) - backend-команды и env.
 - [../frontend/README.md](../frontend/README.md) - frontend-команды и структура.
 

@@ -13,6 +13,10 @@ const gameApplSchema = new mongoose.Schema<IGameAppl>(
       ref: 'Game',
       required: true,
     },
+    team: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Team',
+    },
     status: {
       type: String,
       enum: ['pending', 'approved', 'rejected', 'completed'],

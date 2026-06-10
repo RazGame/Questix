@@ -3,13 +3,13 @@ import Joi from 'joi';
 import { GameAppl } from '../models/GameAppl';
 import { User } from '../models/User';
 import { Game } from '../models/Game';
+import { Team } from '../models/Team';
 import { AuthenticatedRequest } from '../middleware/auth';
 import { canApplyToQuest } from '../services/questState';
+import { isGameModerator } from '../services/gamePermissions';
 
 const applSchema = Joi.object({
   gameId: Joi.string().required(),
-  teamName: Joi.string().optional(),
-  teamMembers: Joi.array().items(Joi.string()).optional(),
 });
 
 export const createAppl = async (
@@ -38,20 +38,32 @@ export const createAppl = async (
       return;
     }
 
-    // Проверить, не подана ли уже заявка
+    // Заявка подаётся от команды: пользователь должен быть капитаном
+    const team = await Team.findOne({ captain: req.user.id });
+
+    if (!team) {
+      res.status(400).json({
+        error: 'Заявку может подать только капитан команды. Сначала создайте команду',
+      });
+      return;
+    }
+
+    // Проверить, не подана ли уже заявка этой командой или этим пользователем
     const existingAppl = await GameAppl.findOne({
-      userId: req.user.id,
       gameId: value.gameId,
+      $or: [{ userId: req.user.id }, { team: team._id }],
     });
 
     if (existingAppl) {
-      res.status(409).json({ error: 'Вы уже подали заявку на этот квест' });
+      res.status(409).json({ error: 'Ваша команда уже подала заявку на этот квест' });
       return;
     }
 
     const newAppl = new GameAppl({
       userId: req.user.id,
-      ...value,
+      gameId: value.gameId,
+      team: team._id,
+      teamName: team.name,
     });
 
     await newAppl.save();
@@ -85,9 +97,17 @@ export const getMyAppls = async (
   res: Response
 ): Promise<void> => {
   try {
-    const appls = await GameAppl.find({ userId: req.user.id })
-      .populate('gameId', 'title city prize deposit dateofstart dateofend')
-      .populate('userId', 'nickname firstName lastName');
+    // Показываем заявки, поданные пользователем, и заявки команд, где он участник
+    const teamIds = await Team.find({
+      $or: [{ captain: req.user.id }, { members: req.user.id }],
+    }).distinct('_id');
+
+    const appls = await GameAppl.find({
+      $or: [{ userId: req.user.id }, { team: { $in: teamIds } }],
+    })
+      .populate('gameId', 'title city prize deposit dateofstart dateofend published')
+      .populate('userId', 'nickname firstName lastName')
+      .populate('team', 'name captain members');
 
     res.status(200).json(appls);
   } catch (error) {
@@ -104,6 +124,21 @@ export const updateApplStatus = async (
 
     if (!['pending', 'approved', 'rejected', 'completed'].includes(status)) {
       res.status(400).json({ error: 'Неверный статус' });
+      return;
+    }
+
+    const existingAppl = await GameAppl.findById(req.params.id);
+
+    if (!existingAppl) {
+      res.status(404).json({ error: 'Заявка не найдена' });
+      return;
+    }
+
+    // Модерировать заявки может админ, создатель игры или соорганизатор
+    const game = await Game.findById(existingAppl.gameId);
+
+    if (!game || !isGameModerator(game, req.user)) {
+      res.status(403).json({ error: 'У вас нет прав для модерирования заявок этой игры' });
       return;
     }
 

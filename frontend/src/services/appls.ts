@@ -2,11 +2,8 @@ import api from './api';
 import { GameAppl } from '../types';
 
 export const applService = {
-  createAppl: async (data: {
-    gameId: string;
-    teamName?: string;
-    teamMembers?: string[];
-  }): Promise<GameAppl> => {
+  // Заявка подаётся капитаном от имени его команды
+  createAppl: async (data: { gameId: string }): Promise<GameAppl> => {
     const response = await api.post('/appls', data);
     return response.data.appl;
   },

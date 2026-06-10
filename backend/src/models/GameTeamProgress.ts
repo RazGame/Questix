@@ -4,14 +4,15 @@ export interface IGameTeamProgress {
   _id?: string;
   gameApplId: mongoose.Types.ObjectId; // Ссылка на GameAppl (заявка команды)
   gameId: mongoose.Types.ObjectId;
-  teamId: mongoose.Types.ObjectId; // ID заявки команды
-  userId: mongoose.Types.ObjectId; // Капитан команды
+  teamId: mongoose.Types.ObjectId; // ID команды (Team)
+  userId: mongoose.Types.ObjectId; // Капитан команды (кто подал заявку)
   taskOrder: mongoose.Types.ObjectId[]; // Порядок заданий для этой команды (массив Task IDs)
   currentTaskIndex: number; // Какой сейчас задачи индекс
   completedTasks: {
     taskId: mongoose.Types.ObjectId;
     answer: string;
     isCorrect: boolean;
+    submittedBy?: mongoose.Types.ObjectId; // Участник, отправивший ответ
     timeSpent: number; // Секунды
     completedAt: Date;
   }[];
@@ -38,7 +39,7 @@ const gameTeamProgressSchema = new mongoose.Schema<IGameTeamProgress>(
     },
     teamId: {
       type: mongoose.Schema.Types.ObjectId,
-      ref: 'GameAppl',
+      ref: 'Team',
       required: true,
     },
     userId: {
@@ -59,6 +60,10 @@ const gameTeamProgressSchema = new mongoose.Schema<IGameTeamProgress>(
         taskId: mongoose.Schema.Types.ObjectId,
         answer: String,
         isCorrect: Boolean,
+        submittedBy: {
+          type: mongoose.Schema.Types.ObjectId,
+          ref: 'User',
+        },
         timeSpent: Number,
         completedAt: Date,
       },

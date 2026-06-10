@@ -46,10 +46,11 @@ Backend слушает `PORT`, по умолчанию `5000`.
 ```text
 src/
 ├── config/       # env и MongoDB
-├── controllers/  # auth, games, applications, tasks, progress
-├── middleware/   # auth/admin middleware
-├── models/       # User, Game, GameAppl, Task, GameTeamProgress
+├── controllers/  # auth, games, applications, tasks, progress, teams, users
+├── middleware/   # auth/admin/organizer middleware, canModerateGame
+├── models/       # User, Team, TeamLog, Game, GameAppl, Task, GameTeamProgress
 ├── routes/       # Express routes
+├── services/     # общие бизнес-правила (questState)
 ├── types/        # TypeScript interfaces
 └── utils/        # password/JWT helpers
 ```

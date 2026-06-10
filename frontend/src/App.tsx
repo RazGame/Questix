@@ -10,6 +10,9 @@ import MyAppls from './pages/MyAppls';
 import AdminPanel from './pages/AdminPanel';
 import TaskManager from './pages/TaskManager';
 import QuestGame from './pages/QuestGame';
+import Profile from './pages/Profile';
+import { TeamManager } from './pages/TeamManager';
+import { GameStatisticsPage } from './pages/GameResults';
 import PrivateRoute from './components/PrivateRoute';
 import ErrorBoundary from './components/ErrorBoundary';
 
@@ -32,16 +35,32 @@ function App() {
               element={<PrivateRoute component={MyAppls} />}
             />
             <Route
+              path="/profile"
+              element={<PrivateRoute component={Profile} />}
+            />
+            <Route
               path="/game/:gameId/play/:gameApplId"
               element={<PrivateRoute component={QuestGame} />}
             />
             <Route
+              path="/teams"
+              element={<PrivateRoute component={TeamManager} />}
+            />
+            <Route
+              path="/teams/:teamId"
+              element={<PrivateRoute component={TeamManager} />}
+            />
+            <Route
+              path="/games/:gameId/results"
+              element={<PrivateRoute component={GameStatisticsPage} />}
+            />
+            <Route
               path="/admin"
-              element={<PrivateRoute component={AdminPanel} role="admin" />}
+              element={<PrivateRoute component={AdminPanel} roles={['admin', 'organizer']} />}
             />
             <Route
               path="/admin/game/:gameId/tasks"
-              element={<PrivateRoute component={TaskManager} role="admin" />}
+              element={<PrivateRoute component={TaskManager} roles={['admin', 'organizer']} />}
             />
           </Routes>
         </ErrorBoundary>
