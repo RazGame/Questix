@@ -6,7 +6,7 @@ import { teams, ITeam } from '../services/teams';
 import { Game, GameAppl } from '../types';
 import { useAuthStore } from '../store/authStore';
 import { CalendarCheck, CalendarClock, MapPin, Trophy, Users, UserCog } from 'lucide-react';
-import { formatDateTime, getQuestState } from '../utils/date';
+import { formatDateTimeShort, getQuestState } from '../utils/date';
 
 export default function GameDetail() {
   const { id } = useParams();
@@ -15,6 +15,7 @@ export default function GameDetail() {
 
   const [game, setGame] = useState<Game | null>(null);
   const [appls, setAppls] = useState<GameAppl[]>([]);
+  const [myAppls, setMyAppls] = useState<GameAppl[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
@@ -30,10 +31,11 @@ export default function GameDetail() {
   useEffect(() => {
     if (!token) {
       setMyTeams([]);
+      setMyAppls([]);
       return;
     }
 
-    loadMyTeams();
+    loadViewerData();
   }, [token]);
 
   useEffect(() => {
@@ -55,13 +57,18 @@ export default function GameDetail() {
     }
   };
 
-  const loadMyTeams = async () => {
+  const loadViewerData = async () => {
     try {
       setIsTeamsLoading(true);
-      const data = await teams.getUserTeams();
-      setMyTeams(data);
+      const [teamsData, applsData] = await Promise.all([
+        teams.getUserTeams(),
+        applService.getMyAppls(),
+      ]);
+      setMyTeams(teamsData);
+      setMyAppls(Array.isArray(applsData) ? applsData : []);
     } catch {
       setMyTeams([]);
+      setMyAppls([]);
     } finally {
       setIsTeamsLoading(false);
     }
@@ -82,7 +89,7 @@ export default function GameDetail() {
     try {
       await applService.createAppl({ gameId: id! });
       setSuccess('Заявка подана успешно!');
-      setTimeout(() => navigate('/my-appls'), 1500);
+      await Promise.all([loadGameDetails(), loadViewerData()]);
     } catch (err: any) {
       setError(
         err.response?.data?.error || 'Ошибка при подаче заявки'
@@ -102,10 +109,31 @@ export default function GameDetail() {
 
   const questState = getQuestState(game.dateofstart, game.dateofend, now);
   const isCaptain = myTeams.some((team) => team.captain._id === user?.id);
-  const canApply = questState === 'scheduled' && isCaptain;
+  const myAppl = myAppls.find((appl) => {
+    const applGame = (appl as any).gameId;
+    const applGameId = typeof applGame === 'object' ? applGame?._id : applGame;
+    return applGameId === game._id;
+  });
+  const myTeamIds = new Set(myTeams.map((team) => team._id).filter(Boolean));
+  const myApplTeamId =
+    typeof myAppl?.team === 'object' ? myAppl.team?._id : myAppl?.team;
+  const isCurrentTeamAppl = myApplTeamId ? myTeamIds.has(myApplTeamId) : !!myAppl;
+  const canEnterGame =
+    myAppl?.status === 'approved' && questState === 'active' && isCurrentTeamAppl;
+  const canApply = !myAppl && questState === 'scheduled' && isCaptain;
   const applyButtonText = isTeamsLoading
     ? 'Проверяем команду...'
-    : isApplying
+    : canEnterGame
+      ? 'Войти в игру'
+      : myAppl?.status === 'pending'
+        ? 'Заявка на рассмотрении'
+        : myAppl?.status === 'approved'
+          ? 'Заявка одобрена'
+          : myAppl?.status === 'rejected'
+            ? 'Заявка отклонена'
+            : myAppl?.status === 'completed'
+              ? 'Квест завершен'
+              : isApplying
       ? 'Отправляется...'
       : questState === 'finished'
         ? 'Квест завершен'
@@ -115,11 +143,17 @@ export default function GameDetail() {
             ? 'Подать заявку'
             : 'Подать заявку';
 
-  // Создатель игры + соорганизаторы
-  const organizerNames = [
-    typeof game.createdBy === 'object' ? game.createdBy?.nickname : null,
-    ...(game.organizers || []).map((o) => o.nickname),
-  ].filter(Boolean) as string[];
+  const organizers = [
+    typeof game.createdBy === 'object' ? game.createdBy : null,
+    ...(game.organizers || []),
+  ].filter(Boolean);
+  const appliedTeams = appls
+    .map((appl) => ({
+      id: appl.team?._id,
+      name: appl.team?.name || appl.teamName,
+      status: appl.status,
+    }))
+    .filter((team) => team.name);
 
   return (
     <div className="max-w-4xl mx-auto p-4">
@@ -154,32 +188,60 @@ export default function GameDetail() {
               <CalendarClock className="mr-3 mt-1 text-primary" />
               <div>
                 <span className="block text-sm text-zinc-500">Дата начала</span>
-                <span>{formatDateTime(game.dateofstart)}</span>
+                <span>{formatDateTimeShort(game.dateofstart)}</span>
               </div>
             </div>
             <div className="flex items-start text-lg">
               <CalendarCheck className="mr-3 mt-1 text-primary" />
               <div>
                 <span className="block text-sm text-zinc-500">Дата окончания</span>
-                <span>{formatDateTime(game.dateofend)}</span>
+                <span>{formatDateTimeShort(game.dateofend)}</span>
               </div>
             </div>
             <div className="flex items-center text-lg">
               <Trophy className="mr-3 text-primary" />
               <span>Приз: {game.prize}</span>
             </div>
-            <div className="flex items-center text-lg">
-              <Users className="mr-3 text-primary" />
-              <span>Участников: {appls.length}</span>
-            </div>
-            {organizerNames.length > 0 && (
+            {organizers.length > 0 && (
               <div className="flex items-start text-lg">
                 <UserCog className="mr-3 mt-1 text-primary" />
                 <div>
                   <span className="block text-sm text-zinc-500">
-                    {organizerNames.length > 1 ? 'Организаторы' : 'Организатор'}
+                    {organizers.length > 1 ? 'Организаторы' : 'Организатор'}
                   </span>
-                  <span>{organizerNames.join(', ')}</span>
+                  <div className="flex flex-wrap gap-2">
+                    {organizers.map((organizer) => (
+                      <button
+                        key={organizer!._id}
+                        type="button"
+                        onClick={() => navigate(`/profile/${organizer!._id}`)}
+                        className="rounded-full bg-white/5 px-3 py-1 text-sm font-bold text-violet-200 transition hover:bg-white/10 hover:text-white"
+                      >
+                        @{organizer!.nickname}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            )}
+            {appliedTeams.length > 0 && (
+              <div className="flex items-start text-lg">
+                <Users className="mr-3 mt-1 text-primary" />
+                <div>
+                  <span className="block text-sm text-zinc-500">Команды</span>
+                  <div className="mt-1 flex flex-wrap gap-2">
+                    {appliedTeams.map((team) => (
+                      <button
+                        key={`${team.id || team.name}-${team.status}`}
+                        type="button"
+                        onClick={() => team.id && navigate(`/teams/${team.id}`)}
+                        disabled={!team.id}
+                        className="rounded-full bg-white/5 px-3 py-1 text-sm font-bold text-zinc-200 transition hover:bg-white/10 hover:text-white disabled:cursor-default disabled:hover:bg-white/5"
+                      >
+                        {team.name}
+                      </button>
+                    ))}
+                  </div>
                 </div>
               </div>
             )}
@@ -204,13 +266,20 @@ export default function GameDetail() {
                   </p>
                 )}
                 <button
-                  onClick={handleApply}
-                  disabled={isApplying || isTeamsLoading || !canApply}
+                  onClick={() => {
+                    if (canEnterGame && myAppl) {
+                      navigate(`/game/${game._id}/play/${myAppl._id}`);
+                      return;
+                    }
+
+                    handleApply();
+                  }}
+                  disabled={isApplying || isTeamsLoading || (!canApply && !canEnterGame)}
                   className="w-full btn-grad py-2 rounded transition disabled:cursor-not-allowed disabled:opacity-40 disabled:grayscale"
                 >
                   {applyButtonText}
                 </button>
-                {questState !== 'scheduled' && (
+                {!myAppl && questState !== 'scheduled' && (
                   <p className="text-sm text-zinc-400">
                     Заявку можно подать только до старта квеста.
                   </p>

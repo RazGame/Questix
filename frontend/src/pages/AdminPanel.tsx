@@ -5,8 +5,8 @@ import { applService } from '../services/appls';
 import { progressService } from '../services/progress';
 import { userService, AdminUser } from '../services/users';
 import { Game, GameAppl, GameTeamProgress, GameOrganizer } from '../types';
-import { Plus, Save, Settings, Trash2, UserPlus, X } from 'lucide-react';
-import { dateTimeLocalToIso } from '../utils/date';
+import { Edit2, Plus, Save, Search, Settings, Trash2, UserPlus, X } from 'lucide-react';
+import { dateTimeLocalToIso, getQuestState } from '../utils/date';
 import { useAuthStore } from '../store/authStore';
 import RichTextEditor from '../components/RichTextEditor';
 import UserSearchInput from '../components/UserSearchInput';
@@ -21,12 +21,36 @@ const ASSIGNABLE_ROLES: Array<{ value: string; label: string }> = [
   { value: 'organizer', label: 'Организатор' },
 ];
 
-const APPL_STATUSES: Array<{ value: GameAppl['status']; label: string }> = [
-  { value: 'pending', label: 'На рассмотрении' },
-  { value: 'approved', label: 'Одобрено' },
-  { value: 'rejected', label: 'Отклонено' },
-  { value: 'completed', label: 'Завершено' },
+const APPL_STATUSES: Array<{ value: GameAppl['status']; label: string; tone: string }> = [
+  { value: 'pending', label: 'На рассмотрении', tone: 'bg-amber-400/15 text-amber-200 border-amber-300/30' },
+  { value: 'approved', label: 'Одобрено', tone: 'bg-emerald-400/15 text-emerald-200 border-emerald-300/30' },
+  { value: 'rejected', label: 'Отклонено', tone: 'bg-rose-400/15 text-rose-200 border-rose-300/30' },
+  { value: 'completed', label: 'Завершено', tone: 'bg-sky-400/15 text-sky-200 border-sky-300/30' },
 ];
+
+type UserColumnFilters = {
+  person: string;
+  email: string;
+  city: string;
+  role: string;
+};
+
+const toDateTimeLocalValue = (value?: string) => {
+  if (!value) return '';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return '';
+
+  const offsetDate = new Date(date.getTime() - date.getTimezoneOffset() * 60000);
+  return offsetDate.toISOString().slice(0, 16);
+};
+
+const gameSortWeight = (game: Game) => {
+  const state = getQuestState(game.dateofstart, game.dateofend);
+  if (state === 'active') return 0;
+  if (state === 'scheduled') return 1;
+  if (state === 'finished') return 2;
+  return 3;
+};
 
 export default function AdminPanel() {
   const navigate = useNavigate();
@@ -38,10 +62,17 @@ export default function AdminPanel() {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState('');
   const [showCreateForm, setShowCreateForm] = useState(false);
-  const [activeTab, setActiveTab] = useState<'appls' | 'results' | 'organizers'>('appls');
+  const [activeTab, setActiveTab] = useState<'details' | 'appls' | 'results' | 'organizers'>('details');
   const [mainTab, setMainTab] = useState<'games' | 'users'>('games');
   const [users, setUsers] = useState<AdminUser[]>([]);
   const [usersLoaded, setUsersLoaded] = useState(false);
+  const [userSearch, setUserSearch] = useState('');
+  const [userFilters, setUserFilters] = useState<UserColumnFilters>({
+    person: '',
+    email: '',
+    city: '',
+    role: '',
+  });
   const [newOrganizerNickname, setNewOrganizerNickname] = useState('');
   const [draftOrganizerNickname, setDraftOrganizerNickname] = useState('');
   const [draftOrganizerNicknames, setDraftOrganizerNicknames] = useState<string[]>([]);
@@ -55,10 +86,93 @@ export default function AdminPanel() {
     (game.organizers || []).some((o) => o._id === user?.id);
 
   const visibleGames = games.filter(canModerate);
+  const sortedVisibleGames = [...visibleGames].sort((a, b) => {
+    const stateDiff = gameSortWeight(a) - gameSortWeight(b);
+
+    if (stateDiff !== 0) {
+      return stateDiff;
+    }
+
+    const aStart = new Date(a.dateofstart).getTime();
+    const bStart = new Date(b.dateofstart).getTime();
+
+    if (gameSortWeight(a) === 2) {
+      return bStart - aStart;
+    }
+
+    return aStart - bStart;
+  });
+  const normalizedUserSearch = userSearch.trim().toLowerCase();
+  const userFilterValues = {
+    person: userFilters.person.trim().toLowerCase(),
+    email: userFilters.email.trim().toLowerCase(),
+    city: userFilters.city.trim().toLowerCase(),
+    role: userFilters.role,
+  };
+  const hasUserFilters =
+    !!normalizedUserSearch ||
+    !!userFilterValues.person ||
+    !!userFilterValues.email ||
+    !!userFilterValues.city ||
+    !!userFilterValues.role;
+  const filteredUsers = users.filter((u) => {
+    const matchesSearch = normalizedUserSearch
+      ? [
+          u.nickname,
+          u.firstName,
+          u.lastName,
+          u.username,
+          u.city,
+          u.phone,
+          ...u.roles,
+        ]
+          .filter(Boolean)
+          .join(' ')
+          .toLowerCase()
+          .includes(normalizedUserSearch)
+      : true;
+    const matchesPerson = userFilterValues.person
+      ? [u.nickname, u.firstName, u.lastName]
+          .filter(Boolean)
+          .join(' ')
+          .toLowerCase()
+          .includes(userFilterValues.person)
+      : true;
+    const matchesEmail = userFilterValues.email
+      ? (u.username || '').toLowerCase().includes(userFilterValues.email)
+      : true;
+    const matchesCity = userFilterValues.city
+      ? (u.city || '').toLowerCase().includes(userFilterValues.city)
+      : true;
+    const matchesRole = userFilterValues.role ? u.roles.includes(userFilterValues.role) : true;
+
+    return matchesSearch && matchesPerson && matchesEmail && matchesCity && matchesRole;
+  });
+  const availableUserRoles = Array.from(
+    new Set(users.flatMap((u) => u.roles))
+  ).sort((a, b) => a.localeCompare(b));
+  const clearUserFilters = () => {
+    setUserSearch('');
+    setUserFilters({
+      person: '',
+      email: '',
+      city: '',
+      role: '',
+    });
+  };
   const currentGame = games.find((g) => g._id === selectedGame) || null;
   const canManageOrganizers =
     !!currentGame && (isAdmin || organizerId(currentGame.createdBy) === user?.id);
   const [formData, setFormData] = useState({
+    title: '',
+    city: '',
+    dateofstart: '',
+    dateofend: '',
+    deposit: '',
+    prize: '',
+    description: '',
+  });
+  const [editFormData, setEditFormData] = useState({
     title: '',
     city: '',
     dateofstart: '',
@@ -92,6 +206,20 @@ export default function AdminPanel() {
       loadGameResults();
     }
   }, [selectedGame]);
+
+  useEffect(() => {
+    if (!currentGame) return;
+
+    setEditFormData({
+      title: currentGame.title || '',
+      city: currentGame.city || '',
+      dateofstart: toDateTimeLocalValue(currentGame.dateofstart),
+      dateofend: toDateTimeLocalValue(currentGame.dateofend),
+      deposit: currentGame.deposit || '',
+      prize: currentGame.prize || '',
+      description: currentGame.description || '',
+    });
+  }, [currentGame?._id]);
 
   const loadGames = async () => {
     try {
@@ -140,6 +268,28 @@ export default function AdminPanel() {
         err.response?.data?.errors?.[0] ||
           err.response?.data?.error ||
           'Ошибка создания квеста'
+      );
+    }
+  };
+
+  const handleUpdateGame = async (e: React.FormEvent) => {
+    e.preventDefault();
+
+    if (!currentGame) return;
+
+    try {
+      const updated = await gameService.updateGame(currentGame._id, {
+        ...editFormData,
+        dateofstart: dateTimeLocalToIso(editFormData.dateofstart),
+        dateofend: dateTimeLocalToIso(editFormData.dateofend),
+      });
+      setGames((prev) => prev.map((game) => (game._id === updated._id ? { ...game, ...updated } : game)));
+      setError('');
+    } catch (err: any) {
+      setError(
+        err.response?.data?.errors?.[0] ||
+          err.response?.data?.error ||
+          'Ошибка обновления квеста'
       );
     }
   };
@@ -290,66 +440,156 @@ export default function AdminPanel() {
           {!usersLoaded ? (
             <div className="p-6 text-center text-zinc-400">Загрузка пользователей...</div>
           ) : (
-            <div className="overflow-x-auto">
-              <table className="min-w-full divide-y divide-white/10 text-sm">
-                <thead className="bg-white/5">
-                  <tr>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-zinc-300 uppercase">Пользователь</th>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-zinc-300 uppercase">Email</th>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-zinc-300 uppercase">Город</th>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-zinc-300 uppercase">Роли</th>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-zinc-300 uppercase">Назначить</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-white/10">
-                  {users.map((u) => (
-                    <tr key={u._id} className="hover:bg-white/5">
-                      <td className="px-4 py-3 whitespace-nowrap">
-                        <div className="font-bold text-zinc-100">@{u.nickname}</div>
-                        <div className="text-zinc-400">
-                          {u.firstName} {u.lastName}
-                        </div>
-                      </td>
-                      <td className="px-4 py-3 whitespace-nowrap text-zinc-400">{u.username}</td>
-                      <td className="px-4 py-3 whitespace-nowrap text-zinc-400">{u.city}</td>
-                      <td className="px-4 py-3">
-                        <div className="flex flex-wrap gap-1">
-                          {u.roles.map((role) => (
-                            <span
-                              key={role}
-                              className={`inline-block px-2 py-0.5 text-xs rounded-full font-semibold ${
-                                role === 'admin'
-                                  ? 'bg-rose-400/10 text-rose-300'
-                                  : role === 'organizer'
-                                  ? 'bg-violet-400/10 text-violet-300'
-                                  : role === 'team_captain'
-                                  ? 'bg-amber-400/10 text-amber-300'
-                                  : 'bg-white/10 text-zinc-300'
-                              }`}
-                            >
-                              {role}
-                            </span>
-                          ))}
-                        </div>
-                      </td>
-                      <td className="px-4 py-3 whitespace-nowrap">
-                        <div className="flex gap-3">
-                          {ASSIGNABLE_ROLES.map(({ value, label }) => (
-                            <label key={value} className="flex items-center gap-1 cursor-pointer">
-                              <input
-                                type="checkbox"
-                                checked={u.roles.includes(value)}
-                                onChange={() => handleToggleRole(u, value)}
-                              />
-                              <span className="text-xs text-zinc-300">{label}</span>
-                            </label>
-                          ))}
-                        </div>
-                      </td>
+            <div>
+              <div className="border-b border-white/10 p-4">
+                <div className="flex flex-wrap items-end gap-3">
+                  <label className="relative block min-w-[16rem] flex-1 max-w-md">
+                    <Search
+                      size={17}
+                      className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-zinc-500"
+                    />
+                    <input
+                      type="search"
+                      value={userSearch}
+                      onChange={(e) => setUserSearch(e.target.value)}
+                      placeholder="Поиск по всем столбцам"
+                      className="input-dark pl-10"
+                    />
+                  </label>
+                  {hasUserFilters && (
+                    <button
+                      type="button"
+                      onClick={clearUserFilters}
+                      className="inline-flex items-center gap-2 rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-sm font-bold text-zinc-200 transition hover:bg-white/10"
+                    >
+                      <X size={16} />
+                      Сбросить
+                    </button>
+                  )}
+                  <span className="text-sm text-zinc-500">
+                    Найдено: {filteredUsers.length} из {users.length}
+                  </span>
+                </div>
+              </div>
+
+              <div className="overflow-x-auto">
+                <table className="min-w-full divide-y divide-white/10 text-sm">
+                  <thead className="bg-white/5">
+                    <tr>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-zinc-300 uppercase">Пользователь</th>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-zinc-300 uppercase">Email</th>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-zinc-300 uppercase">Город</th>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-zinc-300 uppercase">Роли</th>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-zinc-300 uppercase">Назначить</th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
+                    <tr className="border-t border-white/10 bg-[#17111f]">
+                      <th className="px-4 py-2 text-left">
+                        <input
+                          type="search"
+                          value={userFilters.person}
+                          onChange={(e) => setUserFilters((prev) => ({ ...prev, person: e.target.value }))}
+                          placeholder="Ник или имя"
+                          className="input-dark py-1.5 text-xs"
+                        />
+                      </th>
+                      <th className="px-4 py-2 text-left">
+                        <input
+                          type="search"
+                          value={userFilters.email}
+                          onChange={(e) => setUserFilters((prev) => ({ ...prev, email: e.target.value }))}
+                          placeholder="Email"
+                          className="input-dark py-1.5 text-xs"
+                        />
+                      </th>
+                      <th className="px-4 py-2 text-left">
+                        <input
+                          type="search"
+                          value={userFilters.city}
+                          onChange={(e) => setUserFilters((prev) => ({ ...prev, city: e.target.value }))}
+                          placeholder="Город"
+                          className="input-dark py-1.5 text-xs"
+                        />
+                      </th>
+                      <th className="px-4 py-2 text-left">
+                        <select
+                          value={userFilters.role}
+                          onChange={(e) => setUserFilters((prev) => ({ ...prev, role: e.target.value }))}
+                          className="input-dark py-1.5 text-xs"
+                        >
+                          <option value="">Все роли</option>
+                          {availableUserRoles.map((role) => (
+                            <option key={role} value={role}>
+                              {role}
+                            </option>
+                          ))}
+                        </select>
+                      </th>
+                      <th className="px-4 py-2" />
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-white/10">
+                    {filteredUsers.map((u) => (
+                      <tr key={u._id} className="hover:bg-white/5">
+                        <td className="px-4 py-3 whitespace-nowrap">
+                          <button
+                            type="button"
+                            onClick={() => navigate(`/profile/${u._id}`)}
+                            className="text-left transition hover:text-violet-300"
+                          >
+                            <div className="font-bold text-zinc-100 hover:text-violet-300">@{u.nickname}</div>
+                            <div className="text-zinc-400">
+                              {`${u.firstName || ''} ${u.lastName || ''}`.trim() || 'Без имени'}
+                            </div>
+                          </button>
+                        </td>
+                        <td className="px-4 py-3 whitespace-nowrap text-zinc-400">{u.username}</td>
+                        <td className="px-4 py-3 whitespace-nowrap text-zinc-400">{u.city}</td>
+                        <td className="px-4 py-3">
+                          <div className="flex flex-wrap gap-1">
+                            {u.roles.map((role) => (
+                              <span
+                                key={role}
+                                className={`inline-block px-2 py-0.5 text-xs rounded-full font-semibold ${
+                                  role === 'admin'
+                                    ? 'bg-rose-400/10 text-rose-300'
+                                    : role === 'organizer'
+                                    ? 'bg-violet-400/10 text-violet-300'
+                                    : role === 'team_captain'
+                                    ? 'bg-amber-400/10 text-amber-300'
+                                    : 'bg-white/10 text-zinc-300'
+                                }`}
+                              >
+                                {role}
+                              </span>
+                            ))}
+                          </div>
+                        </td>
+                        <td className="px-4 py-3 whitespace-nowrap">
+                          <div className="flex gap-3">
+                            {ASSIGNABLE_ROLES.map(({ value, label }) => (
+                              <label key={value} className="flex items-center gap-1 cursor-pointer">
+                                <input
+                                  type="checkbox"
+                                  checked={u.roles.includes(value)}
+                                  onChange={() => handleToggleRole(u, value)}
+                                />
+                                <span className="text-xs text-zinc-300">{label}</span>
+                              </label>
+                            ))}
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                    {filteredUsers.length === 0 && (
+                      <tr>
+                        <td colSpan={5} className="px-4 py-8 text-center text-zinc-400">
+                          Пользователи не найдены
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
             </div>
           )}
         </div>
@@ -526,7 +766,7 @@ export default function AdminPanel() {
           </div>
 
           <div className="space-y-2 max-h-96 overflow-y-auto">
-            {visibleGames.map((game) => (
+            {sortedVisibleGames.map((game) => (
               <div
                 key={game._id}
                 className={`p-3 rounded cursor-pointer transition ${
@@ -542,6 +782,17 @@ export default function AdminPanel() {
                     <p className="text-sm opacity-75">{game.city}</p>
                   </div>
                   <div className="flex gap-2">
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setSelectedGame(game._id);
+                        setActiveTab('details');
+                      }}
+                      className="text-zinc-300 hover:text-white p-1"
+                      title="Редактировать квест"
+                    >
+                      <Edit2 size={16} />
+                    </button>
                     <button
                       onClick={(e) => {
                         e.stopPropagation();
@@ -574,6 +825,16 @@ export default function AdminPanel() {
             <div>
               <div className="flex gap-2 mb-4 border-b">
                 <button
+                  onClick={() => setActiveTab('details')}
+                  className={`px-4 py-2 font-bold border-b-2 ${
+                    activeTab === 'details'
+                      ? 'border-primary text-primary'
+                      : 'border-transparent text-zinc-400 hover:text-zinc-100'
+                  }`}
+                >
+                  Квест
+                </button>
+                <button
                   onClick={() => setActiveTab('appls')}
                   className={`px-4 py-2 font-bold border-b-2 ${
                     activeTab === 'appls'
@@ -605,6 +866,110 @@ export default function AdminPanel() {
                 </button>
               </div>
 
+              {activeTab === 'details' && currentGame && (
+                <form onSubmit={handleUpdateGame} className="glass p-5">
+                  <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
+                    <div>
+                      <h2 className="text-2xl font-bold">Редактирование квеста</h2>
+                      <p className="mt-1 text-sm text-zinc-400">
+                        {getQuestState(currentGame.dateofstart, currentGame.dateofend) === 'active'
+                          ? 'Игра сейчас идет'
+                          : getQuestState(currentGame.dateofstart, currentGame.dateofend) === 'scheduled'
+                            ? 'Предстоящая игра'
+                            : 'Завершенная игра'}
+                      </p>
+                    </div>
+                    <button
+                      type="submit"
+                      className="btn-grad flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-bold"
+                    >
+                      <Save size={17} />
+                      Сохранить
+                    </button>
+                  </div>
+
+                  <div className="grid gap-5 lg:grid-cols-[minmax(20rem,25rem)_1fr]">
+                    <div className="space-y-4">
+                      <label className="block">
+                        <span className="mb-1 block text-xs font-semibold text-zinc-400">Название квеста</span>
+                        <input
+                          type="text"
+                          value={editFormData.title}
+                          onChange={(e) => setEditFormData({ ...editFormData, title: e.target.value })}
+                          required
+                          className="input-dark text-sm"
+                        />
+                      </label>
+
+                      <label className="block">
+                        <span className="mb-1 block text-xs font-semibold text-zinc-400">Город</span>
+                        <input
+                          type="text"
+                          value={editFormData.city}
+                          onChange={(e) => setEditFormData({ ...editFormData, city: e.target.value })}
+                          required
+                          className="input-dark text-sm"
+                        />
+                      </label>
+
+                      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-1">
+                        <label className="block">
+                          <span className="mb-1 block text-xs font-semibold text-zinc-400">Дата и время начала</span>
+                          <input
+                            type="datetime-local"
+                            value={editFormData.dateofstart}
+                            onChange={(e) => setEditFormData({ ...editFormData, dateofstart: e.target.value })}
+                            required
+                            className="input-dark text-sm"
+                          />
+                        </label>
+                        <label className="block">
+                          <span className="mb-1 block text-xs font-semibold text-zinc-400">Дата и время окончания</span>
+                          <input
+                            type="datetime-local"
+                            value={editFormData.dateofend}
+                            onChange={(e) => setEditFormData({ ...editFormData, dateofend: e.target.value })}
+                            required
+                            className="input-dark text-sm"
+                          />
+                        </label>
+                      </div>
+
+                      <div className="grid gap-3 sm:grid-cols-2">
+                        <label className="block">
+                          <span className="mb-1 block text-xs font-semibold text-zinc-400">Депозит</span>
+                          <input
+                            type="text"
+                            value={editFormData.deposit}
+                            onChange={(e) => setEditFormData({ ...editFormData, deposit: e.target.value })}
+                            required
+                            className="input-dark text-sm"
+                          />
+                        </label>
+                        <label className="block">
+                          <span className="mb-1 block text-xs font-semibold text-zinc-400">Приз</span>
+                          <input
+                            type="text"
+                            value={editFormData.prize}
+                            onChange={(e) => setEditFormData({ ...editFormData, prize: e.target.value })}
+                            required
+                            className="input-dark text-sm"
+                          />
+                        </label>
+                      </div>
+                    </div>
+
+                    <label className="block">
+                      <span className="mb-1 block text-xs font-semibold text-zinc-400">Описание</span>
+                      <RichTextEditor
+                        value={editFormData.description}
+                        onChange={(description) => setEditFormData({ ...editFormData, description })}
+                      />
+                    </label>
+                  </div>
+                </form>
+              )}
+
               {/* Заявки Tab */}
               {activeTab === 'appls' && (
                 <div>
@@ -626,12 +991,23 @@ export default function AdminPanel() {
 
                         return (
                           <div key={appl._id} className="glass p-4">
-                            <div className="grid gap-4 xl:grid-cols-[1fr_auto]">
+                            <div className="grid gap-4">
                               <div>
-                                <p className="text-xs font-semibold uppercase text-zinc-500">Команда</p>
-                                <p className="text-lg font-bold text-zinc-100">
-                                  {appl.team?.name || appl.teamName || 'Без названия'}
-                                </p>
+                                <div className="mb-3 flex flex-wrap items-start justify-between gap-3">
+                                  <div>
+                                    <p className="text-xs font-semibold uppercase text-zinc-500">Команда</p>
+                                    <p className="text-lg font-bold text-zinc-100">
+                                      {appl.team?.name || appl.teamName || 'Без названия'}
+                                    </p>
+                                  </div>
+                                  <span
+                                    className={`rounded-full border px-3 py-1 text-xs font-bold ${
+                                      APPL_STATUSES.find((status) => status.value === appl.status)?.tone || 'border-white/10 bg-white/10 text-zinc-200'
+                                    }`}
+                                  >
+                                    {APPL_STATUSES.find((status) => status.value === appl.status)?.label || appl.status}
+                                  </span>
+                                </div>
                                 <div className="mt-2 grid gap-2 text-sm text-zinc-400 sm:grid-cols-2">
                                   <div>
                                     <span className="block text-xs text-zinc-500">Капитан</span>
@@ -648,16 +1024,16 @@ export default function AdminPanel() {
                                   </div>
                                 </div>
                               </div>
-                              <div className="flex flex-wrap content-start gap-2 xl:max-w-md xl:justify-end">
+                              <div className="inline-flex w-fit flex-wrap gap-1 rounded-lg border border-white/10 bg-white/[0.03] p-1">
                                 {APPL_STATUSES.map((status) => (
                                   <button
                                     key={status.value}
                                     type="button"
                                     onClick={() => handleUpdateApplStatus(appl._id, status.value)}
-                                    className={`rounded-lg border px-3 py-2 text-sm font-bold transition ${
+                                    className={`rounded-md px-3 py-1.5 text-xs font-bold transition ${
                                       appl.status === status.value
-                                        ? 'border-primary bg-primary text-white'
-                                        : 'border-white/10 bg-white/5 text-zinc-300 hover:bg-white/10 hover:text-white'
+                                        ? 'bg-primary text-white shadow-glow-sm'
+                                        : 'text-zinc-400 hover:bg-white/10 hover:text-white'
                                     }`}
                                   >
                                     {status.label}

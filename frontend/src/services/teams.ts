@@ -49,6 +49,10 @@ export const teams = {
     return response.data.team;
   },
 
+  deleteTeam: async (teamId: string): Promise<void> => {
+    await api.delete(`/teams/${teamId}`);
+  },
+
   // Добавить участника в команду по никнейму
   addMember: async (teamId: string, nickname: string): Promise<ITeam> => {
     const response = await api.post(`/teams/${teamId}/members`, { nickname });

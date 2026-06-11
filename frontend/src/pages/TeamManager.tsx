@@ -139,6 +139,21 @@ export const TeamManager: React.FC = () => {
     }
   };
 
+  const handleDeleteTeam = async () => {
+    if (!team) return;
+
+    if (confirm(`Удалить команду "${team.name}"? Это действие нельзя отменить.`)) {
+      try {
+        await teams.deleteTeam(team._id!);
+        setTeam(null);
+        setError(null);
+        navigate('/teams');
+      } catch (err: any) {
+        setError(err.response?.data?.error || 'Ошибка удаления команды');
+      }
+    }
+  };
+
   if (loading) {
     return (
       <div className="flex min-h-[calc(100dvh-4rem)] items-center justify-center">
@@ -235,13 +250,22 @@ export const TeamManager: React.FC = () => {
                   Вы капитан
                 </span>
                 {!isEditingTeam && (
-                  <button
-                    onClick={() => setIsEditingTeam(true)}
-                    className="mx-auto flex items-center gap-2 rounded-lg border border-white/10 bg-white/5 px-4 py-2 text-sm font-bold text-zinc-200 transition hover:bg-white/10"
-                  >
-                    <Edit2 size={16} />
-                    Редактировать
-                  </button>
+                  <div className="flex flex-col items-center gap-2">
+                    <button
+                      onClick={() => setIsEditingTeam(true)}
+                      className="flex items-center gap-2 rounded-lg border border-white/10 bg-white/5 px-4 py-2 text-sm font-bold text-zinc-200 transition hover:bg-white/10"
+                    >
+                      <Edit2 size={16} />
+                      Редактировать
+                    </button>
+                    <button
+                      onClick={handleDeleteTeam}
+                      className="flex items-center gap-2 rounded-lg border border-rose-400/30 bg-rose-500/10 px-4 py-2 text-sm font-bold text-rose-200 transition hover:bg-rose-500/20"
+                    >
+                      <Trash2 size={16} />
+                      Удалить команду
+                    </button>
+                  </div>
                 )}
               </div>
             )}

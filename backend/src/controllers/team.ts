@@ -167,6 +167,34 @@ export const updateTeam = async (
   }
 };
 
+// Удалить команду (только капитан)
+export const deleteTeam = async (
+  req: AuthenticatedRequest,
+  res: Response
+): Promise<void> => {
+  try {
+    const team = await Team.findById(req.params.teamId);
+
+    if (!team) {
+      res.status(404).json({ error: 'Команда не найдена' });
+      return;
+    }
+
+    if (team.captain.toString() !== req.user.id) {
+      res.status(403).json({ error: 'У вас нет прав для удаления этой команды' });
+      return;
+    }
+
+    await Team.findByIdAndDelete(team._id);
+    await User.findByIdAndUpdate(team.captain, { $pull: { roles: 'team_captain' } });
+
+    res.status(200).json({ message: 'Команда удалена успешно' });
+  } catch (error) {
+    console.error('Ошибка удаления команды:', error);
+    res.status(500).json({ error: 'Ошибка сервера' });
+  }
+};
+
 // Удалить участника из команды
 export const removeMember = async (
   req: AuthenticatedRequest,

@@ -14,12 +14,8 @@ const isTeamMember = async (
   gameAppl: { team?: any; userId: any },
   userId: string
 ): Promise<boolean> => {
-  if (gameAppl.userId?.toString() === userId) {
-    return true;
-  }
-
   if (!gameAppl.team) {
-    return false;
+    return gameAppl.userId?.toString() === userId;
   }
 
   const team = await Team.findById(gameAppl.team);

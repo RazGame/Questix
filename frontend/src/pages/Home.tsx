@@ -24,7 +24,7 @@ const features = [
 
 export default function Home() {
   return (
-    <div className="min-h-[calc(100vh-4rem)] overflow-hidden text-white">
+    <div className="overflow-hidden text-white">
       <div className="max-w-7xl mx-auto px-4 pt-16 md:pt-24 pb-16 text-center relative">
         {/* Декоративное свечение за заголовком */}
         <div

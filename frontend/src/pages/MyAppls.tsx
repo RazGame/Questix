@@ -20,6 +20,20 @@ const statusLabels: Record<string, string> = {
   completed: 'Завершено',
 };
 
+const getGameFromAppl = (appl: GameAppl) => (appl as any).gameId;
+
+const getApplPriority = (appl: GameAppl, now: Date) => {
+  const game = getGameFromAppl(appl);
+  const questState = getQuestState(game?.dateofstart, game?.dateofend, now);
+
+  if (appl.status === 'approved' && questState === 'active') return 0;
+  if (appl.status === 'approved' && questState === 'scheduled') return 1;
+  if (appl.status === 'pending') return 2;
+  if (appl.status === 'rejected') return 3;
+  if (appl.status === 'approved' && questState === 'finished') return 4;
+  return 5;
+};
+
 export default function MyAppls() {
   const navigate = useNavigate();
   const user = useAuthStore((state) => state.user);
@@ -54,6 +68,18 @@ export default function MyAppls() {
     return <div className="text-center py-10">Загружается...</div>;
   }
 
+  const sortedAppls = [...appls].sort((a, b) => {
+    const priorityDiff = getApplPriority(a, now) - getApplPriority(b, now);
+
+    if (priorityDiff !== 0) {
+      return priorityDiff;
+    }
+
+    const aStart = new Date(getGameFromAppl(a)?.dateofstart || 0).getTime();
+    const bStart = new Date(getGameFromAppl(b)?.dateofstart || 0).getTime();
+    return aStart - bStart;
+  });
+
   return (
     <div className="max-w-6xl mx-auto p-4">
       <h1 className="text-4xl font-bold mb-8">Мои заявки</h1>
@@ -69,12 +95,12 @@ export default function MyAppls() {
         </div>
       )}
 
-      {appls.length === 0 ? (
+      {sortedAppls.length === 0 ? (
         <p className="text-center text-zinc-400">Заявок не найдено</p>
       ) : (
         <div className="grid md:grid-cols-2 lg:grid-cols-1 gap-6">
-          {appls.map((appl) => {
-            const game = (appl as any).gameId;
+          {sortedAppls.map((appl) => {
+            const game = getGameFromAppl(appl);
             const questState = getQuestState(game?.dateofstart, game?.dateofend, now);
             const canEnterGame = questState === 'active';
 

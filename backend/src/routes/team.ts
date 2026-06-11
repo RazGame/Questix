@@ -3,6 +3,7 @@ import { authMiddleware } from '../middleware/auth';
 import {
   createTeam,
   updateTeam,
+  deleteTeam,
   addMember,
   removeMember,
   leaveTeam,
@@ -32,6 +33,9 @@ router.get('/:teamId', getTeam);
 
 // Обновить команду (требуется быть капитаном)
 router.put('/:teamId', updateTeam);
+
+// Удалить команду (требуется быть капитаном)
+router.delete('/:teamId', deleteTeam);
 
 // Добавить участника в команду (требуется быть капитаном)
 router.post('/:teamId/members', addMember);

@@ -97,13 +97,18 @@ export const getMyAppls = async (
   res: Response
 ): Promise<void> => {
   try {
-    // Показываем заявки, поданные пользователем, и заявки команд, где он участник
+    // Показываем заявки только текущих команд пользователя.
+    // userId используем как fallback для старых заявок без команды.
     const teamIds = await Team.find({
       $or: [{ captain: req.user.id }, { members: req.user.id }],
     }).distinct('_id');
 
     const appls = await GameAppl.find({
-      $or: [{ userId: req.user.id }, { team: { $in: teamIds } }],
+      $or: [
+        { team: { $in: teamIds } },
+        { userId: req.user.id, team: { $exists: false } },
+        { userId: req.user.id, team: null },
+      ],
     })
       .populate('gameId', 'title city prize deposit dateofstart dateofend published')
       .populate('userId', 'nickname firstName lastName')

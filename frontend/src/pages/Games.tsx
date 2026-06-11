@@ -1,11 +1,11 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { gameService } from '../services/games';
 import { applService } from '../services/appls';
 import { Game, GameAppl } from '../types';
 import { useAuthStore } from '../store/authStore';
 import { CalendarCheck, CalendarClock, MapPin, Trophy } from 'lucide-react';
-import { formatDateTime, getQuestState } from '../utils/date';
+import { formatDateTimeShort, getQuestState } from '../utils/date';
 
 type QuestTab = 'active' | 'upcoming' | 'finished';
 
@@ -24,6 +24,7 @@ export default function Games() {
   const [error, setError] = useState('');
   const [activeTab, setActiveTab] = useState<QuestTab>('upcoming');
   const [now, setNow] = useState(() => new Date());
+  const didAutoSelectActiveTab = useRef(false);
 
   useEffect(() => {
     loadGames();
@@ -37,7 +38,8 @@ export default function Games() {
   useEffect(() => {
     const myActiveCount = getMyActiveGames().length;
 
-    if (myActiveCount > 0 && activeTab === 'upcoming') {
+    if (!didAutoSelectActiveTab.current && myActiveCount > 0 && activeTab === 'upcoming') {
+      didAutoSelectActiveTab.current = true;
       setActiveTab('active');
     }
 
@@ -111,7 +113,7 @@ export default function Games() {
 
   const tabs: { id: QuestTab; label: string }[] = [
     ...(myActiveGames.length > 0
-      ? [{ id: 'active' as const, label: 'Мои активные квесты' }]
+      ? [{ id: 'active' as const, label: 'В процессе' }]
       : []),
     { id: 'upcoming', label: 'Предстоящие' },
     { id: 'finished', label: 'Завершённые' },
@@ -147,48 +149,48 @@ export default function Games() {
       {filteredGames.length === 0 ? (
         <p className="text-center text-zinc-400">Квестов не найдено</p>
       ) : (
-        <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
+        <div className="grid max-w-5xl gap-5 md:grid-cols-2">
           {filteredGames.map((game) => (
             <div
               key={game._id}
-              className="glass glass-hover overflow-hidden cursor-pointer"
+              className="glass glass-hover cursor-pointer overflow-hidden"
               onClick={() => navigate(`/games/${game._id}`)}
             >
-              <div className="bg-gradient-to-r from-violet-600/50 to-fuchsia-600/30 border-b border-white/10 p-4">
-                <h3 className="font-display text-lg font-bold text-white">{game.title}</h3>
+              <div className="border-b border-white/10 bg-gradient-to-r from-violet-600/45 to-fuchsia-600/25 px-4 py-3">
+                <h3 className="font-display line-clamp-1 text-lg font-bold text-white">{game.title}</h3>
               </div>
 
               <div className="p-4">
-                <div className="space-y-2 mb-4">
-                  <div className="flex items-center text-zinc-400">
-                    <MapPin size={18} className="mr-2" />
-                    {game.city}
+                <div className="mb-3 grid gap-x-4 gap-y-2 text-sm text-zinc-400 sm:grid-cols-2">
+                  <div className="flex items-center">
+                    <MapPin size={16} className="mr-2 shrink-0" />
+                    <span className="truncate">{game.city}</span>
                   </div>
-                  <div className="flex items-start text-zinc-400">
-                    <CalendarClock size={18} className="mr-2 mt-1 shrink-0" />
+                  <div className="flex items-center">
+                    <Trophy size={16} className="mr-2 shrink-0" />
+                    <span className="truncate">Приз: {game.prize}</span>
+                  </div>
+                  <div className="flex items-start">
+                    <CalendarClock size={16} className="mr-2 mt-1 shrink-0" />
                     <div>
                       <span className="block text-xs text-zinc-500">Начало</span>
-                      {formatDateTime(game.dateofstart)}
+                      {formatDateTimeShort(game.dateofstart)}
                     </div>
                   </div>
-                  <div className="flex items-start text-zinc-400">
-                    <CalendarCheck size={18} className="mr-2 mt-1 shrink-0" />
+                  <div className="flex items-start">
+                    <CalendarCheck size={16} className="mr-2 mt-1 shrink-0" />
                     <div>
                       <span className="block text-xs text-zinc-500">Окончание</span>
-                      {formatDateTime(game.dateofend)}
+                      {formatDateTimeShort(game.dateofend)}
                     </div>
-                  </div>
-                  <div className="flex items-center text-zinc-400">
-                    <Trophy size={18} className="mr-2" />
-                    Приз: {game.prize}
                   </div>
                 </div>
 
-                <p className="text-zinc-400 text-sm mb-4">
+                <p className="mb-3 line-clamp-1 text-sm text-zinc-400">
                   {toPlainText(game.description).substring(0, 100)}...
                 </p>
 
-                <button className="w-full btn-grad py-2 rounded transition">
+                <button className="w-full btn-grad rounded py-2 text-sm font-bold transition">
                   Подробнее
                 </button>
               </div>

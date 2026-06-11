@@ -12,6 +12,12 @@
   box-sizing: border-box;
 }
 
+html,
+body,
+#root {
+  min-height: 100%;
+}
+
 body {
   font-family: 'Manrope', system-ui, sans-serif;
   color: #e4e4e7;
@@ -22,7 +28,7 @@ body {
     radial-gradient(45% 40% at 90% 10%, rgba(217, 70, 239, 0.1) 0%, transparent 55%),
     radial-gradient(60% 50% at 50% 110%, rgba(76, 29, 149, 0.18) 0%, transparent 60%);
   background-attachment: fixed;
-  min-height: 100vh;
+  min-height: 100dvh;
 }
 
 @layer base {

@@ -40,8 +40,8 @@ export const getAllGames = async (
 ): Promise<void> => {
   try {
     const games = await Game.find()
-      .populate('createdBy', 'nickname')
-      .populate('organizers', 'nickname')
+      .populate('createdBy', 'nickname firstName lastName')
+      .populate('organizers', 'nickname firstName lastName')
       .populate({
         path: 'gameAppls',
         select: 'status userId',
@@ -60,11 +60,18 @@ export const getGameById = async (
 ): Promise<void> => {
   try {
     const game = await Game.findById(req.params.id)
-      .populate('createdBy', 'nickname')
+      .populate('createdBy', 'nickname firstName lastName')
       .populate('organizers', 'nickname firstName lastName')
       .populate({
         path: 'gameAppls',
-        populate: { path: 'userId', select: 'nickname firstName lastName' },
+        populate: [
+          { path: 'userId', select: 'nickname firstName lastName' },
+          {
+            path: 'team',
+            select: 'name captain members',
+            populate: { path: 'captain', select: 'nickname firstName lastName' },
+          },
+        ],
       });
 
     if (!game) {
