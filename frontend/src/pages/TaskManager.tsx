@@ -12,7 +12,6 @@ interface TaskFormData {
   hints: TaskHint[];
   orderIndex: number;
   timeLimit: string;
-  points: number;
 }
 
 const emptyForm = (orderIndex = 0): TaskFormData => ({
@@ -22,7 +21,6 @@ const emptyForm = (orderIndex = 0): TaskFormData => ({
   hints: [],
   orderIndex,
   timeLimit: '',
-  points: 10,
 });
 
 const normalizeHints = (hints: Task['hints'] = []): TaskHint[] =>
@@ -79,7 +77,6 @@ export default function TaskManager() {
           .filter((hint) => hint.text),
         orderIndex: formData.orderIndex,
         timeLimit: formData.timeLimit ? parseInt(formData.timeLimit, 10) : undefined,
-        points: formData.points,
       };
 
       if (taskData.answers.length === 0) {
@@ -127,7 +124,6 @@ export default function TaskManager() {
       hints: normalizeHints(task.hints),
       orderIndex: task.orderIndex,
       timeLimit: task.timeLimit?.toString() || '',
-      points: task.points || 10,
     });
     setShowForm(true);
   };
@@ -254,17 +250,6 @@ export default function TaskManager() {
                     className="input-dark"
                   />
                 </label>
-                <label className="block">
-                  <span className="mb-1 block text-xs font-semibold text-zinc-400">Очки</span>
-                  <input
-                    type="number"
-                    value={formData.points}
-                    onChange={(e) =>
-                      setFormData({ ...formData, points: parseInt(e.target.value, 10) || 0 })
-                    }
-                    className="input-dark"
-                  />
-                </label>
               </div>
 
               <div>
@@ -380,9 +365,6 @@ export default function TaskManager() {
                         #{task.orderIndex + 1}
                       </span>
                       <h3 className="text-xl font-bold text-zinc-100">{task.title}</h3>
-                      <span className="rounded bg-emerald-400/10 px-2 py-1 text-xs text-emerald-300">
-                        {task.points || 10} очков
-                      </span>
                     </div>
                     <div className="flex flex-wrap gap-2 text-sm text-zinc-400">
                       <span>Ответов: {task.answers.length}</span>

@@ -18,8 +18,14 @@ export interface IGameTeamProgress {
   }[];
   gameStartedAt: Date;
   gameFinishedAt?: Date;
-  totalTime?: number; // В секундах
-  totalPoints: number;
+  totalTime?: number; // Чистое время прохождения в секундах
+  // Корректировки времени от организатора: amount > 0 - штраф, amount < 0 - бонус (секунды)
+  timeAdjustments: {
+    amount: number;
+    reason: string;
+    createdBy: mongoose.Types.ObjectId;
+    createdAt: Date;
+  }[];
   status: 'not_started' | 'in_progress' | 'completed' | 'abandoned';
   createdAt?: Date;
   updatedAt?: Date;
@@ -75,10 +81,28 @@ const gameTeamProgressSchema = new mongoose.Schema<IGameTeamProgress>(
     },
     gameFinishedAt: Date,
     totalTime: Number,
-    totalPoints: {
-      type: Number,
-      default: 0,
-    },
+    timeAdjustments: [
+      {
+        amount: {
+          type: Number,
+          required: true,
+        },
+        reason: {
+          type: String,
+          required: true,
+          trim: true,
+        },
+        createdBy: {
+          type: mongoose.Schema.Types.ObjectId,
+          ref: 'User',
+          required: true,
+        },
+        createdAt: {
+          type: Date,
+          default: Date.now,
+        },
+      },
+    ],
     status: {
       type: String,
       enum: ['not_started', 'in_progress', 'completed', 'abandoned'],

@@ -27,6 +27,18 @@ const gameApplSchema = new mongoose.Schema<IGameAppl>(
       trim: true,
     },
     teamMembers: [String],
+    // Индивидуальное время старта команды (линейный режим порядка заданий)
+    startAt: {
+      type: Date,
+      default: null,
+    },
+    // Ручной порядок заданий для этой команды (режим manual)
+    taskOrder: [
+      {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'Task',
+      },
+    ],
   },
   { timestamps: true }
 );

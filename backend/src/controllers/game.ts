@@ -19,6 +19,7 @@ const gameSchema = Joi.object({
   deposit: Joi.string().required().trim(),
   prize: Joi.string().required().trim(),
   description: Joi.string().required().trim(),
+  taskOrderMode: Joi.string().valid('linear', 'random', 'manual').default('linear'),
   organizerNicknames: Joi.array().items(Joi.string().trim()).default([]),
 });
 
@@ -32,6 +33,7 @@ const gameUpdateSchema = Joi.object({
   deposit: Joi.string().trim(),
   prize: Joi.string().trim(),
   description: Joi.string().trim(),
+  taskOrderMode: Joi.string().valid('linear', 'random', 'manual'),
 }).min(1);
 
 export const getAllGames = async (
@@ -437,7 +439,8 @@ export const getGameStatistics = async (
         populate: { path: 'team', populate: { path: 'captain members', select: 'nickname firstName lastName' } },
       })
       .populate('taskOrder', 'title description')
-      .populate('completedTasks.submittedBy', 'nickname firstName lastName');
+      .populate('completedTasks.submittedBy', 'nickname firstName lastName')
+      .populate('timeAdjustments.createdBy', 'nickname');
 
     // Получить все задания
     const tasks = await Task.find({ gameId }).sort('orderIndex').select('_id title description orderIndex');
@@ -449,6 +452,16 @@ export const getGameStatistics = async (
         captain: null,
         members: [],
       };
+
+      // Штрафы (+) и бонусы (-) организаторов входят в итоговое время
+      const adjustmentsTotal = (progress.timeAdjustments || []).reduce(
+        (sum, adj) => sum + adj.amount,
+        0
+      );
+      const adjustedTotalTime =
+        progress.totalTime !== undefined && progress.totalTime !== null
+          ? Math.max(0, progress.totalTime + adjustmentsTotal)
+          : null;
 
       return {
         teamId: (progress.gameApplId as any)?._id,
@@ -481,19 +494,21 @@ export const getGameStatistics = async (
         }),
         totalTasks: progress.taskOrder.length,
         completedTasks: progress.completedTasks.length,
-        totalPoints: progress.totalPoints,
-        totalTime: progress.totalTime,
+        baseTotalTime: progress.totalTime ?? null,
+        timeAdjustments: progress.timeAdjustments || [],
+        adjustmentsTotal,
+        totalTime: adjustedTotalTime,
         gameStartedAt: progress.gameStartedAt,
         gameFinishedAt: progress.gameFinishedAt,
       };
     });
 
-    // Отсортировать по итоговому времени
+    // Отсортировать по итоговому времени с учётом штрафов и бонусов
     statistics.sort((a, b) => {
       if (a.status !== 'completed' || b.status !== 'completed') {
         return a.status === 'completed' ? -1 : 1;
       }
-      return (a.totalTime || Infinity) - (b.totalTime || Infinity);
+      return (a.totalTime ?? Infinity) - (b.totalTime ?? Infinity);
     });
 
     // Присвоить места завершившим командам
@@ -511,6 +526,7 @@ export const getGameStatistics = async (
         published: game.published,
         createdBy: game.createdBy,
         organizers: game.organizers || [],
+        taskOrderMode: game.taskOrderMode || 'linear',
         dateofstart: game.dateofstart,
         dateofend: game.dateofend,
       },

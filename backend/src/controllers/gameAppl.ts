@@ -3,6 +3,7 @@ import Joi from 'joi';
 import { GameAppl } from '../models/GameAppl';
 import { User } from '../models/User';
 import { Game } from '../models/Game';
+import { Task } from '../models/Task';
 import { Team } from '../models/Team';
 import { AuthenticatedRequest } from '../middleware/auth';
 import { canApplyToQuest } from '../services/questState';
@@ -165,6 +166,80 @@ export const updateApplStatus = async (
       appl,
     });
   } catch (error) {
+    res.status(500).json({ error: 'Ошибка сервера' });
+  }
+};
+
+// Админ/организатор: настройки прохождения для команды -
+// индивидуальное время старта (линейный режим) и ручной порядок заданий (manual)
+export const updateApplSettings = async (
+  req: AuthenticatedRequest,
+  res: Response
+): Promise<void> => {
+  try {
+    const { startAt, taskOrder } = req.body;
+
+    const appl = await GameAppl.findById(req.params.id);
+
+    if (!appl) {
+      res.status(404).json({ error: 'Заявка не найдена' });
+      return;
+    }
+
+    const game = await Game.findById(appl.gameId);
+
+    if (!game || !isGameModerator(game, req.user)) {
+      res.status(403).json({ error: 'У вас нет прав для настройки заявок этой игры' });
+      return;
+    }
+
+    if (startAt !== undefined) {
+      if (startAt === null || startAt === '') {
+        appl.startAt = null;
+      } else {
+        const parsed = new Date(startAt);
+
+        if (Number.isNaN(parsed.getTime())) {
+          res.status(400).json({ error: 'Неверный формат времени старта' });
+          return;
+        }
+
+        appl.startAt = parsed;
+      }
+    }
+
+    if (taskOrder !== undefined) {
+      if (!Array.isArray(taskOrder)) {
+        res.status(400).json({ error: 'taskOrder должен быть массивом ID заданий' });
+        return;
+      }
+
+      // Ручной порядок должен включать все задания игры ровно по одному разу
+      const gameTaskIds = (await Task.find({ gameId: appl.gameId }).distinct('_id')).map(
+        (id) => id.toString()
+      );
+      const uniqueOrder = [...new Set(taskOrder.map(String))];
+
+      const coversAll =
+        uniqueOrder.length === gameTaskIds.length &&
+        uniqueOrder.every((id) => gameTaskIds.includes(id));
+
+      if (!coversAll) {
+        res.status(400).json({ error: 'Порядок должен включать каждое задание игры ровно один раз' });
+        return;
+      }
+
+      appl.taskOrder = taskOrder as any;
+    }
+
+    await appl.save();
+
+    res.status(200).json({
+      message: 'Настройки команды сохранены',
+      appl,
+    });
+  } catch (error) {
+    console.error('Ошибка настройки заявки:', error);
     res.status(500).json({ error: 'Ошибка сервера' });
   }
 };

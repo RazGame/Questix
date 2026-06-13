@@ -141,6 +141,43 @@ router.post(
 
 /**
  * @swagger
+ * /progress/{gameApplId}/adjust-time:
+ *   post:
+ *     tags: [Game Progress]
+ *     summary: Добавить штраф или бонус ко времени команды (админ или организатор игры)
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: gameApplId
+ *         required: true
+ *         schema:
+ *           type: string
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [amount, reason]
+ *             properties:
+ *               amount:
+ *                 type: integer
+ *                 description: Секунды. Положительное - штраф, отрицательное - бонус
+ *               reason:
+ *                 type: string
+ *     responses:
+ *       200:
+ *         description: Корректировка добавлена
+ */
+router.post(
+  '/:gameApplId/adjust-time',
+  authMiddleware,
+  progressController.adjustTeamTime
+);
+
+/**
+ * @swagger
  * /progress/game/{gameId}/results:
  *   get:
  *     tags: [Game Progress]

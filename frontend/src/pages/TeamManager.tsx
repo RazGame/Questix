@@ -327,6 +327,7 @@ export const TeamManager: React.FC = () => {
                     value={newMemberNickname}
                     onChange={setNewMemberNickname}
                     onSelect={(selectedUser) => setNewMemberNickname(selectedUser.nickname)}
+                    excludeIds={[team.captain._id, ...team.members.map((m) => m._id)]}
                   />
                   <button
                     onClick={handleAddMember}

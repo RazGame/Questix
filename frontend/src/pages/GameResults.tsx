@@ -378,8 +378,32 @@ export const GameStatisticsPage: React.FC = () => {
                         </td>
                       );
                     })}
-                    <td className="px-4 py-3 text-center text-sm font-bold text-violet-300 bg-primary/10 whitespace-nowrap">
-                      {formatTime(team.totalTime)}
+                    <td className="px-4 py-3 text-center text-sm bg-primary/10 whitespace-nowrap align-top">
+                      <span className="font-bold text-violet-300">{formatTime(team.totalTime)}</span>
+                      {/* Штрафы и бонусы организаторов входят в итоговое время */}
+                      {team.adjustmentsTotal !== 0 && (
+                        <div className="mt-1 space-y-0.5">
+                          <span
+                            className={`inline-block rounded-full px-2 py-0.5 text-[0.65rem] font-bold ${
+                              team.adjustmentsTotal > 0
+                                ? 'bg-rose-400/10 text-rose-300'
+                                : 'bg-emerald-400/10 text-emerald-300'
+                            }`}
+                            title={(team.timeAdjustments || [])
+                              .map(
+                                (adj) =>
+                                  `${adj.amount > 0 ? 'Штраф +' : 'Бонус −'}${formatTime(Math.abs(adj.amount))}: ${adj.reason}`
+                              )
+                              .join('\n')}
+                          >
+                            {team.adjustmentsTotal > 0 ? 'штраф +' : 'бонус −'}
+                            {formatTime(Math.abs(team.adjustmentsTotal))}
+                          </span>
+                          <span className="block text-[0.65rem] text-zinc-500">
+                            чистое: {formatTime(team.baseTotalTime)}
+                          </span>
+                        </div>
+                      )}
                     </td>
                     <td className="px-4 py-3 text-center text-lg font-bold bg-primary/10 whitespace-nowrap">
                       {placeBadge(team.place)}
@@ -390,6 +414,40 @@ export const GameStatisticsPage: React.FC = () => {
             </table>
           </div>
         </div>
+
+        {/* Штрафы и бонусы организаторов с причинами */}
+        {sortedTeams.some((team) => (team.timeAdjustments || []).length > 0) && (
+          <div className="glass p-6 mb-8">
+            <h2 className="text-xl font-bold text-zinc-100 mb-4">⚖️ Штрафы и бонусы</h2>
+            <div className="space-y-3">
+              {sortedTeams
+                .filter((team) => (team.timeAdjustments || []).length > 0)
+                .map((team) => (
+                  <div key={team.teamId}>
+                    <p className="mb-1 font-semibold text-zinc-200">{team.teamName}</p>
+                    <div className="space-y-1">
+                      {(team.timeAdjustments || []).map((adj, idx) => (
+                        <div
+                          key={idx}
+                          className={`flex flex-wrap items-center gap-2 rounded-md px-3 py-1.5 text-sm ${
+                            adj.amount > 0
+                              ? 'bg-rose-500/10 text-rose-300'
+                              : 'bg-emerald-500/10 text-emerald-300'
+                          }`}
+                        >
+                          <span className="font-mono font-bold">
+                            {adj.amount > 0 ? 'Штраф +' : 'Бонус −'}
+                            {formatTime(Math.abs(adj.amount))}
+                          </span>
+                          <span className="text-zinc-300">{adj.reason}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+            </div>
+          </div>
+        )}
 
         {/* Логи команд - только администратору и организатору игры */}
         {isModerator && (

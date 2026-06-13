@@ -3,9 +3,10 @@ import { useNavigate } from 'react-router-dom';
 import { gameService } from '../services/games';
 import { applService } from '../services/appls';
 import { progressService } from '../services/progress';
+import { taskService } from '../services/tasks';
 import { userService, AdminUser } from '../services/users';
-import { Game, GameAppl, GameTeamProgress, GameOrganizer } from '../types';
-import { Edit2, Plus, Save, Search, Settings, Trash2, UserPlus, X } from 'lucide-react';
+import { Game, GameAppl, GameTeamProgress, GameOrganizer, Task, TaskOrderMode } from '../types';
+import { ArrowDown, ArrowUp, Edit2, Plus, Save, Search, Settings, Trash2, UserPlus, X } from 'lucide-react';
 import { dateTimeLocalToIso, getQuestState } from '../utils/date';
 import { useAuthStore } from '../store/authStore';
 import RichTextEditor from '../components/RichTextEditor';
@@ -20,6 +21,38 @@ const ASSIGNABLE_ROLES: Array<{ value: string; label: string }> = [
   { value: 'admin', label: 'Администратор' },
   { value: 'organizer', label: 'Организатор' },
 ];
+
+const ORDER_MODES: Array<{ value: TaskOrderMode; label: string; hint: string }> = [
+  {
+    value: 'linear',
+    label: 'Линейный',
+    hint: 'Все команды проходят задания в одном порядке. Можно назначить каждой команде своё время старта.',
+  },
+  {
+    value: 'random',
+    label: 'Случайный',
+    hint: 'Каждая команда получает свою случайную последовательность заданий при старте.',
+  },
+  {
+    value: 'manual',
+    label: 'Ручной',
+    hint: 'Порядок заданий для каждой команды задаёт организатор во вкладке «Заявки».',
+  },
+];
+
+// мм:сс или ч:мм:сс
+const formatSeconds = (seconds?: number | null) => {
+  if (seconds === undefined || seconds === null) return '-';
+  const abs = Math.abs(seconds);
+  const hrs = Math.floor(abs / 3600);
+  const mins = Math.floor((abs % 3600) / 60);
+  const secs = abs % 60;
+  const core =
+    hrs > 0
+      ? `${hrs}:${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`
+      : `${mins}:${secs.toString().padStart(2, '0')}`;
+  return seconds < 0 ? `-${core}` : core;
+};
 
 const APPL_STATUSES: Array<{ value: GameAppl['status']; label: string; tone: string }> = [
   { value: 'pending', label: 'На рассмотрении', tone: 'bg-amber-400/15 text-amber-200 border-amber-300/30' },
@@ -76,6 +109,12 @@ export default function AdminPanel() {
   const [newOrganizerNickname, setNewOrganizerNickname] = useState('');
   const [draftOrganizerNickname, setDraftOrganizerNickname] = useState('');
   const [draftOrganizerNicknames, setDraftOrganizerNicknames] = useState<string[]>([]);
+  const [gameTasks, setGameTasks] = useState<Task[]>([]);
+  // Черновики настроек команд: индивидуальный старт и ручной порядок заданий
+  const [applStartDrafts, setApplStartDrafts] = useState<Record<string, string>>({});
+  const [applOrderDrafts, setApplOrderDrafts] = useState<Record<string, string[]>>({});
+  // Черновики штрафов/бонусов по командам (ключ - id заявки)
+  const [adjustDrafts, setAdjustDrafts] = useState<Record<string, { minutes: string; reason: string }>>({});
 
   const isAdmin = !!user?.roles?.includes('admin');
 
@@ -171,6 +210,7 @@ export default function AdminPanel() {
     deposit: '',
     prize: '',
     description: '',
+    taskOrderMode: 'linear' as TaskOrderMode,
   });
   const [editFormData, setEditFormData] = useState({
     title: '',
@@ -180,6 +220,7 @@ export default function AdminPanel() {
     deposit: '',
     prize: '',
     description: '',
+    taskOrderMode: 'linear' as TaskOrderMode,
   });
 
   const resetCreateForm = () => {
@@ -191,6 +232,7 @@ export default function AdminPanel() {
       deposit: '',
       prize: '',
       description: '',
+      taskOrderMode: 'linear',
     });
     setDraftOrganizerNickname('');
     setDraftOrganizerNicknames([]);
@@ -218,8 +260,38 @@ export default function AdminPanel() {
       deposit: currentGame.deposit || '',
       prize: currentGame.prize || '',
       description: currentGame.description || '',
+      taskOrderMode: currentGame.taskOrderMode || 'linear',
     });
   }, [currentGame?._id]);
+
+  // Задания нужны для ручного порядка во вкладке «Заявки»
+  useEffect(() => {
+    if (!selectedGame) {
+      setGameTasks([]);
+      return;
+    }
+
+    taskService
+      .getGameTasks(selectedGame)
+      .then(setGameTasks)
+      .catch(() => setGameTasks([]));
+  }, [selectedGame]);
+
+  // Черновики настроек команд из загруженных заявок
+  useEffect(() => {
+    const startDrafts: Record<string, string> = {};
+    const orderDrafts: Record<string, string[]> = {};
+    const defaultOrder = gameTasks.map((t) => t._id);
+
+    gameAppls.forEach((appl) => {
+      startDrafts[appl._id] = toDateTimeLocalValue(appl.startAt || undefined);
+      const manual = (appl.taskOrder || []).filter((id) => defaultOrder.includes(id));
+      orderDrafts[appl._id] = manual.length === defaultOrder.length ? manual : defaultOrder;
+    });
+
+    setApplStartDrafts(startDrafts);
+    setApplOrderDrafts(orderDrafts);
+  }, [gameAppls, gameTasks]);
 
   const loadGames = async () => {
     try {
@@ -373,6 +445,76 @@ export default function AdminPanel() {
       } catch (err: any) {
         setError(err.response?.data?.error || 'Ошибка удаления организатора');
       }
+    }
+  };
+
+  // Сохранить индивидуальное время старта команды (линейный режим)
+  const handleSaveApplStart = async (applId: string) => {
+    try {
+      const value = applStartDrafts[applId];
+      const updated = await applService.updateApplSettings(applId, {
+        startAt: value ? dateTimeLocalToIso(value) : null,
+      });
+      setGameAppls((prev) => prev.map((a) => (a._id === updated._id ? { ...a, ...updated } : a)));
+      setError('');
+    } catch (err: any) {
+      setError(err.response?.data?.error || 'Ошибка сохранения времени старта');
+    }
+  };
+
+  // Передвинуть задание в ручном порядке команды
+  const handleMoveOrderTask = (applId: string, index: number, direction: -1 | 1) => {
+    setApplOrderDrafts((prev) => {
+      const order = [...(prev[applId] || [])];
+      const target = index + direction;
+
+      if (target < 0 || target >= order.length) {
+        return prev;
+      }
+
+      [order[index], order[target]] = [order[target], order[index]];
+      return { ...prev, [applId]: order };
+    });
+  };
+
+  const handleSaveApplOrder = async (applId: string) => {
+    try {
+      const updated = await applService.updateApplSettings(applId, {
+        taskOrder: applOrderDrafts[applId] || [],
+      });
+      setGameAppls((prev) => prev.map((a) => (a._id === updated._id ? { ...a, ...updated } : a)));
+      setError('');
+    } catch (err: any) {
+      setError(err.response?.data?.error || 'Ошибка сохранения порядка заданий');
+    }
+  };
+
+  // Штраф (sign = 1) или бонус (sign = -1) ко времени команды
+  const handleAdjustTime = async (applId: string, sign: 1 | -1) => {
+    const draft = adjustDrafts[applId] || { minutes: '', reason: '' };
+    const minutes = parseFloat(draft.minutes.replace(',', '.'));
+
+    if (!minutes || minutes <= 0) {
+      setError('Укажите количество минут больше нуля');
+      return;
+    }
+
+    if (!draft.reason.trim()) {
+      setError('Укажите причину штрафа или бонуса');
+      return;
+    }
+
+    try {
+      await progressService.adjustTime(
+        applId,
+        Math.round(minutes * 60) * sign,
+        draft.reason.trim()
+      );
+      setAdjustDrafts((prev) => ({ ...prev, [applId]: { minutes: '', reason: '' } }));
+      setError('');
+      loadGameResults();
+    } catch (err: any) {
+      setError(err.response?.data?.error || 'Ошибка корректировки времени');
     }
   };
 
@@ -671,6 +813,24 @@ export default function AdminPanel() {
                 </label>
               </div>
 
+              <label className="block">
+                <span className="mb-1 block text-xs font-semibold text-zinc-400">Порядок заданий</span>
+                <select
+                  value={formData.taskOrderMode}
+                  onChange={(e) => setFormData({ ...formData, taskOrderMode: e.target.value as TaskOrderMode })}
+                  className="input-dark text-sm"
+                >
+                  {ORDER_MODES.map((mode) => (
+                    <option key={mode.value} value={mode.value}>
+                      {mode.label}
+                    </option>
+                  ))}
+                </select>
+                <span className="mt-1 block text-xs text-zinc-500">
+                  {ORDER_MODES.find((m) => m.value === formData.taskOrderMode)?.hint}
+                </span>
+              </label>
+
               <div className="grid gap-3 sm:grid-cols-2">
                 <label className="block">
                   <span className="mb-1 block text-xs font-semibold text-zinc-400">Депозит</span>
@@ -708,6 +868,8 @@ export default function AdminPanel() {
                       }
                       setDraftOrganizerNickname('');
                     }}
+                    excludeIds={user?.id ? [user.id] : []}
+                    excludeNicknames={draftOrganizerNicknames}
                   />
                   <button
                     type="button"
@@ -766,19 +928,39 @@ export default function AdminPanel() {
           </div>
 
           <div className="space-y-2 max-h-96 overflow-y-auto">
-            {sortedVisibleGames.map((game) => (
+            {sortedVisibleGames.map((game) => {
+              const state = getQuestState(game.dateofstart, game.dateofend);
+
+              return (
               <div
                 key={game._id}
                 className={`p-3 rounded cursor-pointer transition ${
                   selectedGame === game._id
                     ? 'bg-primary text-white'
-                    : 'bg-white/5 hover:bg-white/10'
+                    : state === 'finished'
+                      ? 'bg-white/[0.02] opacity-60 hover:opacity-100 hover:bg-white/10'
+                      : 'bg-white/5 hover:bg-white/10'
                 }`}
                 onClick={() => setSelectedGame(game._id)}
               >
                 <div className="flex justify-between items-start">
                   <div className="flex-1">
-                    <p className="font-bold">{game.title}</p>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <p className="font-bold">{game.title}</p>
+                      <span
+                        className={`rounded-full px-2 py-0.5 text-[0.65rem] font-bold uppercase tracking-wide ${
+                          selectedGame === game._id
+                            ? 'bg-white/20 text-white'
+                            : state === 'active'
+                              ? 'bg-emerald-400/15 text-emerald-300'
+                              : state === 'scheduled'
+                                ? 'bg-sky-400/15 text-sky-300'
+                                : 'bg-white/10 text-zinc-400'
+                        }`}
+                      >
+                        {state === 'active' ? 'Идёт' : state === 'scheduled' ? 'Скоро' : 'Завершён'}
+                      </span>
+                    </div>
                     <p className="text-sm opacity-75">{game.city}</p>
                   </div>
                   <div className="flex gap-2">
@@ -815,7 +997,8 @@ export default function AdminPanel() {
                   </div>
                 </div>
               </div>
-            ))}
+              );
+            })}
           </div>
         </div>
 
@@ -935,6 +1118,26 @@ export default function AdminPanel() {
                         </label>
                       </div>
 
+                      <label className="block">
+                        <span className="mb-1 block text-xs font-semibold text-zinc-400">Порядок заданий</span>
+                        <select
+                          value={editFormData.taskOrderMode}
+                          onChange={(e) =>
+                            setEditFormData({ ...editFormData, taskOrderMode: e.target.value as TaskOrderMode })
+                          }
+                          className="input-dark text-sm"
+                        >
+                          {ORDER_MODES.map((mode) => (
+                            <option key={mode.value} value={mode.value}>
+                              {mode.label}
+                            </option>
+                          ))}
+                        </select>
+                        <span className="mt-1 block text-xs text-zinc-500">
+                          {ORDER_MODES.find((m) => m.value === editFormData.taskOrderMode)?.hint}
+                        </span>
+                      </label>
+
                       <div className="grid gap-3 sm:grid-cols-2">
                         <label className="block">
                           <span className="mb-1 block text-xs font-semibold text-zinc-400">Депозит</span>
@@ -1040,6 +1243,105 @@ export default function AdminPanel() {
                                   </button>
                                 ))}
                               </div>
+
+                              {/* Индивидуальное время старта команды (линейный режим) */}
+                              {(currentGame?.taskOrderMode || 'linear') === 'linear' && (
+                                <div className="rounded-lg border border-white/10 bg-white/[0.03] p-3">
+                                  <p className="mb-2 text-xs font-semibold uppercase text-zinc-500">
+                                    Старт команды
+                                  </p>
+                                  <div className="flex flex-wrap items-center gap-2">
+                                    <input
+                                      type="datetime-local"
+                                      value={applStartDrafts[appl._id] || ''}
+                                      onChange={(e) =>
+                                        setApplStartDrafts((prev) => ({ ...prev, [appl._id]: e.target.value }))
+                                      }
+                                      className="input-dark w-auto text-sm"
+                                    />
+                                    <button
+                                      type="button"
+                                      onClick={() => handleSaveApplStart(appl._id)}
+                                      className="rounded-lg bg-emerald-600 px-3 py-2 text-xs font-bold text-white transition hover:bg-emerald-500"
+                                    >
+                                      Сохранить
+                                    </button>
+                                    {applStartDrafts[appl._id] && (
+                                      <button
+                                        type="button"
+                                        onClick={() => {
+                                          setApplStartDrafts((prev) => ({ ...prev, [appl._id]: '' }));
+                                        }}
+                                        className="rounded-lg bg-white/10 px-3 py-2 text-xs font-bold text-zinc-300 transition hover:bg-white/20"
+                                        title="Очистить (команда стартует вместе со всеми)"
+                                      >
+                                        Сбросить
+                                      </button>
+                                    )}
+                                  </div>
+                                  <p className="mt-2 text-xs text-zinc-500">
+                                    Пусто - команда может стартовать сразу после начала игры.
+                                  </p>
+                                </div>
+                              )}
+
+                              {/* Ручной порядок заданий для команды */}
+                              {currentGame?.taskOrderMode === 'manual' && (
+                                <div className="rounded-lg border border-white/10 bg-white/[0.03] p-3">
+                                  <div className="mb-2 flex items-center justify-between">
+                                    <p className="text-xs font-semibold uppercase text-zinc-500">
+                                      Порядок заданий команды
+                                    </p>
+                                    <button
+                                      type="button"
+                                      onClick={() => handleSaveApplOrder(appl._id)}
+                                      className="rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-bold text-white transition hover:bg-emerald-500"
+                                    >
+                                      Сохранить порядок
+                                    </button>
+                                  </div>
+                                  {gameTasks.length === 0 ? (
+                                    <p className="text-sm text-zinc-500">У игры пока нет заданий.</p>
+                                  ) : (
+                                    <div className="space-y-1">
+                                      {(applOrderDrafts[appl._id] || []).map((taskId, index) => {
+                                        const task = gameTasks.find((t) => t._id === taskId);
+                                        const order = applOrderDrafts[appl._id] || [];
+
+                                        return (
+                                          <div
+                                            key={taskId}
+                                            className="flex items-center gap-2 rounded-md bg-white/[0.04] px-3 py-2"
+                                          >
+                                            <span className="w-6 shrink-0 font-mono text-xs text-violet-300">
+                                              {index + 1}.
+                                            </span>
+                                            <span className="min-w-0 flex-1 truncate text-sm text-zinc-200">
+                                              {task?.title || 'Задание удалено'}
+                                            </span>
+                                            <button
+                                              type="button"
+                                              onClick={() => handleMoveOrderTask(appl._id, index, -1)}
+                                              disabled={index === 0}
+                                              className="rounded p-1 text-zinc-400 transition hover:bg-white/10 hover:text-white disabled:opacity-30"
+                                            >
+                                              <ArrowUp size={15} />
+                                            </button>
+                                            <button
+                                              type="button"
+                                              onClick={() => handleMoveOrderTask(appl._id, index, 1)}
+                                              disabled={index === order.length - 1}
+                                              className="rounded p-1 text-zinc-400 transition hover:bg-white/10 hover:text-white disabled:opacity-30"
+                                            >
+                                              <ArrowDown size={15} />
+                                            </button>
+                                          </div>
+                                        );
+                                      })}
+                                    </div>
+                                  )}
+                                </div>
+                              )}
                             </div>
                           </div>
                         );
@@ -1100,6 +1402,10 @@ export default function AdminPanel() {
                         <UserSearchInput
                           value={newOrganizerNickname}
                           onChange={setNewOrganizerNickname}
+                          excludeIds={[
+                            organizerId(currentGame.createdBy) || '',
+                            ...(currentGame.organizers || []).map((o) => o._id),
+                          ]}
                         />
                         <button
                           onClick={handleAddOrganizer}
@@ -1119,44 +1425,125 @@ export default function AdminPanel() {
 
               {/* Результаты Tab */}
               {activeTab === 'results' && (
-                <div>
+                <div className="space-y-3">
                   {gameResults.length === 0 ? (
                     <p className="text-zinc-400">Результатов еще нет</p>
                   ) : (
-                    <div className="overflow-x-auto max-h-96">
-                      <table className="w-full text-sm">
-                        <thead className="bg-[#17112a] sticky top-0">
-                          <tr>
-                            <th className="px-4 py-2 text-left">Команда</th>
-                            <th className="px-4 py-2 text-left">Капитан</th>
-                            <th className="px-4 py-2 text-center">Очки</th>
-                            <th className="px-4 py-2 text-center">Время</th>
-                            <th className="px-4 py-2 text-left">Статус</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {gameResults.map((result, idx) => (
-                            <tr key={result._id} className={idx % 2 === 0 ? '' : 'bg-white/[0.02]'}>
-                              <td className="px-4 py-2">#{idx + 1}</td>
-                              <td className="px-4 py-2">
-                                {(result as any).userId?.nickname}
-                              </td>
-                              <td className="px-4 py-2 text-center font-bold">
-                                {result.totalPoints}
-                              </td>
-                              <td className="px-4 py-2 text-center">
-                                {result.totalTime
-                                  ? `${Math.floor(result.totalTime / 60)}:${(result.totalTime % 60)
-                                      .toString()
-                                      .padStart(2, '0')}`
-                                  : '-'}
-                              </td>
-                              <td className="px-4 py-2">{result.status}</td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
+                    gameResults.map((result) => {
+                      const applId =
+                        typeof (result as any).gameApplId === 'object'
+                          ? (result as any).gameApplId?._id
+                          : (result as any).gameApplId;
+                      const teamName =
+                        (result as any).gameApplId?.team?.name ||
+                        (result as any).gameApplId?.teamName ||
+                        (result as any).userId?.nickname ||
+                        'Команда';
+                      const adjustments = result.timeAdjustments || [];
+                      const adjustmentsTotal = adjustments.reduce((sum, adj) => sum + adj.amount, 0);
+                      const finalTime =
+                        result.totalTime !== undefined && result.totalTime !== null
+                          ? Math.max(0, result.totalTime + adjustmentsTotal)
+                          : null;
+                      const draft = adjustDrafts[applId] || { minutes: '', reason: '' };
+
+                      return (
+                        <div key={result._id} className="glass p-4">
+                          <div className="flex flex-wrap items-start justify-between gap-3">
+                            <div>
+                              <p className="text-lg font-bold text-zinc-100">{teamName}</p>
+                              <p className="text-sm text-zinc-400">
+                                Капитан: @{(result as any).userId?.nickname || '-'}
+                              </p>
+                            </div>
+                            <div className="text-right">
+                              <p className="font-mono text-xl font-bold text-violet-300">
+                                {formatSeconds(finalTime)}
+                              </p>
+                              <p className="text-xs text-zinc-500">
+                                {result.status === 'completed'
+                                  ? adjustmentsTotal !== 0
+                                    ? `чистое время ${formatSeconds(result.totalTime)}`
+                                    : 'итоговое время'
+                                  : result.status === 'in_progress'
+                                    ? 'в процессе'
+                                    : result.status === 'abandoned'
+                                      ? 'прервано'
+                                      : 'не начато'}
+                              </p>
+                            </div>
+                          </div>
+
+                          {adjustments.length > 0 && (
+                            <div className="mt-3 space-y-1">
+                              {adjustments.map((adj, idx) => (
+                                <div
+                                  key={idx}
+                                  className={`flex flex-wrap items-center gap-2 rounded-md px-3 py-1.5 text-sm ${
+                                    adj.amount > 0
+                                      ? 'bg-rose-500/10 text-rose-300'
+                                      : 'bg-emerald-500/10 text-emerald-300'
+                                  }`}
+                                >
+                                  <span className="font-mono font-bold">
+                                    {adj.amount > 0 ? '+' : '−'}{formatSeconds(Math.abs(adj.amount))}
+                                  </span>
+                                  <span className="text-zinc-300">{adj.reason}</span>
+                                  <span className="ml-auto text-xs text-zinc-500">
+                                    @{typeof adj.createdBy === 'object' ? adj.createdBy?.nickname : ''}
+                                  </span>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+
+                          <div className="mt-3 flex flex-wrap items-center gap-2 rounded-lg border border-white/10 bg-white/[0.03] p-2">
+                            <input
+                              type="number"
+                              min="0"
+                              step="0.5"
+                              placeholder="Минуты"
+                              value={draft.minutes}
+                              onChange={(e) =>
+                                setAdjustDrafts((prev) => ({
+                                  ...prev,
+                                  [applId]: { ...draft, minutes: e.target.value },
+                                }))
+                              }
+                              className="input-dark w-24 text-sm"
+                            />
+                            <input
+                              type="text"
+                              placeholder="Причина (видна в статистике)"
+                              value={draft.reason}
+                              onChange={(e) =>
+                                setAdjustDrafts((prev) => ({
+                                  ...prev,
+                                  [applId]: { ...draft, reason: e.target.value },
+                                }))
+                              }
+                              className="input-dark min-w-[12rem] flex-1 text-sm"
+                            />
+                            <button
+                              type="button"
+                              onClick={() => handleAdjustTime(applId, 1)}
+                              className="rounded-lg bg-rose-600/90 px-3 py-2 text-xs font-bold text-white transition hover:bg-rose-500"
+                              title="Добавить время (штраф)"
+                            >
+                              + Штраф
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleAdjustTime(applId, -1)}
+                              className="rounded-lg bg-emerald-600 px-3 py-2 text-xs font-bold text-white transition hover:bg-emerald-500"
+                              title="Убавить время (бонус)"
+                            >
+                              − Бонус
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    })
                   )}
                 </div>
               )}

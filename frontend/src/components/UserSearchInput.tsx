@@ -7,6 +7,10 @@ interface UserSearchInputProps {
   onChange: (value: string) => void;
   onSelect?: (user: UserSearchResult) => void;
   placeholder?: string;
+  /** ID пользователей, которых не нужно предлагать (уже в команде, сам капитан и т.п.) */
+  excludeIds?: string[];
+  /** Никнеймы, которые не нужно предлагать (уже выбраны в форме) */
+  excludeNicknames?: string[];
 }
 
 export default function UserSearchInput({
@@ -14,11 +18,19 @@ export default function UserSearchInput({
   onChange,
   onSelect,
   placeholder = 'Никнейм пользователя',
+  excludeIds = [],
+  excludeNicknames = [],
 }: UserSearchInputProps) {
   const [results, setResults] = useState<UserSearchResult[]>([]);
   const [isOpen, setIsOpen] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
+
+  // Не предлагаем тех, кого добавить нельзя или кто уже выбран
+  const visibleResults = results.filter(
+    (user) =>
+      !excludeIds.includes(user._id) && !excludeNicknames.includes(user.nickname)
+  );
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -80,12 +92,12 @@ export default function UserSearchInput({
             <div className="px-4 py-3 text-sm text-zinc-400">Поиск...</div>
           )}
 
-          {!isLoading && results.length === 0 && (
+          {!isLoading && visibleResults.length === 0 && (
             <div className="px-4 py-3 text-sm text-zinc-400">Пользователи не найдены</div>
           )}
 
           {!isLoading &&
-            results.map((user) => (
+            visibleResults.map((user) => (
               <button
                 key={user._id}
                 type="button"

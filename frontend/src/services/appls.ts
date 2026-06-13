@@ -22,4 +22,13 @@ export const applService = {
     const response = await api.get(`/appls/game/${gameId}`);
     return response.data;
   },
+
+  // Настройки команды на игру: время старта (линейный режим) и ручной порядок заданий
+  updateApplSettings: async (
+    applId: string,
+    settings: { startAt?: string | null; taskOrder?: string[] }
+  ): Promise<GameAppl> => {
+    const response = await api.patch(`/appls/${applId}/settings`, settings);
+    return response.data.appl;
+  },
 };

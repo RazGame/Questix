@@ -14,6 +14,7 @@ export interface GameStatistics {
       _id: string;
       nickname: string;
     }>;
+    taskOrderMode?: 'linear' | 'random' | 'manual';
     dateofstart: string;
     dateofend: string;
   };
@@ -60,8 +61,15 @@ export interface GameStatistics {
     }>;
     totalTasks: number;
     completedTasks: number;
-    totalPoints: number;
-    totalTime: number | null;
+    baseTotalTime: number | null; // чистое время без корректировок
+    timeAdjustments: Array<{
+      amount: number; // секунды: > 0 штраф, < 0 бонус
+      reason: string;
+      createdBy?: { _id: string; nickname: string } | null;
+      createdAt: string;
+    }>;
+    adjustmentsTotal: number;
+    totalTime: number | null; // итоговое время с учётом штрафов и бонусов
     gameStartedAt: string;
     gameFinishedAt: string | null;
   }>;

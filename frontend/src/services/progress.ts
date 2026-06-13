@@ -26,6 +26,16 @@ export const progressService = {
     await api.post(`/progress/${gameApplId}/set-order`, { taskIds });
   },
 
+  // Штраф (amount > 0) или бонус (amount < 0) ко времени команды, в секундах
+  adjustTime: async (
+    gameApplId: string,
+    amount: number,
+    reason: string
+  ): Promise<GameTeamProgress> => {
+    const response = await api.post(`/progress/${gameApplId}/adjust-time`, { amount, reason });
+    return response.data.progress;
+  },
+
   getGameResults: async (gameId: string): Promise<GameTeamProgress[]> => {
     const response = await api.get(`/progress/game/${gameId}/results`);
     return response.data;

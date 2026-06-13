@@ -7,6 +7,17 @@ import { Team } from '../models/Team';
 import { TeamLog } from '../models/TeamLog';
 import { AuthenticatedRequest } from '../middleware/auth';
 import { canPlayQuest } from '../services/questState';
+import { isGameModerator } from '../services/gamePermissions';
+
+// Перемешивание Фишера-Йетса для случайного порядка заданий
+const shuffle = <T>(items: T[]): T[] => {
+  const result = [...items];
+  for (let i = result.length - 1; i > 0; i -= 1) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [result[i], result[j]] = [result[j], result[i]];
+  }
+  return result;
+};
 
 // Проверка: пользователь — капитан или участник команды, подавшей заявку.
 // Все участники команды могут играть и отправлять ответы.
@@ -77,6 +88,20 @@ export const startGame = async (
       return;
     }
 
+    // Индивидуальное время старта команды (линейный режим):
+    // команда не может приступить раньше назначенного времени
+    if (gameAppl.startAt && new Date() < gameAppl.startAt) {
+      res.status(400).json({
+        error: `Ваша команда может стартовать в ${gameAppl.startAt.toLocaleTimeString('ru-RU', {
+          hour: '2-digit',
+          minute: '2-digit',
+          timeZone: 'Europe/Moscow',
+        })} (МСК)`,
+        startAt: gameAppl.startAt,
+      });
+      return;
+    }
+
     // Проверить, что прогресс еще не создан
     const existingProgress = await GameTeamProgress.findOne({ gameApplId });
 
@@ -93,7 +118,23 @@ export const startGame = async (
       return;
     }
 
-    const taskOrder = tasks.map(t => t._id!);
+    const linearOrder = tasks.map((t) => t._id!);
+
+    // Порядок заданий зависит от режима игры
+    let taskOrder: any[] = linearOrder;
+
+    if (game.taskOrderMode === 'random') {
+      taskOrder = shuffle(linearOrder);
+    } else if (game.taskOrderMode === 'manual') {
+      const validTaskIds = new Set(linearOrder.map((id) => id.toString()));
+      const manualOrder = (gameAppl.taskOrder || []).filter((id) =>
+        validTaskIds.has(id.toString())
+      );
+
+      // Используем ручной порядок только если он покрывает все задания,
+      // иначе откатываемся к линейному
+      taskOrder = manualOrder.length === linearOrder.length ? manualOrder : linearOrder;
+    }
 
     // Создать прогресс: он привязан к команде и к заявке команды
     const progress = new GameTeamProgress({
@@ -174,7 +215,6 @@ export const getCurrentTask = async (
         status: 'completed',
         message: 'Вы завершили все задания!',
         totalTime: progress.totalTime,
-        totalPoints: progress.totalPoints,
       });
       return;
     }
@@ -349,8 +389,6 @@ export const submitAnswer = async (
     });
 
     if (isCorrect) {
-      progress.totalPoints += task.points || 10;
-
       // Перейти к следующему заданию
       progress.currentTaskIndex += 1;
 
@@ -403,7 +441,6 @@ export const submitAnswer = async (
     res.status(200).json({
       message: isCorrect ? 'Правильно!' : 'Неверно! Попробуйте еще раз.',
       isCorrect,
-      totalPoints: progress.totalPoints,
       nextTask: isCorrect && progress.currentTaskIndex < progress.taskOrder.length,
     });
   } catch (error) {
@@ -480,6 +517,60 @@ export const setTeamTaskOrder = async (
   }
 };
 
+// Админ/организатор: добавить штраф (amount > 0) или бонус (amount < 0)
+// к итоговому времени команды. Корректировки видны в статистике.
+export const adjustTeamTime = async (
+  req: AuthenticatedRequest,
+  res: Response
+): Promise<void> => {
+  try {
+    const { gameApplId } = req.params;
+    const { amount, reason } = req.body;
+
+    if (!Number.isInteger(amount) || amount === 0) {
+      res.status(400).json({ error: 'amount должен быть целым числом секунд (положительным для штрафа, отрицательным для бонуса)' });
+      return;
+    }
+
+    if (!reason || typeof reason !== 'string' || !reason.trim()) {
+      res.status(400).json({ error: 'Укажите причину штрафа или бонуса' });
+      return;
+    }
+
+    const progress = await GameTeamProgress.findOne({ gameApplId });
+
+    if (!progress) {
+      res.status(404).json({ error: 'Прогресс команды не найден' });
+      return;
+    }
+
+    const game = await Game.findById(progress.gameId);
+
+    if (!game || !isGameModerator(game, req.user)) {
+      res.status(403).json({ error: 'Корректировать время может администратор или организатор игры' });
+      return;
+    }
+
+    progress.timeAdjustments.push({
+      amount,
+      reason: reason.trim(),
+      createdBy: req.user.id as any,
+      createdAt: new Date(),
+    });
+
+    await progress.save();
+    await progress.populate('timeAdjustments.createdBy', 'nickname');
+
+    res.status(200).json({
+      message: amount > 0 ? 'Штраф добавлен' : 'Бонус добавлен',
+      progress,
+    });
+  } catch (error) {
+    console.error('Ошибка корректировки времени:', error);
+    res.status(500).json({ error: 'Ошибка сервера' });
+  }
+};
+
 // Admin: Получить результаты всех команд по игре
 export const getGameResults = async (
   req: AuthenticatedRequest,
@@ -490,8 +581,10 @@ export const getGameResults = async (
 
     const results = await GameTeamProgress.find({ gameId })
       .populate('userId', 'nickname firstName lastName')
+      .populate({ path: 'gameApplId', select: 'teamName team', populate: { path: 'team', select: 'name' } })
       .populate('taskOrder')
-      .sort('-totalPoints');
+      .populate('timeAdjustments.createdBy', 'nickname')
+      .sort('totalTime');
 
     res.status(200).json(results);
   } catch (error) {

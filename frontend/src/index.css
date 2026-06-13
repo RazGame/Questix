@@ -67,6 +67,21 @@ body {
   }
 }
 
+/*
+ * Раскрытый список нативного <select> рисуется браузером и не наследует
+ * стили input-dark: на тёмной теме option остаётся на белом фоне со светлым
+ * текстом и становится нечитаемым. Задаём цвета опций явно.
+ */
+select.input-dark {
+  color-scheme: dark;
+}
+
+select.input-dark option,
+select.input-dark optgroup {
+  background-color: #17111f;
+  color: #e4e4e7;
+}
+
 .rich-content,
 .rich-editor-content {
   line-height: 1.7;

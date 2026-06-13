@@ -144,6 +144,11 @@ export default function MyAppls() {
                     <strong>Ваша команда:</strong> {appl.teamName}
                   </p>
                 )}
+                {appl.startAt && (
+                  <p className="text-amber-300">
+                    <strong>Старт вашей команды:</strong> {formatDateTime(appl.startAt)}
+                  </p>
+                )}
               </div>
 
               {appl.status === 'approved' && canEnterGame && (

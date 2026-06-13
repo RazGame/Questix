@@ -44,12 +44,13 @@ Check 'organizer role assigned' ($org.user.roles -contains 'organizer')
 # 3. Организатор создаёт игру (старт через 6 секунд)
 $start = (Get-Date).ToUniversalTime().AddSeconds(6).ToString('o')
 $end = (Get-Date).ToUniversalTime().AddHours(1).ToString('o')
-$game = (Api POST '/games' @{ title="Smoke Quest $ts"; city='SPb'; dateofstart=$start; dateofend=$end; deposit='0'; prize='100'; description='smoke' } $org.token).game
+$game = (Api POST '/games' @{ title="Smoke Quest $ts"; city='SPb'; dateofstart=$start; dateofend=$end; deposit='0'; prize='100'; description='smoke'; taskOrderMode='linear' } $org.token).game
 Check 'organizer creates game' ($null -ne $game._id)
+Check 'game has linear order mode' ($game.taskOrderMode -eq 'linear')
 
-# 4. Организатор создаёт задания своей игры (раньше было admin-only)
-$t1 = (Api POST "/tasks/game/$($game._id)" @{ title='T1'; description='d1'; answers=@('one'); orderIndex=0; points=10 } $org.token).task
-$t2 = (Api POST "/tasks/game/$($game._id)" @{ title='T2'; description='d2'; answers=@('two'); orderIndex=1; points=10 } $org.token).task
+# 4. Организатор создаёт задания своей игры (очков больше нет)
+$t1 = (Api POST "/tasks/game/$($game._id)" @{ title='T1'; description='d1'; answers=@('one'); orderIndex=0 } $org.token).task
+$t2 = (Api POST "/tasks/game/$($game._id)" @{ title='T2'; description='d2'; answers=@('two'); orderIndex=1 } $org.token).task
 Check 'organizer creates tasks' ($t1._id -and $t2._id)
 
 # 5. Капитан создаёт команду и добавляет участника по никнейму
@@ -81,8 +82,19 @@ Check 'organizer approves appl' ($approved.status -eq 'approved')
 $memAppls = Api GET '/appls/my' $null $mem.token
 Check 'member sees team appl' (($memAppls | Where-Object { $_._id -eq $appl._id } | Measure-Object).Count -eq 1)
 
+# 8.1 Индивидуальное время старта: команда не может стартовать раньше
+$farStart = (Get-Date).ToUniversalTime().AddMinutes(30).ToString('o')
+Api PATCH "/appls/$($appl._id)/settings" @{ startAt = $farStart } $org.token | Out-Null
+
 # 9. Дождаться старта игры
 Start-Sleep -Seconds 7
+
+$startBlocked = $false
+try { Api POST '/progress/start' @{ gameApplId = $appl._id } $mem.token | Out-Null } catch { $startBlocked = $true }
+Check 'team start blocked before its startAt' $startBlocked
+
+# Сбросить индивидуальный старт - теперь можно играть
+Api PATCH "/appls/$($appl._id)/settings" @{ startAt = $null } $org.token | Out-Null
 
 # 10. УЧАСТНИК (не капитан) начинает игру
 $progress = (Api POST '/progress/start' @{ gameApplId = $appl._id } $mem.token).progress
@@ -134,6 +146,14 @@ Check 'organizer sees stats before publish' ($orgStats.totalTeams -eq 1)
 # 16. Организатор публикует результаты
 Api POST "/games/$($game._id)/publish" $null $org.token | Out-Null
 
+# 16.1 Штрафы и бонусы ко времени команды (только модератор игры)
+$memAdjustDenied = $false
+try { Api POST "/progress/$($appl._id)/adjust-time" @{ amount = 60; reason = '試' } $mem.token | Out-Null } catch { $memAdjustDenied = $true }
+Check 'member cannot adjust time' $memAdjustDenied
+
+Api POST "/progress/$($appl._id)/adjust-time" @{ amount = 120; reason = 'Опоздание на точку' } $org.token | Out-Null
+Api POST "/progress/$($appl._id)/adjust-time" @{ amount = -30; reason = 'Бонус за находчивость' } $org.token | Out-Null
+
 # 17. После публикации участник видит статистику с submittedBy и местом
 $stats = Api GET "/games/$($game._id)/stats" $null $mem.token
 $teamStat = $stats.statistics[0]
@@ -145,6 +165,11 @@ $step2 = $teamStat.taskResults[1]
 Check 'step1 submittedBy = captain' ($step1.submittedBy.nickname -eq "cap$ts")
 Check 'step2 submittedBy = member' ($step2.submittedBy.nickname -eq "mem$ts")
 Check 'step has completedAt and timeSpent' ($step1.completedAt -and $null -ne $step1.timeSpent)
+
+# Корректировки видны в статистике и входят в итоговое время
+Check 'stats show adjustments' (($teamStat.timeAdjustments | Measure-Object).Count -eq 2)
+Check 'adjustments total = +90' ($teamStat.adjustmentsTotal -eq 90)
+Check 'total time includes adjustments' ($teamStat.totalTime -eq ($teamStat.baseTotalTime + 90))
 
 # 18. Участник выходит из команды; капитан не может выйти
 Api POST "/teams/$($team._id)/leave" $null $mem.token | Out-Null
@@ -194,6 +219,29 @@ Check 'organizers visible in game info' ($publicGame.organizers[0].nickname -eq 
 # Создатель убирает соорганизатора
 $gameNoOrgs = (Api DELETE "/games/$($game._id)/organizers/$($org2.user.id)" $null $org.token).game
 Check 'creator removes co-organizer' (($gameNoOrgs.organizers | Measure-Object).Count -eq 0)
+
+# 21. Ручной порядок заданий: организатор задаёт обратный порядок для команды
+$start2 = (Get-Date).ToUniversalTime().AddSeconds(5).ToString('o')
+$end2 = (Get-Date).ToUniversalTime().AddHours(1).ToString('o')
+$game2 = (Api POST '/games' @{ title="Smoke Manual $ts"; city='SPb'; dateofstart=$start2; dateofend=$end2; deposit='0'; prize='1'; description='manual order'; taskOrderMode='manual' } $org.token).game
+$m1 = (Api POST "/tasks/game/$($game2._id)" @{ title='M1'; description='d'; answers=@('a'); orderIndex=0 } $org.token).task
+$m2 = (Api POST "/tasks/game/$($game2._id)" @{ title='M2'; description='d'; answers=@('b'); orderIndex=1 } $org.token).task
+
+$appl2 = (Api POST '/appls' @{ gameId = $game2._id } $capLogin.token).appl
+Api PATCH "/appls/$($appl2._id)/status" @{ status='approved' } $org.token | Out-Null
+
+# Обратный порядок: сначала M2, потом M1
+Api PATCH "/appls/$($appl2._id)/settings" @{ taskOrder = @($m2._id, $m1._id) } $org.token | Out-Null
+
+# Неполный порядок должен отклоняться
+$badOrderRejected = $false
+try { Api PATCH "/appls/$($appl2._id)/settings" @{ taskOrder = @($m1._id) } $org.token | Out-Null } catch { $badOrderRejected = $true }
+Check 'partial manual order rejected' $badOrderRejected
+
+Start-Sleep -Seconds 6
+Api POST '/progress/start' @{ gameApplId = $appl2._id } $capLogin.token | Out-Null
+$current = Api GET "/progress/$($appl2._id)/current-task" $null $capLogin.token
+Check 'manual order: first task is M2' ($current.task.title -eq 'M2')
 
 Write-Host ''
 Write-Host "RESULT: $pass passed, $fail failed" -ForegroundColor $(if ($fail -eq 0) { 'Green' } else { 'Red' })

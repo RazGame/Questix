@@ -17,6 +17,12 @@ export interface GameOrganizer {
   lastName?: string;
 }
 
+// Порядок прохождения заданий:
+// linear - общий порядок (+ индивидуальное время старта команд);
+// random - случайный порядок для каждой команды;
+// manual - порядок задаётся организатором для каждой команды.
+export type TaskOrderMode = 'linear' | 'random' | 'manual';
+
 export interface Game {
   _id: string;
   title: string;
@@ -27,6 +33,7 @@ export interface Game {
   prize: string;
   description: string;
   published?: boolean;
+  taskOrderMode?: TaskOrderMode;
   createdBy?: GameOrganizer | string; // populated-документ или ID
   organizers?: GameOrganizer[]; // соорганизаторы
   gameAppls: GameAppl[];
@@ -64,6 +71,8 @@ export interface GameAppl {
   };
   teamName?: string;
   teamMembers?: string[];
+  startAt?: string | null; // Индивидуальное время старта команды (линейный режим)
+  taskOrder?: string[]; // Ручной порядок заданий для команды (режим manual)
   createdAt?: string;
   updatedAt?: string;
 }
@@ -82,7 +91,6 @@ export interface Task {
   hints?: Array<string | TaskHint>;
   orderIndex: number;
   timeLimit?: number;
-  points?: number;
 }
 
 export interface GameTeamProgress {
@@ -103,7 +111,13 @@ export interface GameTeamProgress {
   gameStartedAt: string;
   gameFinishedAt?: string;
   totalTime?: number;
-  totalPoints: number;
+  // Корректировки времени: amount > 0 - штраф, amount < 0 - бонус (секунды)
+  timeAdjustments?: {
+    amount: number;
+    reason: string;
+    createdBy?: { _id: string; nickname: string } | string;
+    createdAt: string;
+  }[];
   status: 'not_started' | 'in_progress' | 'completed' | 'abandoned';
 }
 
@@ -124,7 +138,6 @@ export interface CurrentTaskResponse {
   };
   message?: string;
   totalTime?: number;
-  totalPoints?: number;
 }
 
 export interface LoginRequest {

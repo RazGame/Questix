@@ -37,6 +37,11 @@ const gameSchema = new mongoose.Schema<IGame>(
       type: Boolean,
       default: false,
     },
+    taskOrderMode: {
+      type: String,
+      enum: ['linear', 'random', 'manual'],
+      default: 'linear',
+    },
     gameAppls: [
       {
         type: mongoose.Schema.Types.ObjectId,

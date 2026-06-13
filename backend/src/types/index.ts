@@ -16,6 +16,12 @@ export interface IUser {
   updatedAt?: Date;
 }
 
+// Порядок прохождения заданий:
+// linear - общий порядок для всех команд (возможен старт команд по расписанию);
+// random - каждой команде случайный порядок при старте;
+// manual - порядок задаётся организатором для каждой команды отдельно.
+export type TaskOrderMode = 'linear' | 'random' | 'manual';
+
 export interface IGame {
   _id?: string;
   title: string;
@@ -26,6 +32,7 @@ export interface IGame {
   prize: string;
   description: string;
   published?: boolean; // Опубликованы ли результаты игры
+  taskOrderMode?: TaskOrderMode;
   gameAppls: string[]; // IDs заявок
   createdBy?: string; // ID создателя игры (организатор/админ)
   organizers?: Types.ObjectId[]; // Соорганизаторы: могут править игру наравне с создателем
@@ -41,6 +48,8 @@ export interface IGameAppl {
   status: 'pending' | 'approved' | 'rejected' | 'completed';
   teamName?: string;
   teamMembers?: string[];
+  startAt?: Date | null; // Индивидуальное время старта команды (линейный режим)
+  taskOrder?: Types.ObjectId[]; // Ручной порядок заданий для этой команды (manual режим)
   createdAt?: Date;
   updatedAt?: Date;
 }

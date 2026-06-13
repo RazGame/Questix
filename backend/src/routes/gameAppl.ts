@@ -87,6 +87,45 @@ router.patch(
 
 /**
  * @swagger
+ * /appls/{id}/settings:
+ *   patch:
+ *     tags: [Game Applications]
+ *     summary: Настройки команды на игру - время старта и ручной порядок заданий (админ/организатор)
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               startAt:
+ *                 type: string
+ *                 format: date-time
+ *                 nullable: true
+ *               taskOrder:
+ *                 type: array
+ *                 items:
+ *                   type: string
+ *     responses:
+ *       200:
+ *         description: Настройки сохранены
+ */
+router.patch(
+  '/:id/settings',
+  authMiddleware,
+  applController.updateApplSettings
+);
+
+/**
+ * @swagger
  * /appls/game/{gameId}:
  *   get:
  *     tags: [Game Applications]

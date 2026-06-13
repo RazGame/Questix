@@ -31,7 +31,6 @@ const taskSchema = Joi.object({
     .optional(),
   orderIndex: Joi.number().required(),
   timeLimit: Joi.number().optional(),
-  points: Joi.number().optional(),
 });
 
 const normalizeHints = (hints: Array<string | { text: string; delayMinutes?: number }> = []) =>

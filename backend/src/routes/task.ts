@@ -80,8 +80,6 @@ router.get('/:taskId', taskController.getTaskById);
  *               timeLimit:
  *                 type: number
  *                 description: Лимит времени в секундах
- *               points:
- *                 type: number
  *     responses:
  *       201:
  *         description: Задание создано

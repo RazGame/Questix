@@ -149,7 +149,7 @@ export default function Games() {
       {filteredGames.length === 0 ? (
         <p className="text-center text-zinc-400">Квестов не найдено</p>
       ) : (
-        <div className="grid max-w-5xl gap-5 md:grid-cols-2">
+        <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-3">
           {filteredGames.map((game) => (
             <div
               key={game._id}
@@ -186,8 +186,8 @@ export default function Games() {
                   </div>
                 </div>
 
-                <p className="mb-3 line-clamp-1 text-sm text-zinc-400">
-                  {toPlainText(game.description).substring(0, 100)}...
+                <p className="mb-3 line-clamp-3 min-h-[3.9rem] text-sm leading-relaxed text-zinc-400">
+                  {toPlainText(game.description)}
                 </p>
 
                 <button className="w-full btn-grad rounded py-2 text-sm font-bold transition">

@@ -9,7 +9,6 @@ export interface ITask {
   hints?: Array<string | { text: string; delayMinutes?: number }>; // подсказки
   orderIndex: number; // порядок в квесте (может быть переопределен для каждой команды)
   timeLimit?: number; // лимит времени в секундах (опционально)
-  points?: number; // очки за задание
   createdAt?: Date;
   updatedAt?: Date;
 }
@@ -55,10 +54,6 @@ const taskSchema = new mongoose.Schema<ITask>(
     timeLimit: {
       type: Number,
       default: null, // null = без лимита
-    },
-    points: {
-      type: Number,
-      default: 10,
     },
   },
   { timestamps: true }
