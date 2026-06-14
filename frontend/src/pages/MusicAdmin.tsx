@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Plus, Play, Trash2, Upload, RefreshCw, Search, RotateCw, Scissors } from 'lucide-react';
+import { Plus, Play, Trash2, Upload, RefreshCw, Search, RotateCw, Scissors, Link } from 'lucide-react';
 import { musicService, MusicGameFull, SongSearchResult } from '../services/music';
 import { createSocket } from '../services/socket';
 import { MusicGame, Song } from '../types';
@@ -34,10 +34,13 @@ export default function MusicAdmin({ isTab = false }: { isTab?: boolean }) {
   const [games, setGames] = useState<(MusicGame & { songCount: number })[]>([]);
   const [current, setCurrent] = useState<MusicGameFull | null>(null);
   const [error, setError] = useState('');
+  const [notice, setNotice] = useState('');
   const [searchQ, setSearchQ] = useState('');
   const [results, setResults] = useState<SongSearchResult[]>([]);
   const [searching, setSearching] = useState(false);
   const [targetBlock, setTargetBlock] = useState('');
+  const [playlistUrl, setPlaylistUrl] = useState('');
+  const [playlistImporting, setPlaylistImporting] = useState(false);
   const [spotiVersion, setSpotiVersion] = useState<string | null>(null);
   const [segmentSong, setSegmentSong] = useState<Song | null>(null); // открытая модалка отрезка
 
@@ -86,6 +89,7 @@ export default function MusicAdmin({ isTab = false }: { isTab?: boolean }) {
       setCurrent(full);
       setTargetBlock(full.game.blocks[0]?._id || '');
       setError('');
+      setNotice('');
     } catch (e: any) {
       setError(apiErrorMessage(e, 'Ошибка загрузки игры'));
       if (throwOnError) throw e;
@@ -237,6 +241,7 @@ export default function MusicAdmin({ isTab = false }: { isTab?: boolean }) {
     try {
       setResults(await musicService.search(searchQ.trim()));
       setError('');
+      setNotice('');
     } catch (e: any) {
       setError(apiErrorMessage(e, 'Поиск недоступен'));
     }
@@ -248,8 +253,26 @@ export default function MusicAdmin({ isTab = false }: { isTab?: boolean }) {
       await musicService.addSong(current.game._id, targetBlock, r);
       await refreshCurrent();
       setError('');
+      setNotice('');
     } catch (e: any) {
       setError(apiErrorMessage(e, 'Ошибка добавления песни'));
+    }
+  };
+
+  const importPlaylist = async () => {
+    if (!current || !targetBlock || !playlistUrl.trim()) return;
+    setPlaylistImporting(true);
+    try {
+      const result = await musicService.importPlaylist(current.game._id, targetBlock, playlistUrl.trim());
+      await refreshCurrent();
+      setPlaylistUrl('');
+      const playlistName = result.playlist?.name ? `«${result.playlist.name}» ` : '';
+      setError('');
+      setNotice(`${playlistName}добавлено: ${result.imported}, пропущено дублей: ${result.skipped}`);
+    } catch (e: any) {
+      setError(apiErrorMessage(e, 'Не удалось импортировать плейлист'));
+    } finally {
+      setPlaylistImporting(false);
     }
   };
 
@@ -258,6 +281,7 @@ export default function MusicAdmin({ isTab = false }: { isTab?: boolean }) {
     try {
       setSpotiVersion((await musicService.spotiflacUpdate()).version);
       setError('');
+      setNotice('');
     } catch (e: any) {
       setError(apiErrorMessage(e, 'Не удалось обновить SpotiFLAC'));
       setSpotiVersion(null);
@@ -288,6 +312,11 @@ export default function MusicAdmin({ isTab = false }: { isTab?: boolean }) {
       {error && (
         <div className="mb-4 rounded border border-rose-500/20 bg-rose-500/10 p-3 text-rose-300">
           {error}
+        </div>
+      )}
+      {notice && (
+        <div className="mb-4 rounded border border-emerald-500/20 bg-emerald-500/10 p-3 text-emerald-300">
+          {notice}
         </div>
       )}
 
@@ -382,6 +411,24 @@ export default function MusicAdmin({ isTab = false }: { isTab?: boolean }) {
                       </button>
                     </div>
                   ))}
+                </div>
+                <div className="mt-4 border-t border-white/10 pt-4">
+                  <div className="flex gap-2">
+                    <input
+                      value={playlistUrl}
+                      onChange={(e) => setPlaylistUrl(e.target.value)}
+                      onKeyDown={(e) => e.key === 'Enter' && importPlaylist()}
+                      placeholder="Ссылка на Spotify-плейлист…"
+                      className="input-dark flex-1"
+                    />
+                    <button
+                      onClick={importPlaylist}
+                      disabled={playlistImporting || !playlistUrl.trim()}
+                      className="btn-grad flex items-center gap-1 rounded-lg px-4 font-bold disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      <Link size={17} /> {playlistImporting ? 'Импорт…' : 'Импорт'}
+                    </button>
+                  </div>
                 </div>
               </div>
 

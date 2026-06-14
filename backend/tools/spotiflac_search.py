@@ -20,11 +20,26 @@ def emit(obj):
     sys.stdout.flush()
 
 
-def to_dict(t):
+def preview_for(client, track_id, fallback=''):
+    if fallback:
+        return fallback
+    if not track_id:
+        return ''
+    try:
+        return client.get_track_preview(track_id) or ''
+    except Exception:  # noqa: BLE001
+        return ''
+
+
+def to_dict(t, client=None):
     g = lambda *names, default='': next(  # noqa: E731
         (getattr(t, n) for n in names if getattr(t, n, None)), default
     )
     dur_ms = getattr(t, 'duration_ms', 0) or 0
+    spotify_id = g('id')
+    preview = g('preview_url')
+    if client:
+        preview = preview_for(client, spotify_id, preview)
     return {
         'title': g('title'),
         'artist': g('artists', 'album_artist'),
@@ -32,8 +47,8 @@ def to_dict(t):
         'cover': g('cover_url', 'avatar_url'),
         'duration': int(dur_ms / 1000),
         'sourceUrl': g('external_url'),
-        'preview': g('preview_url'),
-        'spotifyId': g('id'),
+        'preview': preview,
+        'spotifyId': spotify_id,
     }
 
 
@@ -50,7 +65,7 @@ def main():
     except Exception as e:  # noqa: BLE001
         emit({'ok': False, 'error': f'search failed: {e}'})
         return 1
-    results = [to_dict(t) for t in (tracks or [])]
+    results = [to_dict(t, client) for t in (tracks or [])]
     results = [r for r in results if r['sourceUrl']]
     emit({'ok': True, 'results': results})
     return 0

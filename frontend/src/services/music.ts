@@ -16,6 +16,18 @@ export interface SongSearchResult {
   preview?: string;
 }
 
+export interface PlaylistImportResult {
+  ok: boolean;
+  playlist?: {
+    name?: string;
+    owner?: string;
+    cover_url?: string;
+    track_count?: number;
+  };
+  imported: number;
+  skipped: number;
+}
+
 export const musicService = {
   // --- игры ---
   list: async (): Promise<(MusicGame & { songCount: number })[]> => {
@@ -72,6 +84,10 @@ export const musicService = {
       { headers: { 'Content-Type': 'application/octet-stream' } }
     );
     return res.data.song;
+  },
+  importPlaylist: async (id: string, blockId: string, url: string): Promise<PlaylistImportResult> => {
+    const res = await api.post(`/music/games/${id}/playlist-import`, { blockId, url });
+    return res.data;
   },
 
   // --- поиск (SpotiFLAC, фаза D) ---

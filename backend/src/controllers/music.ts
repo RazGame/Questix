@@ -289,6 +289,93 @@ export const addSong = async (
   }
 };
 
+const downloadSongsSequentially = async (gameId: string, songIds: string[]): Promise<void> => {
+  for (const songId of songIds) {
+    await downloadSong(gameId, songId).catch(() => {});
+  }
+};
+
+export const importPlaylist = async (
+  req: AuthenticatedRequest,
+  res: Response
+): Promise<void> => {
+  try {
+    const game = await loadModerableGame(req, res);
+    if (!game) return;
+
+    const { blockId, url } = req.body || {};
+    const block =
+      game.blocks?.find((b) => String(b._id) === blockId) || game.blocks?.[0];
+    if (!block) {
+      res.status(400).json({ error: 'Нет блока для песен' });
+      return;
+    }
+
+    const playlistUrl = String(url || '').trim();
+    if (!playlistUrl) {
+      res.status(400).json({ error: 'Укажите ссылку на плейлист' });
+      return;
+    }
+
+    const out = await runTool('spotiflac_playlist.py', [playlistUrl, '100']);
+    if (!out.ok) {
+      res.status(502).json({ error: out.error || 'Не удалось прочитать плейлист' });
+      return;
+    }
+
+    const tracks = Array.isArray(out.results) ? out.results : [];
+    if (tracks.length === 0) {
+      res.status(400).json({ error: 'В плейлисте не найдено доступных треков' });
+      return;
+    }
+
+    const sourceUrls = tracks.map((track: any) => track.sourceUrl).filter(Boolean);
+    const existing = await Song.find({
+      gameId: game._id,
+      sourceUrl: { $in: sourceUrls },
+    }).select('sourceUrl').lean();
+    const existingUrls = new Set(existing.map((song: any) => song.sourceUrl));
+
+    const createdIds: string[] = [];
+    for (const track of tracks) {
+      if (!track?.sourceUrl || existingUrls.has(track.sourceUrl)) continue;
+
+      const created = await Song.create({
+        gameId: game._id,
+        title: track.title || 'Без названия',
+        artist: track.artist || '',
+        album: track.album || '',
+        cover: track.cover || '',
+        duration: track.duration || 0,
+        startSec: 0,
+        sourceUrl: track.sourceUrl,
+        preview: track.preview || '',
+        file: null,
+        status: 'pending',
+      });
+
+      block.songIds.push(created._id as any);
+      createdIds.push(String(created._id));
+      existingUrls.add(track.sourceUrl);
+    }
+
+    await game.save();
+    res.status(201).json({
+      ok: true,
+      playlist: out.playlist || null,
+      imported: createdIds.length,
+      skipped: tracks.length - createdIds.length,
+    });
+
+    if (createdIds.length > 0) {
+      downloadSongsSequentially(String(game._id), createdIds).catch(() => {});
+    }
+  } catch (error) {
+    console.error('Ошибка импорта плейлиста:', error);
+    res.status(500).json({ error: 'Ошибка сервера' });
+  }
+};
+
 export const updateSong = async (
   req: AuthenticatedRequest,
   res: Response

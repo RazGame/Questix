@@ -34,6 +34,7 @@ router.delete('/games/:id/blocks/:blockId', music.removeBlock);
 
 // песни
 router.post('/games/:id/songs', music.addSong);
+router.post('/games/:id/playlist-import', music.importPlaylist);
 router.patch('/games/:id/songs/:songId', music.updateSong);
 router.delete('/games/:id/songs/:songId', music.removeSong);
 
