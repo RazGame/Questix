@@ -142,10 +142,20 @@ export default function MusicHost() {
                   </p>
                   <button
                     onClick={() => emit('admin:start')}
-                    className="btn-grad rounded-xl px-8 py-4 font-bold text-lg shadow-xl hover:scale-[1.02] active:scale-[0.98] transition duration-200"
+                    disabled={!live.screenReady}
+                    className={`rounded-xl px-8 py-4 font-bold text-lg shadow-xl transition duration-200 ${
+                      live.screenReady
+                        ? 'btn-grad hover:scale-[1.02] active:scale-[0.98]'
+                        : 'cursor-not-allowed bg-white/10 text-zinc-500 shadow-none'
+                    }`}
                   >
                     ▶ Запустить игру
                   </button>
+                  {!live.screenReady && (
+                    <p className="mt-3 text-sm text-amber-300">
+                      Сначала нажмите «включить звук» на экране проектора.
+                    </p>
+                  )}
                 </div>
               )}
 
@@ -162,6 +172,30 @@ export default function MusicHost() {
                   >
                     Пропустить эту песню ⏭
                   </button>
+                </div>
+              )}
+
+              {live.phase === 'ended' && (
+                <div className="py-2">
+                  <div className="mb-6 rounded-lg bg-amber-500/5 border border-amber-500/15 p-4">
+                    <p className="text-xs uppercase text-zinc-400 font-semibold tracking-wider mb-2">Фрагмент закончился</p>
+                    <p className="text-lg font-bold text-zinc-100">{live.blockName || 'Без названия блока'}</p>
+                    <p className="text-sm text-zinc-400">Можно включить этот же кусок ещё раз или перейти к следующей песне.</p>
+                  </div>
+                  <div className="flex flex-wrap gap-3">
+                    <button
+                      onClick={() => emit('admin:replay')}
+                      className="btn-grad rounded-lg px-5 py-2.5 font-bold text-white transition flex items-center gap-2"
+                    >
+                      <RefreshCw size={16} /> Включить ещё раз
+                    </button>
+                    <button
+                      onClick={() => emit('admin:skip')}
+                      className="rounded-lg bg-amber-600 hover:bg-amber-500 px-5 py-2.5 font-bold text-white transition flex items-center gap-2"
+                    >
+                      Следующая песня ⏭
+                    </button>
+                  </div>
                 </div>
               )}
 

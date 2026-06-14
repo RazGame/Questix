@@ -98,7 +98,7 @@ export interface MusicState {
   gameId: string;
   gameName: string;
   code: string;
-  phase: 'lobby' | 'playing' | 'buzzed' | 'reveal' | 'finished';
+  phase: 'lobby' | 'playing' | 'ended' | 'buzzed' | 'reveal' | 'finished';
   total: number;
   currentIndex: number;
   buzzed: { id: string; name: string } | null;
@@ -109,6 +109,7 @@ export interface MusicState {
   startSec?: number;
   endSec?: number | null;
   nextUrl?: string | null;
+  screenReady?: boolean;
 }
 
 export interface GameAppl {

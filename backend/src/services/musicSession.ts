@@ -14,7 +14,7 @@ interface Player {
   score: number;
 }
 
-type Phase = 'lobby' | 'playing' | 'buzzed' | 'reveal' | 'finished';
+type Phase = 'lobby' | 'playing' | 'ended' | 'buzzed' | 'reveal' | 'finished';
 
 // Стейт-машина одной игры «Угадай мелодию». In-memory: счёт эфемерный,
 // в Mongo не персистится — это держит хот-путь баззера быстрым.
@@ -28,6 +28,7 @@ class Session {
   buzzed: { id: string; name: string } | null = null;
   locked = new Set<string>(); // заблокированные в текущем раунде
   advanceTimer: NodeJS.Timeout | null = null;
+  screenReady = false;
 
   constructor(io: Server, gameId: string) {
     this.io = io;
@@ -77,7 +78,17 @@ class Session {
   }
 
   // --- управление игрой ---
+  setScreenReady(ready: boolean) {
+    this.screenReady = ready;
+    this.broadcast();
+  }
+
   async start() {
+    if (!this.screenReady) {
+      this.io.to(this.rAdmin()).emit('error-msg', { message: 'Сначала нажмите «включить звук» на экране проектора.' });
+      return false;
+    }
+
     const all = await buildPlaylist(this.gameId);
     const ready = all.filter((s) => s.status === 'ready' && s.file);
     if (ready.length === 0) {
@@ -106,6 +117,32 @@ class Session {
         ? `/media/${this.playlist[this.currentIndex + 1].file}`
         : null,
     });
+    this.broadcast();
+  }
+
+  replayCurrent() {
+    const song = this.playlist[this.currentIndex];
+    if (!song || !song.file) return;
+    if (this.phase !== 'ended' && this.phase !== 'playing') return;
+
+    this.phase = 'playing';
+    this.buzzed = null;
+    this.cmd('play', {
+      fileUrl: `/media/${song.file}`,
+      startSec: song.startSec || 0,
+      endSec: song.endSec ?? null,
+      songId: String(song._id),
+      nextUrl: this.playlist[this.currentIndex + 1]
+        ? `/media/${this.playlist[this.currentIndex + 1].file}`
+        : null,
+    });
+    this.broadcast();
+  }
+
+  clipEnded() {
+    if (this.phase !== 'playing') return;
+    this.phase = 'ended';
+    this.cmd('pause');
     this.broadcast();
   }
 
@@ -191,6 +228,7 @@ class Session {
       nextUrl: cur && this.playlist[this.currentIndex + 1]
         ? `/media/${this.playlist[this.currentIndex + 1].file}`
         : null,
+      screenReady: this.screenReady,
       players: Array.from(this.players.values()).map((p) => ({
         id: p.id,
         name: p.name,

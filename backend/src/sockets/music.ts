@@ -49,7 +49,10 @@ export const registerMusicSockets = (io: Server): void => {
 
       const session = getSession(io, gameId);
       socket.join(`g:${gameId}`);
-      if (role === 'screen') socket.join(`g:${gameId}:screen`);
+      if (role === 'screen') {
+        socket.join(`g:${gameId}:screen`);
+        session.setScreenReady(false);
+      }
       if (role === 'admin') socket.join(`g:${gameId}:admin`);
 
       if (role === 'player') {
@@ -78,6 +81,7 @@ export const registerMusicSockets = (io: Server): void => {
     // команды ведущего (только admin-роль, права уже проверены на join)
     const adminActions: Record<string, (s: ReturnType<typeof getSession>) => void> = {
       'admin:start': (s) => { s.start(); },
+      'admin:replay': (s) => s.replayCurrent(),
       'admin:correct': (s) => s.correct(),
       'admin:wrong': (s) => s.wrong(),
       'admin:skip': (s) => s.skip(),
@@ -90,11 +94,23 @@ export const registerMusicSockets = (io: Server): void => {
       });
     }
 
+    socket.on('screen:ended', () => {
+      if (role !== 'screen' || !gameId) return;
+      getSession(io, gameId).clipEnded();
+    });
+
+    socket.on('screen:audio-ready', () => {
+      if (role !== 'screen' || !gameId) return;
+      getSession(io, gameId).setScreenReady(true);
+    });
+
     socket.on('disconnect', () => {
+      if (role === 'screen' && gameId) {
+        getSession(io, gameId).setScreenReady(false);
+      }
       if (role === 'player' && gameId && playerId) {
         getSession(io, gameId).setConnected(playerId, false);
       }
     });
   });
 };
-

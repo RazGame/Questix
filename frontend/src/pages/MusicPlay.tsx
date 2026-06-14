@@ -3,6 +3,13 @@ import { useSearchParams } from 'react-router-dom';
 import { createSocket } from '../services/socket';
 import { MusicState } from '../types';
 
+const vibrate = (pattern: number | number[]) => {
+  if (typeof navigator !== 'undefined' && 'vibrate' in navigator) {
+    navigator.vibrate(0);
+    navigator.vibrate(pattern);
+  }
+};
+
 // Телефон игрока «Угадай мелодию». Без регистрации на платформе: вход по коду/QR.
 // Баззер на onPointerDown ради минимальной задержки.
 export default function MusicPlay() {
@@ -11,6 +18,7 @@ export default function MusicPlay() {
 
   const socketRef = useRef<ReturnType<typeof createSocket> | null>(null);
   const playerIdRef = useRef<string | null>(null);
+  const prevStateRef = useRef<MusicState | null>(null);
 
   const [code, setCode] = useState(codeFromUrl);
   const [name, setName] = useState(localStorage.getItem('qgs_name') || '');
@@ -82,6 +90,40 @@ export default function MusicPlay() {
 
   const me = state?.players.find((p) => p.id === playerIdRef.current);
 
+  useEffect(() => {
+    if (!joined || !state) return;
+
+    const prev = prevStateRef.current;
+    const playerId = playerIdRef.current;
+    prevStateRef.current = state;
+    if (!prev || !playerId) return;
+
+    const isNewPlayingRound =
+      state.phase === 'playing' &&
+      (prev.phase !== 'playing' || prev.currentIndex !== state.currentIndex);
+    if (isNewPlayingRound) {
+      vibrate([180, 80, 180]);
+      return;
+    }
+
+    const isNewBuzz = state.phase === 'buzzed' && prev.phase !== 'buzzed';
+    if (isNewBuzz) {
+      vibrate(state.buzzed?.id === playerId ? [220, 90, 320] : 180);
+      return;
+    }
+
+    const isCorrectReveal = state.phase === 'reveal' && prev.phase === 'buzzed';
+    if (isCorrectReveal) {
+      vibrate(prev.buzzed?.id === playerId ? [180, 80, 180, 80, 420] : [160, 80, 160]);
+      return;
+    }
+
+    const isWrongAnswer = state.phase === 'playing' && prev.phase === 'buzzed';
+    if (isWrongAnswer && prev.buzzed?.id === playerId) {
+      vibrate([420, 120, 420]);
+    }
+  }, [joined, state]);
+
   // ---------- экран входа ----------
   if (!joined) {
     return (
@@ -133,7 +175,10 @@ export default function MusicPlay() {
         <div className="glass w-full max-w-sm p-8">
           <p className="text-xl mb-6">Привет, {me?.name || name}!</p>
           <button
-            onClick={() => socketRef.current?.emit('player:ready', { ready: !(me && me.ready) })}
+            onClick={() => {
+              vibrate(180);
+              socketRef.current?.emit('player:ready', { ready: !(me && me.ready) });
+            }}
             className={`w-full rounded-2xl py-6 text-xl font-black tracking-wide uppercase transition-all duration-500 transform active:scale-95 ${
               me?.ready
                 ? 'bg-emerald-600 border border-emerald-400/30 text-white shadow-xl shadow-emerald-500/30 scale-[1.02]'
@@ -237,7 +282,10 @@ export default function MusicPlay() {
         <>
           <Buzzer
             label={me?.armed ? 'ЖМИ!' : me?.locked ? 'Мимо' : 'Приготовься…'}
-            onBuzz={me?.armed ? () => socketRef.current?.emit('player:buzz') : undefined}
+            onBuzz={me?.armed ? () => {
+              vibrate(220);
+              socketRef.current?.emit('player:buzz');
+            } : undefined}
             btnClass={
               me?.armed
                 ? 'bg-violet-600 border border-violet-400/40 text-white shadow-lg shadow-violet-500/30 scale-[1.02] hover:bg-violet-500 cursor-pointer animate-pulse'

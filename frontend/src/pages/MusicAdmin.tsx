@@ -335,7 +335,6 @@ export default function MusicAdmin({ isTab = false }: { isTab?: boolean }) {
                     <span className="text-sm text-zinc-400">код <b className="text-violet-300 tracking-widest">{current.game.code}</b></span>
                     <button
                       onClick={() => {
-                        window.open(`/m/screen/${current.game._id}`, `screen_${current.game._id}`, 'width=1280,height=800');
                         navigate(`/admin/music/host/${current.game._id}`);
                       }}
                       className="btn-grad flex items-center gap-1 rounded-lg px-4 py-2 font-bold"

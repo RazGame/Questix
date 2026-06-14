@@ -28,9 +28,10 @@ export default function MusicScreen() {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const rafRef = useRef<number | null>(null);
   const socketRef = useRef<ReturnType<typeof createSocket> | null>(null);
-  // Отрезок воспроизведения: зацикливаем start→end, пока идёт раунд.
-  const loopRef = useRef<{ start: number; end: number | null; active: boolean }>({
-    start: 0, end: null, active: false,
+  const audioReadyRef = useRef(false);
+  // Отрезок воспроизведения: один проход start→end. Повтор запускает ведущий.
+  const segmentRef = useRef<{ start: number; end: number | null; active: boolean; ended: boolean }>({
+    start: 0, end: null, active: false, ended: false,
   });
   const pendingPlayRef = useRef<{ fileUrl: string; startSec: number; endSec: number | null; nextUrl?: string | null } | null>(null);
   // Частицы, летящие из центра к краям (создают ощущение энергии наружу).
@@ -67,13 +68,22 @@ export default function MusicScreen() {
     srcNode.connect(analyser);
     analyser.connect(gain);
     gain.connect(ctx.destination);
-    // Зацикливание отрезка: при достижении конца возвращаемся к старту.
+    const finishSegment = () => {
+      const segment = segmentRef.current;
+      if (!segment.active || segment.ended) return;
+      segment.active = false;
+      segment.ended = true;
+      audio.pause();
+      socketRef.current?.emit('screen:ended');
+    };
+    // Один проход отрезка: при достижении конца ждём решения ведущего.
     audio.addEventListener('timeupdate', () => {
-      const l = loopRef.current;
-      if (l.active && l.end && audio.currentTime >= l.end) {
-        try { audio.currentTime = l.start; } catch { /* ignore */ }
+      const segment = segmentRef.current;
+      if (segment.active && segment.end && audio.currentTime >= segment.end) {
+        finishSegment();
       }
     });
+    audio.addEventListener('ended', finishSegment);
     engineRef.current = {
       audio,
       next,
@@ -100,6 +110,8 @@ export default function MusicScreen() {
         e.audio.play().then(() => e.audio.pause()).catch(() => {});
       }
     } catch { /* ignore */ }
+    audioReadyRef.current = true;
+    socketRef.current?.emit('screen:audio-ready');
     setNeedGate(false);
   };
 
@@ -112,9 +124,15 @@ export default function MusicScreen() {
     if (e.smoothed) e.smoothed.fill(0);
     e.gain.gain.cancelScheduledValues(e.ctx.currentTime);
     e.gain.gain.setValueAtTime(1, e.ctx.currentTime);
-    loopRef.current = { start: startSec || 0, end: endSec, active: true };
-    e.audio.src = apiOrigin + fileUrl;
+    segmentRef.current = { start: startSec || 0, end: endSec, active: true, ended: false };
+    const src = apiOrigin + fileUrl;
+    if (e.audio.src !== src) {
+      e.audio.src = src;
+    }
     pendingPlayRef.current = { fileUrl, startSec, endSec, nextUrl };
+    try {
+      e.audio.currentTime = startSec || 0;
+    } catch { /* ignore */ }
     const seek = () => {
       try { e.audio.currentTime = startSec || 0; } catch { /* ignore */ }
       e.audio.removeEventListener('loadedmetadata', seek);
@@ -132,15 +150,24 @@ export default function MusicScreen() {
   };
 
   const fadeAndStop = (playMs: number, fadeMs: number) => {
-    loopRef.current.active = false; // во время доигрыша/фейда не зацикливаем
+    segmentRef.current.active = false; // во время доигрыша/фейда не считаем конец отрезка
+    const e = engineRef.current;
+    if (e) {
+      if (e.ctx.state === 'suspended') e.ctx.resume();
+      e.gain.gain.cancelScheduledValues(e.ctx.currentTime);
+      e.gain.gain.setValueAtTime(1, e.ctx.currentTime);
+      if (e.audio.paused) {
+        e.audio.play().catch(() => setNeedGate(true));
+      }
+    }
     setTimeout(() => {
-      const e = engineRef.current;
-      if (!e) return;
-      const now = e.ctx.currentTime;
-      e.gain.gain.cancelScheduledValues(now);
-      e.gain.gain.setValueAtTime(e.gain.gain.value, now);
-      e.gain.gain.linearRampToValueAtTime(0.0001, now + fadeMs / 1000);
-      setTimeout(() => e.audio.pause(), fadeMs + 100);
+      const current = engineRef.current;
+      if (!current) return;
+      const now = current.ctx.currentTime;
+      current.gain.gain.cancelScheduledValues(now);
+      current.gain.gain.setValueAtTime(current.gain.gain.value, now);
+      current.gain.gain.linearRampToValueAtTime(0.0001, now + fadeMs / 1000);
+      setTimeout(() => current.audio.pause(), fadeMs + 100);
     }, playMs);
   };
 
@@ -160,6 +187,7 @@ export default function MusicScreen() {
 
       const e = engineRef.current;
       const playing = e && !e.audio.paused;
+      const visualGain = playing ? Math.max(0, Math.min(1, e!.gain.gain.value || 0)) : 0;
       let frameMax = 140;
       if (playing) {
         e!.analyser.getByteFrequencyData(e!.freq as any);
@@ -182,7 +210,7 @@ export default function MusicScreen() {
       let bass = 0;
       if (playing) {
         for (let k = 0; k < 6; k++) bass += e!.freq[k] || 0;
-        bass = Math.min(1, bass / 6 / 255);
+        bass = Math.min(1, bass / 6 / 255) * visualGain;
       }
       const innerR = baseR * (1 + bass * 0.18);
       const rot = Date.now() / 9000;
@@ -221,6 +249,7 @@ export default function MusicScreen() {
             
             let normalized = effectiveRange > 15 ? (raw - minBound) / effectiveRange : 0;
             normalized = Math.max(0, Math.min(1.0, normalized));
+            normalized *= visualGain;
             
             // Плавное накопление энергии/инерции для сглаживания джиттера
             const prevVal = e!.smoothed ? e!.smoothed[i] : 0;
@@ -246,8 +275,8 @@ export default function MusicScreen() {
         const y1 = cy + Math.sin(angle) * (innerR + len);
         const grad = cctx.createLinearGradient(x0, y0, x1, y1);
         if (playing) {
-          grad.addColorStop(0, '#8b5cf6');
-          grad.addColorStop(1, '#d946ef');
+          grad.addColorStop(0, `rgba(139,92,246,${Math.max(0.18, visualGain).toFixed(3)})`);
+          grad.addColorStop(1, `rgba(217,70,239,${Math.max(0.18, visualGain).toFixed(3)})`);
         } else {
           grad.addColorStop(0, 'rgba(255,255,255,0.12)');
           grad.addColorStop(1, 'rgba(255,255,255,0.04)');
@@ -311,14 +340,21 @@ export default function MusicScreen() {
     if (!gameId) return;
     const socket = createSocket();
     socketRef.current = socket;
-    socket.on('connect', () => socket.emit('join', { role: 'screen', gameId }));
+    socket.on('connect', () => {
+      socket.emit('join', { role: 'screen', gameId });
+      if (audioReadyRef.current) socket.emit('screen:audio-ready');
+    });
     socket.on('cmd', (m: any) => {
       if (m.action === 'play') playFrom(m.fileUrl, m.startSec, m.endSec ?? null, m.nextUrl);
       else if (m.action === 'pause') engineRef.current?.audio.pause();
-      else if (m.action === 'resume') { loopRef.current.active = true; engineRef.current?.audio.play().catch(() => {}); }
+      else if (m.action === 'resume') {
+        segmentRef.current.active = true;
+        segmentRef.current.ended = false;
+        engineRef.current?.audio.play().catch(() => {});
+      }
       else if (m.action === 'fadeAndStop') fadeAndStop(m.playMs, m.fadeMs);
       else if (m.action === 'stop') {
-        loopRef.current.active = false;
+        segmentRef.current.active = false;
         const e = engineRef.current;
         if (e) { e.audio.pause(); e.audio.currentTime = 0; }
       }
@@ -348,9 +384,10 @@ export default function MusicScreen() {
     }
   }, [state?.phase, state?.code, qr]);
 
-  // визуализация активна в игре/баззере/reveal
+  // визуализация активна в игре/баззере/reveal; после конца фрагмента
+  // оставляем цикл живым, чтобы кольцо не замерло, а погасло в тихий режим.
   useEffect(() => {
-    if (state && ['playing', 'buzzed', 'reveal'].includes(state.phase)) startViz();
+    if (state && ['playing', 'ended', 'buzzed', 'reveal'].includes(state.phase)) startViz();
     else stopViz();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [state?.phase]);
@@ -372,7 +409,8 @@ export default function MusicScreen() {
       } else {
         if (phase === 'playing') {
           if (e.audio.paused) {
-            loopRef.current.active = true;
+            segmentRef.current.active = true;
+            segmentRef.current.ended = false;
             e.audio.play().catch(() => setNeedGate(true));
           }
         } else if (phase === 'buzzed') {
@@ -381,9 +419,14 @@ export default function MusicScreen() {
           }
         }
       }
+    } else if (phase === 'ended') {
+      segmentRef.current.active = false;
+      if (!e.audio.paused) {
+        e.audio.pause();
+      }
     } else if (phase === 'finished' || phase === 'lobby') {
       if (!e.audio.paused) {
-        loopRef.current.active = false;
+        segmentRef.current.active = false;
         e.audio.pause();
         e.audio.currentTime = 0;
       }
@@ -418,7 +461,7 @@ export default function MusicScreen() {
   }, [state?.phase]);
 
   const phase = state?.phase;
-  const inRound = phase === 'playing' || phase === 'buzzed' || phase === 'reveal';
+  const inRound = phase === 'playing' || phase === 'ended' || phase === 'buzzed' || phase === 'reveal';
 
   // классы центрального круга
   let centerCls = 'border-violet-400/50 bg-surface/70';
@@ -505,6 +548,7 @@ export default function MusicScreen() {
       )}
 
       {phase === 'playing' && <p className="mt-6 text-zinc-400 text-xl">Слушаем… кто угадает?</p>}
+      {phase === 'ended' && <p className="mt-6 text-zinc-400 text-xl">Фрагмент закончился. Ждём ведущего…</p>}
       {phase === 'reveal' && state?.reveal && (
         <div className="mt-6">
           <div className="font-display text-3xl font-bold">{state.reveal.title}</div>
