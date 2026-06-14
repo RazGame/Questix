@@ -95,6 +95,27 @@ select.input-dark optgroup {
 .qgs-pulse { animation: qgs-pulse 0.9s ease-in-out infinite; }
 .qgs-pop { animation: qgs-pop 0.6s cubic-bezier(0.22, 1, 0.36, 1); }
 
+/* Индетерминантная полоса загрузки (SpotiFLAC не отдаёт реальный прогресс) */
+@keyframes qgs-indeterminate {
+  0% { left: -40%; }
+  100% { left: 100%; }
+}
+.qgs-loading-track {
+  position: relative;
+  overflow: hidden;
+}
+.qgs-loading-track::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: -40%;
+  width: 40%;
+  border-radius: 9999px;
+  background: linear-gradient(90deg, transparent, #8b5cf6, #d946ef, transparent);
+  animation: qgs-indeterminate 1.1s ease-in-out infinite;
+}
+
 .rich-content,
 .rich-editor-content {
   line-height: 1.7;

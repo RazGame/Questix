@@ -14,8 +14,3 @@ export const getIo = (): Server | null => io;
 export const notifyAdminSongUpdated = (gameId: string, song: unknown): void => {
   io?.to(`g:${gameId}:admin`).emit('song-updated', { song });
 };
-
-// Лёгкое частое событие прогресса загрузки (без обращения к Mongo).
-export const notifySongProgress = (gameId: string, songId: string, progress: number): void => {
-  io?.to(`g:${gameId}:admin`).emit('song-progress', { songId, progress });
-};

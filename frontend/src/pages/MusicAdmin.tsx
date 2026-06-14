@@ -344,12 +344,7 @@ export default function MusicAdmin({ isTab = false }: { isTab?: boolean }) {
                                 </button>
                               </div>
                               {s.status === 'downloading' && (
-                                <div className="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-white/10">
-                                  <div
-                                    className="h-full rounded-full bg-gradient-to-r from-violet-500 to-fuchsia-500 animate-pulse"
-                                    style={{ width: '50%' }}
-                                  />
-                                </div>
+                                <div className="qgs-loading-track mt-2 h-1.5 w-full rounded-full bg-white/10" />
                               )}
                             </div>
                           );

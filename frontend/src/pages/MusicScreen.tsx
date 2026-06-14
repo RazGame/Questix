@@ -33,6 +33,10 @@ export default function MusicScreen() {
     start: 0, end: null, active: false,
   });
   const pendingPlayRef = useRef<{ fileUrl: string; startSec: number; endSec: number | null; nextUrl?: string | null } | null>(null);
+  // Частицы, летящие из центра к краям (создают ощущение энергии наружу).
+  const particlesRef = useRef<
+    { angle: number; r: number; speed: number; life: number; max: number; w: number }[]
+  >([]);
 
   const [needGate, setNeedGate] = useState(true);
   const [state, setState] = useState<MusicState | null>(null);
@@ -173,8 +177,18 @@ export default function MusicScreen() {
       }
       const bars = 72;
 
+      // Бас → пульсация внутреннего радиуса (кольцо «дышит» наружу),
+      // плюс медленное вращение всего кольца для живости.
+      let bass = 0;
+      if (playing) {
+        for (let k = 0; k < 6; k++) bass += e!.freq[k] || 0;
+        bass = Math.min(1, bass / 6 / 255);
+      }
+      const innerR = baseR * (1 + bass * 0.18);
+      const rot = Date.now() / 9000;
+
       for (let i = 0; i < bars; i++) {
-        const angle = (i / bars) * Math.PI * 2 - Math.PI / 2;
+        const angle = (i / bars) * Math.PI * 2 - Math.PI / 2 + rot;
         let v: number;
         if (playing) {
           // Зеркальное отображение: левая и правая половины танцуют симметрично
@@ -226,10 +240,10 @@ export default function MusicScreen() {
         }
         // Даем большой размах движения, увеличивая множитель амплитуды до 0.95
         const len = baseR * (0.05 + v * 0.95);
-        const x0 = cx + Math.cos(angle) * baseR;
-        const y0 = cy + Math.sin(angle) * baseR;
-        const x1 = cx + Math.cos(angle) * (baseR + len);
-        const y1 = cy + Math.sin(angle) * (baseR + len);
+        const x0 = cx + Math.cos(angle) * innerR;
+        const y0 = cy + Math.sin(angle) * innerR;
+        const x1 = cx + Math.cos(angle) * (innerR + len);
+        const y1 = cy + Math.sin(angle) * (innerR + len);
         const grad = cctx.createLinearGradient(x0, y0, x1, y1);
         if (playing) {
           grad.addColorStop(0, '#8b5cf6');
@@ -246,12 +260,50 @@ export default function MusicScreen() {
         cctx.lineTo(x1, y1);
         cctx.stroke();
       }
+
+      // ---- частицы: энергия летит из центра к краям ----
+      const particles = particlesRef.current;
+      const maxR = Math.min(w, h) * 0.5;
+      if (playing) {
+        // постоянный поток наружу + всплеск на басах
+        const spawn = 2 + Math.round(bass * 6);
+        for (let s = 0; s < spawn && particles.length < 220; s++) {
+          const a = Math.random() * Math.PI * 2;
+          particles.push({
+            angle: a,
+            r: innerR,
+            speed: 3.2 + bass * 6 + Math.random() * 2,
+            life: 1,
+            max: maxR,
+            w: 2 + Math.random() * 2.5,
+          });
+        }
+      }
+      for (let p = particles.length - 1; p >= 0; p--) {
+        const pt = particles[p];
+        pt.r += pt.speed;
+        pt.life = 1 - (pt.r - innerR) / (pt.max - innerR);
+        if (pt.life <= 0 || pt.r >= pt.max) { particles.splice(p, 1); continue; }
+        const px = cx + Math.cos(pt.angle) * pt.r;
+        const py = cy + Math.sin(pt.angle) * pt.r;
+        // короткий «хвост» по направлению движения
+        const tx = cx + Math.cos(pt.angle) * (pt.r - 8);
+        const ty = cy + Math.sin(pt.angle) * (pt.r - 8);
+        cctx.strokeStyle = `rgba(217,130,250,${(pt.life * 0.8).toFixed(3)})`;
+        cctx.lineWidth = pt.w;
+        cctx.lineCap = 'round';
+        cctx.beginPath();
+        cctx.moveTo(tx, ty);
+        cctx.lineTo(px, py);
+        cctx.stroke();
+      }
     };
     draw();
   };
   const stopViz = () => {
     if (rafRef.current) cancelAnimationFrame(rafRef.current);
     rafRef.current = null;
+    particlesRef.current = [];
   };
 
   // ---------- сокет ----------

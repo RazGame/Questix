@@ -9,7 +9,7 @@ import { isGameModerator } from '../services/gamePermissions';
 import { generateJoinCode } from '../services/musicStore';
 import { lanIp, webBase } from '../services/net';
 import { runTool, spotiflacVersion, spotiflacUpdate } from '../services/python';
-import { notifyAdminSongUpdated, notifySongProgress } from '../sockets/ioRef';
+import { notifyAdminSongUpdated } from '../sockets/ioRef';
 
 export const MEDIA_DIR = path.join(__dirname, '..', '..', 'media');
 if (!fs.existsSync(MEDIA_DIR)) fs.mkdirSync(MEDIA_DIR, { recursive: true });
@@ -47,15 +47,11 @@ export const listMusicGames = async (
       .sort('-createdAt')
       .lean();
 
-    // Считаем песни по играм одним запросом.
-    const counts = await Song.aggregate([
-      { $match: { gameId: { $in: games.map((g) => g._id) } } },
-      { $group: { _id: '$gameId', count: { $sum: 1 } } },
-    ]);
-    const countBy = new Map(counts.map((c) => [String(c._id), c.count]));
-
     res.status(200).json(
-      games.map((g) => ({ ...g, songCount: countBy.get(String(g._id)) || 0 }))
+      games.map((g) => {
+        const songCount = g.blocks?.reduce((sum: number, b: any) => sum + (b.songIds?.length || 0), 0) || 0;
+        return { ...g, songCount };
+      })
     );
   } catch (error) {
     console.error('Ошибка загрузки музыкальных игр:', error);
@@ -182,14 +178,29 @@ export const removeBlock = async (
   req: AuthenticatedRequest,
   res: Response
 ): Promise<void> => {
+  console.log(`[DEBUG] removeBlock called for gameId: ${req.params.id}, blockId: ${req.params.blockId}`);
   try {
     const game = await loadModerableGame(req, res);
-    if (!game) return;
+    if (!game) {
+      console.log(`[DEBUG] removeBlock: game not found or not moderable`);
+      return;
+    }
+    console.log(`[DEBUG] removeBlock: game found. Blocks:`, game.blocks?.map(b => b._id?.toString() || 'no-id'));
     const block = game.blocks?.find((b) => String(b._id) === req.params.blockId);
     if (block) {
+      console.log(`[DEBUG] removeBlock: block found, deleting songs and pulling block...`);
       await Song.deleteMany({ _id: { $in: block.songIds } });
-      game.blocks = game.blocks!.filter((b) => String(b._id) !== req.params.blockId);
+      if (typeof (game.blocks as any).pull === 'function') {
+        (game.blocks as any).pull(block._id);
+        console.log(`[DEBUG] removeBlock: pulled using mongoose pull`);
+      } else {
+        game.blocks = game.blocks!.filter((b) => String(b._id) !== req.params.blockId);
+        console.log(`[DEBUG] removeBlock: filtered using array filter`);
+      }
       await game.save();
+      console.log(`[DEBUG] removeBlock: game saved successfully`);
+    } else {
+      console.log(`[DEBUG] removeBlock: block not found in game blocks`);
     }
     res.status(200).json({ game });
   } catch (error) {
@@ -281,7 +292,11 @@ export const removeSong = async (
     if (!game) return;
     await Song.deleteOne({ _id: req.params.songId, gameId: game._id });
     game.blocks?.forEach((b) => {
-      b.songIds = b.songIds.filter((s) => String(s) !== req.params.songId) as any;
+      if (b.songIds && typeof (b.songIds as any).pull === 'function') {
+        (b.songIds as any).pull(req.params.songId);
+      } else {
+        b.songIds = b.songIds.filter((s) => String(s) !== req.params.songId) as any;
+      }
     });
     await game.save();
     res.status(200).json({ ok: true });
@@ -337,23 +352,10 @@ async function downloadSong(gameId: string, songId: string): Promise<void> {
   const tmpDir = path.join(MEDIA_DIR, `_dl_${songId}`);
   fs.mkdirSync(tmpDir, { recursive: true });
 
-  // Прогресс: SpotiFLAC не отдаёт колбэков, поэтому оцениваем по росту файла.
-  // Оценка полного размера: HIGH ~ 320 кбит/с → 40 КБ/с. Без длительности — фолбэк 8 МБ.
+  // SpotiFLAC не отдаёт прогресс загрузки, поэтому показываем индетерминантную
+  // полосу на фронте (статус 'downloading'), без выдуманного процента.
   const quality = process.env.MUSIC_QUALITY || 'HIGH';
-  const estBytes = song.duration > 0 ? song.duration * 40000 : 8_000_000;
-  const progressTimer = setInterval(() => {
-    try {
-      let total = 0;
-      for (const f of fs.readdirSync(tmpDir, { withFileTypes: true })) {
-        if (f.isFile()) total += fs.statSync(path.join(tmpDir, f.name)).size;
-      }
-      const pct = Math.min(99, Math.round((total / estBytes) * 100));
-      if (pct > 0) notifySongProgress(gameId, songId, pct);
-    } catch { /* ignore */ }
-  }, 500);
-
   const result = await runTool('spotiflac_download.py', [song.sourceUrl, tmpDir, quality]);
-  clearInterval(progressTimer);
 
   if (!result.ok || !result.file) {
     song.status = 'error';
@@ -363,8 +365,6 @@ async function downloadSong(gameId: string, songId: string): Promise<void> {
     fs.rmSync(tmpDir, { recursive: true, force: true });
     return;
   }
-
-  notifySongProgress(gameId, songId, 100);
 
   const ext = path.extname(result.file) || '.flac';
   const dest = `${songId}${ext}`;
