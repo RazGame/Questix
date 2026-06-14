@@ -185,6 +185,12 @@ class Session {
         ? { title: cur.title, artist: cur.artist, album: cur.album, cover: cur.cover }
         : null,
       blockName: cur ? cur.blockName : '',
+      fileUrl: cur ? `/media/${cur.file}` : null,
+      startSec: cur ? (cur.startSec || 0) : 0,
+      endSec: cur ? (cur.endSec ?? null) : null,
+      nextUrl: cur && this.playlist[this.currentIndex + 1]
+        ? `/media/${this.playlist[this.currentIndex + 1].file}`
+        : null,
       players: Array.from(this.players.values()).map((p) => ({
         id: p.id,
         name: p.name,

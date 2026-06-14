@@ -13,6 +13,8 @@ interface AudioEngine {
   analyser: AnalyserNode;
   gain: GainNode;
   freq: Uint8Array;
+  minFreq?: Float32Array;
+  maxFreq?: Float32Array;
 }
 
 const apiOrigin =
@@ -29,6 +31,7 @@ export default function MusicScreen() {
   const loopRef = useRef<{ start: number; end: number | null; active: boolean }>({
     start: 0, end: null, active: false,
   });
+  const pendingPlayRef = useRef<{ fileUrl: string; startSec: number; endSec: number | null; nextUrl?: string | null } | null>(null);
 
   const [needGate, setNeedGate] = useState(true);
   const [state, setState] = useState<MusicState | null>(null);
@@ -53,6 +56,9 @@ export default function MusicScreen() {
     const gain = ctx.createGain();
     const analyser = ctx.createAnalyser();
     analyser.fftSize = 256;
+    analyser.minDecibels = -100;
+    analyser.maxDecibels = -10;
+    analyser.smoothingTimeConstant = 0.8;
     srcNode.connect(gain);
     gain.connect(ctx.destination);
     srcNode.connect(analyser);
@@ -63,7 +69,16 @@ export default function MusicScreen() {
         try { audio.currentTime = l.start; } catch { /* ignore */ }
       }
     });
-    engineRef.current = { audio, next, ctx, analyser, gain, freq: new Uint8Array(analyser.frequencyBinCount) };
+    engineRef.current = {
+      audio,
+      next,
+      ctx,
+      analyser,
+      gain,
+      freq: new Uint8Array(analyser.frequencyBinCount),
+      minFreq: new Float32Array(analyser.frequencyBinCount).fill(255),
+      maxFreq: new Float32Array(analyser.frequencyBinCount).fill(0)
+    };
     return engineRef.current;
   };
 
@@ -71,7 +86,13 @@ export default function MusicScreen() {
     try {
       const e = initAudio();
       e.ctx.resume();
-      e.audio.play().then(() => e.audio.pause()).catch(() => {});
+      if (pendingPlayRef.current) {
+        const p = pendingPlayRef.current;
+        pendingPlayRef.current = null;
+        playFrom(p.fileUrl, p.startSec, p.endSec, p.nextUrl);
+      } else {
+        e.audio.play().then(() => e.audio.pause()).catch(() => {});
+      }
     } catch { /* ignore */ }
     setNeedGate(false);
   };
@@ -83,12 +104,20 @@ export default function MusicScreen() {
     e.gain.gain.setValueAtTime(1, e.ctx.currentTime);
     loopRef.current = { start: startSec || 0, end: endSec, active: true };
     e.audio.src = apiOrigin + fileUrl;
+    pendingPlayRef.current = { fileUrl, startSec, endSec, nextUrl };
     const seek = () => {
       try { e.audio.currentTime = startSec || 0; } catch { /* ignore */ }
       e.audio.removeEventListener('loadedmetadata', seek);
     };
     e.audio.addEventListener('loadedmetadata', seek);
-    e.audio.play().catch(() => setNeedGate(true));
+    e.audio.play()
+      .then(() => {
+        pendingPlayRef.current = null;
+      })
+      .catch((err) => {
+        console.warn('Playback blocked, showing interaction gate:', err);
+        setNeedGate(true);
+      });
     if (nextUrl) e.next.src = apiOrigin + nextUrl;
   };
 
@@ -116,24 +145,66 @@ export default function MusicScreen() {
       if (!cctx) return;
       const w = canvas.width, h = canvas.height;
       const cx = w / 2, cy = h / 2;
-      const baseR = Math.min(w, h) * 0.28;
+      const baseR = Math.min(w, h) * 0.22;
       cctx.clearRect(0, 0, w, h);
 
       const e = engineRef.current;
       const playing = e && !e.audio.paused;
+      if (playing) {
+        e!.analyser.getByteFrequencyData(e!.freq as any);
+        
+        if (!e!.minFreq) e!.minFreq = new Float32Array(e!.freq.length).fill(255);
+        if (!e!.maxFreq) e!.maxFreq = new Float32Array(e!.freq.length).fill(0);
+        
+        for (let k = 0; k < e!.freq.length; k++) {
+          const val = e!.freq[k];
+          if (val < e!.minFreq[k]) {
+            e!.minFreq[k] = val;
+          } else {
+            e!.minFreq[k] = e!.minFreq[k] * 0.999 + val * 0.001;
+          }
+          if (val > e!.maxFreq[k]) {
+            e!.maxFreq[k] = val;
+          } else {
+            e!.maxFreq[k] = e!.maxFreq[k] * 0.995 + val * 0.005;
+          }
+        }
+
+        if (Math.random() < 0.01) {
+          console.log("VIZ_DEBUG freq array:", Array.from(e!.freq).slice(0, 15));
+        }
+      }
       const bars = 72;
-      if (playing) e!.analyser.getByteFrequencyData(e!.freq as any);
 
       for (let i = 0; i < bars; i++) {
         const angle = (i / bars) * Math.PI * 2 - Math.PI / 2;
         let v: number;
         if (playing) {
-          v = e!.freq[i % e!.freq.length] / 255;
+          // Зеркальное отображение: левая и правая половины танцуют симметрично
+          const halfBars = bars / 2;
+          const indexInHalf = i < halfBars ? i : bars - i - 1;
+          // Распределяем первые 35 битов частот (басы + вокал + средние)
+          const freqIndex = Math.floor((indexInHalf / halfBars) * 35);
+          const raw = e!.freq[freqIndex] || 0;
+          
+          const min = e!.minFreq ? e!.minFreq[freqIndex] : 150;
+          const max = e!.maxFreq ? e!.maxFreq[freqIndex] : 255;
+          const range = max - min;
+          
+          let normalizedRaw = range > 10 ? (raw - min) / range : 0;
+          normalizedRaw = Math.max(0, Math.min(1.0, normalizedRaw));
+          
+          // Применим степенную функцию для увеличения контраста (размаха)
+          normalizedRaw = Math.pow(normalizedRaw, 2.0);
+          
+          const boost = 1.0 + (freqIndex / 35) * 0.8;
+          v = normalizedRaw * boost;
+          v = Math.min(1.0, v);
         } else {
           // тихий «вдох-выдох», когда музыка не играет (баззер)
-          v = 0.06 + 0.04 * Math.abs(Math.sin(Date.now() / 700 + i / 4));
+          v = 0.05 + 0.03 * Math.abs(Math.sin(Date.now() / 700 + i / 4));
         }
-        const len = baseR * (0.12 + v * 0.9);
+        const len = baseR * (0.08 + v * 0.95);
         const x0 = cx + Math.cos(angle) * baseR;
         const y0 = cy + Math.sin(angle) * baseR;
         const x1 = cx + Math.cos(angle) * (baseR + len);
@@ -210,6 +281,42 @@ export default function MusicScreen() {
     else stopViz();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [state?.phase]);
+
+  // Синхронизация воспроизведения при перезагрузке страницы или лагах сокета (через стейт)
+  useEffect(() => {
+    if (!state || needGate) return;
+    const e = initAudio();
+    const phase = state.phase;
+    const curFile = state.fileUrl;
+
+    if (['playing', 'buzzed', 'reveal'].includes(phase) && curFile) {
+      const targetSrc = apiOrigin + curFile;
+      const cleanSrc = e.audio.src.replace(/^https?:\/\/[^/]+/i, '');
+      const targetClean = targetSrc.replace(/^https?:\/\/[^/]+/i, '');
+
+      if (cleanSrc !== targetClean) {
+        playFrom(curFile, state.startSec || 0, state.endSec ?? null, state.nextUrl);
+      } else {
+        if (phase === 'playing') {
+          if (e.audio.paused) {
+            loopRef.current.active = true;
+            e.audio.play().catch(() => setNeedGate(true));
+          }
+        } else if (phase === 'buzzed') {
+          if (!e.audio.paused) {
+            e.audio.pause();
+          }
+        }
+      }
+    } else if (phase === 'finished' || phase === 'lobby') {
+      if (!e.audio.paused) {
+        loopRef.current.active = false;
+        e.audio.pause();
+        e.audio.currentTime = 0;
+      }
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [state?.phase, state?.fileUrl, needGate]);
 
   // анимации центра по сменам фаз
   useEffect(() => {

@@ -1,8 +1,8 @@
-import { useEffect, useRef, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Plus, Play, Trash2, Upload, RefreshCw, Search, RotateCw, Scissors } from 'lucide-react';
 import { musicService, MusicGameFull, SongSearchResult } from '../services/music';
-import { createSocket } from '../services/socket';
-import { MusicGame, Song, MusicState } from '../types';
+import { MusicGame, Song } from '../types';
 import MusicSegmentModal from './MusicSegmentModal';
 
 const fmtTime = (s: number) => {
@@ -22,7 +22,8 @@ const statusTone: Record<Song['status'], string> = {
   error: 'bg-rose-400/10 text-rose-300',
 };
 
-export default function MusicAdmin() {
+export default function MusicAdmin({ isTab = false }: { isTab?: boolean }) {
+  const navigate = useNavigate();
   const [games, setGames] = useState<(MusicGame & { songCount: number })[]>([]);
   const [current, setCurrent] = useState<MusicGameFull | null>(null);
   const [error, setError] = useState('');
@@ -30,11 +31,8 @@ export default function MusicAdmin() {
   const [results, setResults] = useState<SongSearchResult[]>([]);
   const [searching, setSearching] = useState(false);
   const [targetBlock, setTargetBlock] = useState('');
-  const [live, setLive] = useState<MusicState | null>(null);
   const [spotiVersion, setSpotiVersion] = useState<string | null>(null);
-  const [progress, setProgress] = useState<Record<string, number>>({}); // прогресс загрузки по songId
   const [segmentSong, setSegmentSong] = useState<Song | null>(null); // открытая модалка отрезка
-  const socketRef = useRef<ReturnType<typeof createSocket> | null>(null);
 
   const loadGames = useCallback(async () => {
     try { setGames(await musicService.list()); } catch { setError('Ошибка загрузки игр'); }
@@ -50,7 +48,6 @@ export default function MusicAdmin() {
       const full = await musicService.get(id);
       setCurrent(full);
       setTargetBlock(full.game.blocks[0]?._id || '');
-      connectAdmin(id);
     } catch {
       setError('Ошибка загрузки игры');
     }
@@ -64,33 +61,6 @@ export default function MusicAdmin() {
     loadGames();
   };
 
-  // --- сокет ведущего ---
-  const connectAdmin = (gameId: string) => {
-    socketRef.current?.disconnect();
-    const socket = createSocket(localStorage.getItem('token'));
-    socketRef.current = socket;
-    socket.on('connect', () => socket.emit('join', { role: 'admin', gameId }));
-    socket.on('state', (st: MusicState) => setLive(st));
-    socket.on('song-progress', ({ songId, progress: p }: { songId: string; progress: number }) =>
-      setProgress((prev) => ({ ...prev, [songId]: p }))
-    );
-    socket.on('song-updated', ({ song }: { song?: Song }) => {
-      // обновляем одну песню точечно; на ready чистим прогресс
-      if (song?._id) {
-        setProgress((prev) => {
-          const next = { ...prev };
-          if (song.status !== 'downloading') delete next[song._id];
-          return next;
-        });
-      }
-      refreshCurrent();
-    });
-    socket.on('error-msg', ({ message }: { message: string }) => setError(message));
-  };
-  useEffect(() => () => { socketRef.current?.disconnect(); }, []);
-
-  const emit = (evt: string) => socketRef.current?.emit(evt);
-
   // --- игры ---
   const createGame = async () => {
     const g = await musicService.create('Новая музыкальная игра');
@@ -101,7 +71,6 @@ export default function MusicAdmin() {
     if (!current || !confirm(`Удалить игру «${current.game.title}»?`)) return;
     await musicService.remove(current.game._id);
     setCurrent(null);
-    setLive(null);
     loadGames();
   };
   const renameGame = async (title: string) => {
@@ -186,11 +155,11 @@ export default function MusicAdmin() {
 
   const songById = (id: string) => current?.songs.find((s) => s._id === id);
 
-  return (
-    <div className="max-w-7xl mx-auto p-4 py-8">
-      <p className="tech-label mb-2">[ угадай мелодию ]</p>
+  const content = (
+    <>
+      {!isTab && <p className="tech-label mb-2">[ угадай мелодию ]</p>}
       <div className="flex flex-wrap items-center justify-between gap-3 mb-6">
-        <h1 className="text-4xl font-bold">Музыкальные игры</h1>
+        <h2 className="text-2xl font-bold">{isTab ? 'Музыкальные игры' : 'Музыкальные игры'}</h2>
         <div className="flex items-center gap-3">
           <span className="text-xs text-zinc-500">
             SpotiFLAC: {spotiVersion || '—'}
@@ -254,10 +223,13 @@ export default function MusicAdmin() {
                   <div className="flex items-center gap-2">
                     <span className="text-sm text-zinc-400">код <b className="text-violet-300 tracking-widest">{current.game.code}</b></span>
                     <button
-                      onClick={() => window.open(`/m/screen/${current.game._id}`, `screen_${current.game._id}`, 'width=1280,height=800')}
+                      onClick={() => {
+                        window.open(`/m/screen/${current.game._id}`, `screen_${current.game._id}`, 'width=1280,height=800');
+                        navigate(`/admin/music/host/${current.game._id}`);
+                      }}
                       className="btn-grad flex items-center gap-1 rounded-lg px-4 py-2 font-bold"
                     >
-                      <Play size={17} /> Играть
+                      <Play size={17} /> Начать игру
                     </button>
                     <button onClick={deleteGame} className="text-rose-400 hover:text-rose-300 p-2" title="Удалить игру">
                       <Trash2 size={18} />
@@ -266,8 +238,6 @@ export default function MusicAdmin() {
                 </div>
               </div>
 
-              {/* пульт ведущего */}
-              {live && <LiveControl live={live} emit={emit} />}
 
               {/* поиск песен */}
               <div className="glass p-5">
@@ -376,8 +346,8 @@ export default function MusicAdmin() {
                               {s.status === 'downloading' && (
                                 <div className="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-white/10">
                                   <div
-                                    className="h-full rounded-full bg-gradient-to-r from-violet-500 to-fuchsia-500 transition-all duration-300"
-                                    style={{ width: `${progress[s._id] || 5}%` }}
+                                    className="h-full rounded-full bg-gradient-to-r from-violet-500 to-fuchsia-500 animate-pulse"
+                                    style={{ width: '50%' }}
                                   />
                                 </div>
                               )}
@@ -402,73 +372,17 @@ export default function MusicAdmin() {
           onSaved={() => refreshCurrent()}
         />
       )}
-    </div>
+    </>
   );
-}
 
-// Пульт ведущего: lobby/playing/buzzed/reveal/finished.
-function LiveControl({ live, emit }: { live: MusicState; emit: (e: string) => void }) {
-  const progress = live.total ? `Песня ${live.currentIndex + 1} из ${live.total}` : '';
+  if (isTab) {
+    return <div className="mt-2">{content}</div>;
+  }
+
   return (
-    <div className="glass p-5">
-      <h3 className="text-xl font-bold mb-3">Пульт ведущего</h3>
-      {live.phase === 'lobby' && (
-        <>
-          <p className="text-zinc-400 mb-3">Лобби. Игроки подключаются и жмут «Готов».</p>
-          <button onClick={() => emit('admin:start')} className="btn-grad rounded-lg px-6 py-3 font-bold text-lg">
-            ▶ Запустить игру
-          </button>
-        </>
-      )}
-      {live.phase === 'playing' && (
-        <>
-          <p className="text-zinc-400 mb-3">{progress} · {live.blockName} · играет, ждём баззер…</p>
-          <button onClick={() => emit('admin:skip')} className="rounded-lg bg-amber-500/80 hover:bg-amber-500 px-4 py-2 font-bold text-white">
-            ⏭ Пропустить
-          </button>
-        </>
-      )}
-      {live.phase === 'buzzed' && (
-        <>
-          <p className="text-zinc-400">{progress}</p>
-          <p className="font-display text-2xl font-bold text-violet-300 my-3">🔔 {live.buzzed?.name}</p>
-          <div className="flex flex-wrap gap-2">
-            <button onClick={() => emit('admin:correct')} className="rounded-lg bg-emerald-600 hover:bg-emerald-500 px-4 py-2 font-bold text-white">✓ Правильно</button>
-            <button onClick={() => emit('admin:wrong')} className="rounded-lg bg-rose-600/90 hover:bg-rose-500 px-4 py-2 font-bold text-white">✕ Неправильно</button>
-            <button onClick={() => emit('admin:skip')} className="rounded-lg bg-amber-500/80 hover:bg-amber-500 px-4 py-2 font-bold text-white">⏭ Пропустить</button>
-          </div>
-        </>
-      )}
-      {live.phase === 'reveal' && (
-        <>
-          <p className="text-zinc-400">{progress}</p>
-          <p className="text-emerald-300 my-2">✓ {live.reveal?.title} — {live.reveal?.artist}</p>
-          <p className="text-zinc-500 text-sm">Доигрываем и переходим дальше…</p>
-        </>
-      )}
-      {live.phase === 'finished' && (
-        <>
-          <p className="text-zinc-300 mb-2">Игра окончена!</p>
-          <p className="text-zinc-400 mb-3">
-            {[...live.players].sort((a, b) => b.score - a.score).map((p) => `${p.name}: ${p.score}`).join('  ·  ') || 'Нет игроков'}
-          </p>
-          <button onClick={() => emit('admin:reset')} className="btn-grad rounded-lg px-4 py-2 font-bold">↺ Заново</button>
-        </>
-      )}
-
-      {/* игроки */}
-      <div className="mt-4 flex flex-wrap gap-2">
-        {live.players.map((p) => (
-          <span
-            key={p.id}
-            className={`flex items-center gap-1 rounded-full px-3 py-1 text-sm ${
-              p.connected ? 'bg-white/10 text-zinc-200' : 'bg-white/5 text-zinc-500'
-            } ${p.ready ? 'ring-1 ring-emerald-400/40' : ''}`}
-          >
-            {p.name} <b className="text-violet-300">{p.score}</b>
-          </span>
-        ))}
-      </div>
+    <div className="max-w-7xl mx-auto p-4 py-8">
+      {content}
     </div>
   );
 }
+

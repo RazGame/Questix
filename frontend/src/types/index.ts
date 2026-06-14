@@ -105,6 +105,10 @@ export interface MusicState {
   reveal: { title: string; artist: string; album: string; cover: string } | null;
   blockName: string;
   players: MusicPlayer[];
+  fileUrl?: string | null;
+  startSec?: number;
+  endSec?: number | null;
+  nextUrl?: string | null;
 }
 
 export interface GameAppl {

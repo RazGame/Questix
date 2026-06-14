@@ -21,6 +21,37 @@ export default function MusicPlay() {
   const pidKey = (c: string) => `qgs_pid_${c}`;
 
   useEffect(() => {
+    const originalBodyOverflow = document.body.style.overflow;
+    const originalBodyHeight = document.body.style.height;
+    const originalBodyPosition = document.body.style.position;
+    const originalBodyWidth = document.body.style.width;
+
+    const originalHtmlOverflow = document.documentElement.style.overflow;
+    const originalHtmlHeight = document.documentElement.style.height;
+    const originalHtmlPosition = document.documentElement.style.position;
+
+    document.body.style.overflow = 'hidden';
+    document.body.style.height = '100dvh';
+    document.body.style.position = 'fixed';
+    document.body.style.width = '100%';
+
+    document.documentElement.style.overflow = 'hidden';
+    document.documentElement.style.height = '100dvh';
+    document.documentElement.style.position = 'fixed';
+
+    return () => {
+      document.body.style.overflow = originalBodyOverflow;
+      document.body.style.height = originalBodyHeight;
+      document.body.style.position = originalBodyPosition;
+      document.body.style.width = originalBodyWidth;
+
+      document.documentElement.style.overflow = originalHtmlOverflow;
+      document.documentElement.style.height = originalHtmlHeight;
+      document.documentElement.style.position = originalHtmlPosition;
+    };
+  }, []);
+
+  useEffect(() => {
     const socket = createSocket();
     socketRef.current = socket;
 
@@ -54,7 +85,7 @@ export default function MusicPlay() {
   // ---------- экран входа ----------
   if (!joined) {
     return (
-      <div className="min-h-[calc(100vh-4rem)] flex items-center justify-center px-4">
+      <div className="h-[calc(100dvh-4rem)] overflow-hidden flex items-center justify-center px-4 py-6">
         <div className="glass w-full max-w-sm p-6">
           <h1 className="font-display text-2xl font-bold text-center mb-6">🎵 Вход в игру</h1>
           {error && (
@@ -91,7 +122,7 @@ export default function MusicPlay() {
   const phase = state?.phase;
 
   return (
-    <div className="min-h-[calc(100vh-4rem)] flex flex-col items-center justify-center px-4 py-8 text-center">
+    <div className="h-[calc(100dvh-4rem)] overflow-hidden flex flex-col items-center justify-center px-4 py-6 text-center">
       {me && (
         <div className="mb-6 text-zinc-300">
           {me.name} · <span className="font-bold text-violet-300">{me.score}</span>
@@ -103,11 +134,13 @@ export default function MusicPlay() {
           <p className="text-xl mb-6">Привет, {me?.name || name}!</p>
           <button
             onClick={() => socketRef.current?.emit('player:ready', { ready: !(me && me.ready) })}
-            className={`w-full rounded-xl py-5 text-xl font-bold transition ${
-              me?.ready ? 'btn-grad' : 'bg-white/5 border border-white/10 text-zinc-200 hover:bg-white/10'
+            className={`w-full rounded-2xl py-6 text-xl font-black tracking-wide uppercase transition-all duration-500 transform active:scale-95 ${
+              me?.ready
+                ? 'bg-emerald-600 border border-emerald-400/30 text-white shadow-xl shadow-emerald-500/30 scale-[1.02]'
+                : 'bg-violet-600 border border-violet-400/40 text-white shadow-lg shadow-violet-500/20 hover:bg-violet-500 hover:scale-[1.02]'
             }`}
           >
-            {me?.ready ? '✓ Готов' : 'Нажми «Готов»'}
+            {me?.ready ? '✓ Готов к игре' : 'Я готов! ⚡'}
           </button>
           <p className="mt-4 text-sm text-zinc-500">
             Игроков: {state?.players.length}. Ждём ведущего…
@@ -131,18 +164,30 @@ export default function MusicPlay() {
 
       {phase === 'buzzed' && (
         <Buzzer
-          label={state?.buzzed?.id === playerIdRef.current ? '🔔 Ты нажал первым!' : `Отвечает ${state?.buzzed?.name || '…'}`}
-          disabled
+          label={state?.buzzed?.id === playerIdRef.current ? 'Ты первый!' : `Отвечает ${state?.buzzed?.name || '…'}`}
+          btnClass={
+            state?.buzzed?.id === playerIdRef.current
+              ? 'bg-emerald-600 border border-emerald-400/30 text-white shadow-xl shadow-emerald-500/30 scale-[1.02]'
+              : 'bg-amber-600/20 border border-amber-500/30 text-amber-300 scale-95'
+          }
         />
       )}
 
       {phase === 'playing' && (
-        <Buzzer
-          label={me?.armed ? 'ЖМИ!' : me?.locked ? 'мимо' : 'Приготовься…'}
-          disabled={!me?.armed}
-          onBuzz={() => socketRef.current?.emit('player:buzz')}
-          locked={me?.locked}
-        />
+        <>
+          <Buzzer
+            label={me?.armed ? 'ЖМИ!' : me?.locked ? 'Мимо' : 'Приготовься…'}
+            onBuzz={me?.armed ? () => socketRef.current?.emit('player:buzz') : undefined}
+            btnClass={
+              me?.armed
+                ? 'bg-violet-600 border border-violet-400/40 text-white shadow-lg shadow-violet-500/30 scale-[1.02] hover:bg-violet-500 cursor-pointer animate-pulse'
+                : 'bg-white/5 border border-white/10 text-zinc-600 scale-95'
+            }
+          />
+          {me?.locked && (
+            <p className="mt-4 text-sm text-zinc-500">Ты уже ответил на этой песне — ждём других.</p>
+          )}
+        </>
       )}
     </div>
   );
@@ -151,33 +196,25 @@ export default function MusicPlay() {
 // Большая кнопка-баззер. onPointerDown — раньше click, меньше задержка.
 function Buzzer({
   label,
-  disabled,
   onBuzz,
-  locked,
+  btnClass,
 }: {
   label: string;
-  disabled?: boolean;
   onBuzz?: () => void;
-  locked?: boolean;
+  btnClass: string;
 }) {
+  const disabled = !onBuzz;
   return (
-    <>
-      <button
-        onPointerDown={(e) => {
-          if (disabled || !onBuzz) return;
-          e.preventDefault();
-          onBuzz();
-        }}
-        disabled={disabled}
-        className={`select-none touch-none flex h-64 w-64 items-center justify-center rounded-full text-3xl font-black transition ${
-          disabled
-            ? 'bg-white/5 text-zinc-500 border border-white/10'
-            : 'bg-gradient-to-br from-violet-500 to-fuchsia-500 text-white shadow-glow active:scale-95'
-        }`}
-      >
-        {label}
-      </button>
-      {locked && <p className="mt-4 text-sm text-zinc-500">Ты уже ответил на этой песне — ждём других.</p>}
-    </>
+    <button
+      onPointerDown={(e) => {
+        if (disabled || !onBuzz) return;
+        e.preventDefault();
+        onBuzz();
+      }}
+      disabled={disabled}
+      className={`select-none touch-none flex h-64 w-64 items-center justify-center rounded-full text-3xl font-black text-center p-4 transition-all duration-500 transform active:scale-95 ${btnClass}`}
+    >
+      {label}
+    </button>
   );
 }

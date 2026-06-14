@@ -16,6 +16,7 @@ import { GameStatisticsPage } from './pages/GameResults';
 import MusicAdmin from './pages/MusicAdmin';
 import MusicScreen from './pages/MusicScreen';
 import MusicPlay from './pages/MusicPlay';
+import MusicHost from './pages/MusicHost';
 import PrivateRoute from './components/PrivateRoute';
 import ErrorBoundary from './components/ErrorBoundary';
 
@@ -73,6 +74,10 @@ function App() {
               <Route
                 path="/admin/music"
                 element={<PrivateRoute component={MusicAdmin} roles={['admin', 'organizer']} />}
+              />
+              <Route
+                path="/admin/music/host/:gameId"
+                element={<PrivateRoute component={MusicHost} roles={['admin', 'organizer']} />}
               />
               {/* «Угадай мелодию»: экран-проектор и телефоны — публичные, без регистрации */}
               <Route path="/m/screen/:gameId" element={<MusicScreen />} />
