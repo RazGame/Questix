@@ -67,6 +67,10 @@ export default function MusicHost() {
   const currentSongId = live?.reveal
     ? gameData?.songs[live.currentIndex]?._id
     : gameData?.songs[live?.currentIndex || 0]?._id;
+  const displayRound =
+    live && live.total > 0
+      ? Math.min(Math.max(live.currentIndex + 1, 1), live.total)
+      : 0;
 
   return (
     <div className="max-w-7xl mx-auto p-4 py-8">
@@ -130,7 +134,7 @@ export default function MusicHost() {
                 </h3>
                 {live.total > 0 && (
                   <span className="font-mono text-sm text-zinc-400 bg-white/5 px-2 py-0.5 rounded">
-                    Раунд {live.currentIndex + 1} из {live.total}
+                    Раунд {displayRound} из {live.total}
                   </span>
                 )}
               </div>

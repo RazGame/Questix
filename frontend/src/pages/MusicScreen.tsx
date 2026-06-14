@@ -492,6 +492,10 @@ export default function MusicScreen() {
 
   const phase = state?.phase;
   const inRound = phase === 'playing' || phase === 'ended' || phase === 'buzzed' || phase === 'reveal';
+  const displayRound =
+    state && state.total > 0
+      ? Math.min(Math.max(state.currentIndex + 1, 1), state.total)
+      : 0;
 
   // классы центрального круга
   let centerCls = 'border-violet-400/50 bg-surface/70';
@@ -514,7 +518,7 @@ export default function MusicScreen() {
         <div className="mb-6">
           <h1 className="font-display text-3xl font-bold">{state.gameName}</h1>
           {state.total > 0 && (
-            <p className="font-mono text-zinc-400 mt-1">{state.currentIndex + 1} / {state.total}</p>
+            <p className="font-mono text-zinc-400 mt-1">{displayRound} / {state.total}</p>
           )}
         </div>
       )}

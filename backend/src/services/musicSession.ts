@@ -106,6 +106,7 @@ class Session {
 
   loadCurrent() {
     if (this.advanceTimer) clearTimeout(this.advanceTimer);
+    this.advanceTimer = null;
     this.buzzed = null;
     this.locked.clear();
     this.phase = 'playing';
@@ -181,13 +182,16 @@ class Session {
 
   skip() {
     if (this.advanceTimer) clearTimeout(this.advanceTimer);
+    this.advanceTimer = null;
     this.advance();
   }
 
   advance() {
     if (this.advanceTimer) clearTimeout(this.advanceTimer);
+    this.advanceTimer = null;
     this.currentIndex += 1;
     if (this.currentIndex >= this.playlist.length) {
+      this.currentIndex = Math.max(0, this.playlist.length - 1);
       this.phase = 'finished';
       this.cmd('stop');
       this.broadcast();
@@ -199,6 +203,7 @@ class Session {
 
   reset() {
     if (this.advanceTimer) clearTimeout(this.advanceTimer);
+    this.advanceTimer = null;
     this.phase = 'lobby';
     this.currentIndex = -1;
     this.buzzed = null;
@@ -212,7 +217,11 @@ class Session {
   // --- состояние для клиентов ---
   async publicState() {
     const game = await Game.findById(this.gameId).lean();
-    const cur = this.playlist[this.currentIndex] || null;
+    const safeCurrentIndex =
+      this.playlist.length > 0
+        ? Math.min(Math.max(this.currentIndex, 0), this.playlist.length - 1)
+        : -1;
+    const cur = safeCurrentIndex >= 0 ? this.playlist[safeCurrentIndex] : null;
     const showReveal = this.phase === 'reveal';
     return {
       gameId: this.gameId,
@@ -220,7 +229,7 @@ class Session {
       code: game ? game.code : '',
       phase: this.phase,
       total: this.playlist.length,
-      currentIndex: this.currentIndex,
+      currentIndex: safeCurrentIndex,
       buzzed: this.buzzed,
       reveal: cur && showReveal
         ? { title: cur.title, artist: cur.artist, album: cur.album, cover: cur.cover }
@@ -229,8 +238,8 @@ class Session {
       fileUrl: cur ? `/media/${cur.file}` : null,
       startSec: cur ? (cur.startSec || 0) : 0,
       endSec: cur ? (cur.endSec ?? null) : null,
-      nextUrl: cur && this.playlist[this.currentIndex + 1]
-        ? `/media/${this.playlist[this.currentIndex + 1].file}`
+      nextUrl: cur && this.playlist[safeCurrentIndex + 1]
+        ? `/media/${this.playlist[safeCurrentIndex + 1].file}`
         : null,
       screenReady: this.screenReady,
       players: Array.from(this.players.values()).map((p) => ({
