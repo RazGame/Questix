@@ -149,9 +149,69 @@ export default function MusicPlay() {
       )}
 
       {phase === 'finished' && (
-        <div className="glass w-full max-w-sm p-8">
-          <div className="font-display text-3xl font-bold mb-3">🏆 Игра окончена!</div>
-          {me && <p className="text-lg text-zinc-300">Твой счёт: <span className="font-bold text-violet-300">{me.score}</span></p>}
+        <div className="glass w-full max-w-sm p-6 flex flex-col max-h-[80vh] overflow-hidden">
+          <div className="font-display text-3xl font-extrabold mb-2 bg-gradient-to-r from-amber-300 via-violet-300 to-fuchsia-300 bg-clip-text text-transparent">
+            🏆 Игра окончена!
+          </div>
+          {me && (
+            <p className="text-md text-zinc-300 mb-4 pb-3 border-b border-white/5">
+              Твой счёт: <span className="font-bold text-violet-300">{me.score}</span>
+            </p>
+          )}
+          
+          <div className="text-left font-semibold text-xs text-zinc-500 uppercase tracking-widest mb-3">
+            Таблица результатов:
+          </div>
+          
+          <div className="flex-1 overflow-y-auto pr-1 space-y-2">
+            {[...(state?.players || [])]
+              .sort((a, b) => b.score - a.score)
+              .map((p, i) => {
+                const isMe = p.id === playerIdRef.current;
+                let badge = '';
+                let rowClass = 'bg-white/[0.02] border border-white/5';
+                let textClass = 'text-zinc-300';
+                let scoreClass = 'text-violet-400/80';
+                
+                if (i === 0) {
+                  badge = '🥇';
+                  rowClass = 'bg-amber-500/10 border border-amber-500/20';
+                  textClass = 'text-amber-200 font-bold';
+                  scoreClass = 'text-amber-300 font-extrabold';
+                } else if (i === 1) {
+                  badge = '🥈';
+                  rowClass = 'bg-zinc-400/10 border border-zinc-400/20';
+                  textClass = 'text-zinc-200 font-semibold';
+                  scoreClass = 'text-zinc-300 font-bold';
+                } else if (i === 2) {
+                  badge = '🥉';
+                  rowClass = 'bg-amber-700/10 border border-amber-700/20';
+                  textClass = 'text-amber-600/90 font-medium';
+                  scoreClass = 'text-amber-500 font-bold';
+                }
+                
+                if (isMe) {
+                  rowClass += ' ring-2 ring-violet-500/50 bg-violet-500/10';
+                }
+                
+                return (
+                  <div
+                    key={p.id}
+                    className={`flex items-center justify-between rounded-xl px-4 py-3 transition-all duration-300 ${rowClass}`}
+                  >
+                    <div className="flex items-center gap-2.5 min-w-0 text-left">
+                      <span className="w-5 text-center text-sm font-bold text-zinc-500">
+                        {badge || `#${i + 1}`}
+                      </span>
+                      <span className={`truncate text-sm ${textClass}`}>
+                        {p.name} {isMe && <span className="ml-1 text-[10px] uppercase font-bold text-violet-300 bg-violet-500/20 px-1.5 py-0.5 rounded">Вы</span>}
+                      </span>
+                    </div>
+                    <span className={`font-mono text-sm whitespace-nowrap ml-2 ${scoreClass}`}>{p.score}</span>
+                  </div>
+                );
+              })}
+          </div>
         </div>
       )}
 

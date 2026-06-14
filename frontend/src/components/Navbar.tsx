@@ -34,7 +34,7 @@ export default function Navbar() {
 
   if (isVisualizer) {
     return (
-      <nav className="sticky top-0 z-50 bg-transparent text-white border-b border-transparent">
+      <nav className="absolute top-0 left-0 right-0 z-50 bg-transparent text-white border-b border-transparent">
         <div className="mx-auto max-w-7xl px-4">
           <div className="flex h-16 items-center justify-center">
             <span className="font-display text-xl font-bold tracking-wide select-none">

@@ -76,7 +76,17 @@ app.use('/teams', teamRoutes);
 app.use('/music', musicRoutes);
 
 // Статика аудиофайлов «Угадай мелодию»
-app.use('/media', express.static(MEDIA_DIR));
+app.use('/media', (req, res, next) => {
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', '*');
+  res.setHeader('Access-Control-Expose-Headers', 'Content-Length, Content-Range');
+  if (req.method === 'OPTIONS') {
+    res.sendStatus(200);
+    return;
+  }
+  next();
+}, express.static(MEDIA_DIR));
 
 // Health check
 app.get('/health', (req, res) => {

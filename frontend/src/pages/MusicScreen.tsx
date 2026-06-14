@@ -15,6 +15,7 @@ interface AudioEngine {
   freq: Uint8Array;
   minFreq?: Float32Array;
   maxFreq?: Float32Array;
+  smoothed?: Float32Array;
 }
 
 const apiOrigin =
@@ -58,10 +59,10 @@ export default function MusicScreen() {
     analyser.fftSize = 256;
     analyser.minDecibels = -100;
     analyser.maxDecibels = -10;
-    analyser.smoothingTimeConstant = 0.8;
-    srcNode.connect(gain);
-    gain.connect(ctx.destination);
+    analyser.smoothingTimeConstant = 0.72;
     srcNode.connect(analyser);
+    analyser.connect(gain);
+    gain.connect(ctx.destination);
     // Зацикливание отрезка: при достижении конца возвращаемся к старту.
     audio.addEventListener('timeupdate', () => {
       const l = loopRef.current;
@@ -77,7 +78,8 @@ export default function MusicScreen() {
       gain,
       freq: new Uint8Array(analyser.frequencyBinCount),
       minFreq: new Float32Array(analyser.frequencyBinCount).fill(255),
-      maxFreq: new Float32Array(analyser.frequencyBinCount).fill(0)
+      maxFreq: new Float32Array(analyser.frequencyBinCount).fill(0),
+      smoothed: new Float32Array(analyser.frequencyBinCount).fill(0)
     };
     return engineRef.current;
   };
@@ -100,6 +102,10 @@ export default function MusicScreen() {
   const playFrom = (fileUrl: string, startSec: number, endSec: number | null, nextUrl?: string | null) => {
     const e = initAudio();
     if (e.ctx.state === 'suspended') e.ctx.resume();
+    // Сбросываем калибровку динамического диапазона и сглаживание для нового трека
+    if (e.minFreq) e.minFreq.fill(255);
+    if (e.maxFreq) e.maxFreq.fill(0);
+    if (e.smoothed) e.smoothed.fill(0);
     e.gain.gain.cancelScheduledValues(e.ctx.currentTime);
     e.gain.gain.setValueAtTime(1, e.ctx.currentTime);
     loopRef.current = { start: startSec || 0, end: endSec, active: true };
@@ -150,28 +156,19 @@ export default function MusicScreen() {
 
       const e = engineRef.current;
       const playing = e && !e.audio.paused;
+      let frameMax = 140;
       if (playing) {
         e!.analyser.getByteFrequencyData(e!.freq as any);
-        
-        if (!e!.minFreq) e!.minFreq = new Float32Array(e!.freq.length).fill(255);
-        if (!e!.maxFreq) e!.maxFreq = new Float32Array(e!.freq.length).fill(0);
-        
-        for (let k = 0; k < e!.freq.length; k++) {
-          const val = e!.freq[k];
-          if (val < e!.minFreq[k]) {
-            e!.minFreq[k] = val;
-          } else {
-            e!.minFreq[k] = e!.minFreq[k] * 0.999 + val * 0.001;
-          }
-          if (val > e!.maxFreq[k]) {
-            e!.maxFreq[k] = val;
-          } else {
-            e!.maxFreq[k] = e!.maxFreq[k] * 0.995 + val * 0.005;
-          }
+        let maxInFrame = 0;
+        // Находим пиковое значение по низким и средним частотам для динамической нормализации
+        for (let k = 0; k < 24; k++) {
+          const val = e!.freq[k] || 0;
+          if (val > maxInFrame) maxInFrame = val;
         }
-
+        frameMax = Math.max(140, maxInFrame);
+        
         if (Math.random() < 0.01) {
-          console.log("VIZ_DEBUG freq array:", Array.from(e!.freq).slice(0, 15));
+          console.log("VIZ_DEBUG frameMax:", frameMax, "freq:", Array.from(e!.freq).slice(0, 15));
         }
       }
       const bars = 72;
@@ -183,28 +180,52 @@ export default function MusicScreen() {
           // Зеркальное отображение: левая и правая половины танцуют симметрично
           const halfBars = bars / 2;
           const indexInHalf = i < halfBars ? i : bars - i - 1;
-          // Распределяем первые 35 битов частот (басы + вокал + средние)
-          const freqIndex = Math.floor((indexInHalf / halfBars) * 35);
+          // Фокусируемся на более динамичном диапазоне частот (басы + средние)
+          // Используем степенную функцию, чтобы отдать больше визуального веса басам и средним частотам
+          const freqIndex = Math.floor(Math.pow(indexInHalf / halfBars, 1.5) * 24);
           const raw = e!.freq[freqIndex] || 0;
           
-          const min = e!.minFreq ? e!.minFreq[freqIndex] : 150;
-          const max = e!.maxFreq ? e!.maxFreq[freqIndex] : 255;
-          const range = max - min;
-          
-          let normalizedRaw = range > 10 ? (raw - min) / range : 0;
-          normalizedRaw = Math.max(0, Math.min(1.0, normalizedRaw));
-          
-          // Применим степенную функцию для увеличения контраста (размаха)
-          normalizedRaw = Math.pow(normalizedRaw, 2.0);
-          
-          const boost = 1.0 + (freqIndex / 35) * 0.8;
-          v = normalizedRaw * boost;
-          v = Math.min(1.0, v);
+          if (e!.minFreq && e!.maxFreq) {
+            // Медленно подтягиваем границы друг к другу, чтобы адаптироваться к тихим участкам
+            e!.minFreq[freqIndex] = e!.minFreq[freqIndex] * 0.996 + raw * 0.004;
+            e!.maxFreq[freqIndex] = e!.maxFreq[freqIndex] * 0.996 + raw * 0.004;
+            
+            // Если выходим за границы, мгновенно расширяем
+            if (raw < e!.minFreq[freqIndex]) e!.minFreq[freqIndex] = raw;
+            if (raw > e!.maxFreq[freqIndex]) e!.maxFreq[freqIndex] = raw;
+            
+            const minVal = e!.minFreq[freqIndex];
+            const maxVal = e!.maxFreq[freqIndex];
+            const range = maxVal - minVal;
+            
+            // Добавим 10% отступа (padding) сверху и снизу от реального размаха,
+            // чтобы значения не залипали в крайних точках и движение было более плавным.
+            const pad = Math.max(5, range * 0.1);
+            const minBound = Math.max(0, minVal - pad);
+            const maxBound = Math.min(255, maxVal + pad);
+            const effectiveRange = maxBound - minBound;
+            
+            let normalized = effectiveRange > 15 ? (raw - minBound) / effectiveRange : 0;
+            normalized = Math.max(0, Math.min(1.0, normalized));
+            
+            // Плавное накопление энергии/инерции для сглаживания джиттера
+            const prevVal = e!.smoothed ? e!.smoothed[i] : 0;
+            // Быстрый взлет, медленный спад
+            const smoothingFactor = normalized > prevVal ? 0.35 : 0.15;
+            let val = prevVal + (normalized - prevVal) * smoothingFactor;
+            if (e!.smoothed) e!.smoothed[i] = val;
+            
+            // Возводим в степень для повышения визуального контраста (тихие звуки уходят вниз, пики выразительны)
+            v = Math.pow(val, 1.3);
+          } else {
+            v = raw / 255;
+          }
         } else {
           // тихий «вдох-выдох», когда музыка не играет (баззер)
           v = 0.05 + 0.03 * Math.abs(Math.sin(Date.now() / 700 + i / 4));
         }
-        const len = baseR * (0.08 + v * 0.95);
+        // Даем большой размах движения, увеличивая множитель амплитуды до 0.95
+        const len = baseR * (0.05 + v * 0.95);
         const x0 = cx + Math.cos(angle) * baseR;
         const y0 = cy + Math.sin(angle) * baseR;
         const x1 = cx + Math.cos(angle) * (baseR + len);
@@ -354,7 +375,7 @@ export default function MusicScreen() {
   else if (phase === 'buzzed') centerCls = 'border-amber-300 bg-surface/70 qgs-pulse';
 
   return (
-    <div className="min-h-[calc(100vh-4rem)] flex flex-col items-center justify-center px-6 py-10 text-center">
+    <div className="min-h-screen flex flex-col items-center justify-center px-6 py-10 text-center">
       {needGate && (
         <button
           onClick={unlock}
@@ -440,19 +461,60 @@ export default function MusicScreen() {
       )}
 
       {phase === 'finished' && (
-        <div className="glass p-8 w-full max-w-md">
-          <h2 className="font-display text-3xl font-bold mb-6">🏆 Игра окончена!</h2>
-          <div className="space-y-2">
-            {[...(state?.players || [])].sort((a, b) => b.score - a.score).map((p, i) => (
-              <div
-                key={p.id}
-                className={`flex justify-between rounded-lg px-4 py-2 ${i === 0 ? 'bg-amber-400/10 text-amber-200' : 'bg-white/5'}`}
-              >
-                <span>{i + 1}. {p.name}</span>
-                <span className="font-bold">{p.score}</span>
-              </div>
-            ))}
-          </div>
+        <div className="glass p-10 w-full max-w-2xl rounded-2xl border border-violet-500/20 bg-surface/80 backdrop-blur-xl shadow-2xl">
+          <h2 className="font-display text-4xl font-extrabold mb-8 bg-gradient-to-r from-amber-300 via-violet-300 to-fuchsia-300 bg-clip-text text-transparent">
+            🏆 Итоговая таблица результатов
+          </h2>
+          
+          {state?.players && state.players.length > 0 ? (
+            <div className="space-y-3">
+              {[...state.players]
+                .sort((a, b) => b.score - a.score)
+                .map((p, i) => {
+                  let badge = '';
+                  let rowClass = 'bg-white/5 border border-white/5';
+                  let textClass = 'text-zinc-100';
+                  let scoreClass = 'text-violet-300';
+                  
+                  if (i === 0) {
+                    badge = '🥇';
+                    rowClass = 'bg-amber-400/10 border border-amber-400/30 shadow-lg shadow-amber-950/20';
+                    textClass = 'text-amber-200 text-lg font-bold';
+                    scoreClass = 'text-amber-300 text-xl font-extrabold';
+                  } else if (i === 1) {
+                    badge = '🥈';
+                    rowClass = 'bg-zinc-400/10 border border-zinc-400/30';
+                    textClass = 'text-zinc-200 text-md font-semibold';
+                    scoreClass = 'text-zinc-300 font-bold';
+                  } else if (i === 2) {
+                    badge = '🥉';
+                    rowClass = 'bg-amber-700/10 border border-amber-700/30';
+                    textClass = 'text-amber-600/80 text-md';
+                    scoreClass = 'text-amber-600 font-bold';
+                  }
+                  
+                  return (
+                    <div
+                      key={p.id}
+                      className={`flex items-center justify-between rounded-xl px-6 py-4 transition-all duration-300 ${rowClass}`}
+                    >
+                      <div className="flex items-center gap-3">
+                        <span className="w-8 text-left text-lg font-bold text-zinc-500">
+                          {badge || `#${i + 1}`}
+                        </span>
+                        <span className={textClass}>{p.name}</span>
+                      </div>
+                      <span className={`font-mono ${scoreClass}`}>{p.score} очков</span>
+                    </div>
+                  );
+                })}
+            </div>
+          ) : (
+            <div className="py-12 text-center text-zinc-400 text-lg">
+              <p>Участники не успели подключиться или набрать очки.</p>
+              <p className="text-sm text-zinc-500 mt-2">Запустите новую игру для подключения игроков!</p>
+            </div>
+          )}
         </div>
       )}
     </div>
