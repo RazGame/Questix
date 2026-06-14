@@ -78,6 +78,11 @@ export const registerMusicSockets = (io: Server): void => {
       getSession(io, gameId).buzz(playerId);
     });
 
+    socket.on('player:offline', () => {
+      if (role !== 'player' || !gameId || !playerId) return;
+      getSession(io, gameId).setConnected(playerId, false);
+    });
+
     // команды ведущего (только admin-роль, права уже проверены на join)
     const adminActions: Record<string, (s: ReturnType<typeof getSession>) => void> = {
       'admin:start': (s) => { s.start(); },

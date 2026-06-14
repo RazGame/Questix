@@ -99,6 +99,8 @@ const io = new SocketServer(httpServer, {
   cors: { origin: corsOrigin },
   // websocket-only: убираем polling-апгрейд ради минимальных задержек баззера
   transports: ['websocket'],
+  pingInterval: 2500,
+  pingTimeout: 3000,
 });
 registerMusicSockets(io);
 setIo(io);

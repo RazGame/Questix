@@ -19,6 +19,10 @@ export default function MusicPlay() {
   const socketRef = useRef<ReturnType<typeof createSocket> | null>(null);
   const playerIdRef = useRef<string | null>(null);
   const prevStateRef = useRef<MusicState | null>(null);
+  const autoJoinTriedRef = useRef(false);
+  const joinedRef = useRef(false);
+  const joinedCodeRef = useRef(codeFromUrl);
+  const joinedNameRef = useRef(localStorage.getItem('qgs_name') || '');
 
   const [code, setCode] = useState(codeFromUrl);
   const [name, setName] = useState(localStorage.getItem('qgs_name') || '');
@@ -27,6 +31,18 @@ export default function MusicPlay() {
   const [state, setState] = useState<MusicState | null>(null);
 
   const pidKey = (c: string) => `qgs_pid_${c}`;
+  const emitJoin = (targetCode: string, targetName: string) => {
+    joinedCodeRef.current = targetCode;
+    joinedNameRef.current = targetName;
+    const savedPid = localStorage.getItem(pidKey(targetCode));
+    playerIdRef.current = savedPid;
+    socketRef.current?.emit('join', {
+      role: 'player',
+      code: targetCode,
+      name: targetName,
+      playerId: savedPid,
+    });
+  };
 
   useEffect(() => {
     const originalBodyOverflow = document.body.style.overflow;
@@ -66,26 +82,50 @@ export default function MusicPlay() {
     socket.on('joined', (d: { playerId: string }) => {
       playerIdRef.current = d.playerId;
       if (code) localStorage.setItem(pidKey(code), d.playerId);
+      joinedRef.current = true;
       setJoined(true);
       setError('');
     });
     socket.on('error-msg', ({ message }: { message: string }) => {
+      joinedRef.current = false;
       setJoined(false);
       setError(message);
     });
     socket.on('state', (st: MusicState) => setState(st));
+    socket.on('connect', () => {
+      const currentCode = joinedCodeRef.current || codeFromUrl;
+      const currentName = (joinedNameRef.current || localStorage.getItem('qgs_name') || '').trim();
+      if (!currentCode || !currentName) return;
+      if (!autoJoinTriedRef.current || joinedRef.current) {
+        autoJoinTriedRef.current = true;
+        emitJoin(currentCode, currentName);
+      }
+    });
 
     return () => { socket.disconnect(); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
+    const markOffline = () => {
+      socketRef.current?.emit('player:offline');
+    };
+
+    window.addEventListener('offline', markOffline);
+    window.addEventListener('pagehide', markOffline);
+
+    return () => {
+      window.removeEventListener('offline', markOffline);
+      window.removeEventListener('pagehide', markOffline);
+    };
   }, []);
 
   const join = () => {
     const trimmed = name.trim();
     if (!trimmed || !code) return;
     localStorage.setItem('qgs_name', trimmed);
-    const savedPid = localStorage.getItem(pidKey(code));
-    playerIdRef.current = savedPid;
-    socketRef.current?.emit('join', { role: 'player', code, name: trimmed, playerId: savedPid });
+    autoJoinTriedRef.current = true;
+    emitJoin(code, trimmed);
   };
 
   const me = state?.players.find((p) => p.id === playerIdRef.current);
@@ -264,6 +304,13 @@ export default function MusicPlay() {
         <div className="glass w-full max-w-sm p-8">
           <div className="font-display text-2xl font-bold text-emerald-300 mb-2">✓ Правильно!</div>
           <p className="text-zinc-300">{state?.reveal?.title} — {state?.reveal?.artist}</p>
+        </div>
+      )}
+
+      {phase === 'ended' && (
+        <div className="glass w-full max-w-sm p-8">
+          <div className="font-display text-2xl font-bold text-violet-300 mb-2">Фрагмент закончился</div>
+          <p className="text-zinc-400">Ждём действие ведущего…</p>
         </div>
       )}
 
