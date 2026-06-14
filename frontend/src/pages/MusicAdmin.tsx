@@ -22,6 +22,12 @@ const statusTone: Record<Song['status'], string> = {
   error: 'bg-rose-400/10 text-rose-300',
 };
 
+const apiErrorMessage = (error: any, fallback: string) =>
+  error?.response?.data?.error ||
+  error?.response?.data?.errors?.[0] ||
+  error?.message ||
+  fallback;
+
 export default function MusicAdmin({ isTab = false }: { isTab?: boolean }) {
   const navigate = useNavigate();
   const [games, setGames] = useState<(MusicGame & { songCount: number })[]>([]);
@@ -34,8 +40,13 @@ export default function MusicAdmin({ isTab = false }: { isTab?: boolean }) {
   const [spotiVersion, setSpotiVersion] = useState<string | null>(null);
   const [segmentSong, setSegmentSong] = useState<Song | null>(null); // открытая модалка отрезка
 
-  const loadGames = useCallback(async () => {
-    try { setGames(await musicService.list()); } catch { setError('Ошибка загрузки игр'); }
+  const loadGames = useCallback(async (throwOnError = false) => {
+    try {
+      setGames(await musicService.list());
+    } catch (e: any) {
+      setError(apiErrorMessage(e, 'Ошибка загрузки игр'));
+      if (throwOnError) throw e;
+    }
   }, []);
 
   useEffect(() => { loadGames(); }, [loadGames]);
@@ -43,64 +54,114 @@ export default function MusicAdmin({ isTab = false }: { isTab?: boolean }) {
     musicService.spotiflacVersion().then((v) => setSpotiVersion(v.version)).catch(() => {});
   }, []);
 
-  const selectGame = async (id: string) => {
+  const selectGame = async (id: string, throwOnError = false) => {
     try {
       const full = await musicService.get(id);
       setCurrent(full);
       setTargetBlock(full.game.blocks[0]?._id || '');
-    } catch {
-      setError('Ошибка загрузки игры');
+      setError('');
+    } catch (e: any) {
+      setError(apiErrorMessage(e, 'Ошибка загрузки игры'));
+      if (throwOnError) throw e;
     }
   };
 
   const refreshCurrent = async () => {
-    if (current) {
-      const full = await musicService.get(current.game._id);
-      setCurrent(full);
+    try {
+      if (current) {
+        const full = await musicService.get(current.game._id);
+        setCurrent(full);
+      }
+      await loadGames(true);
+    } catch (e: any) {
+      setError(apiErrorMessage(e, 'Ошибка обновления данных игры'));
+      throw e;
     }
-    loadGames();
   };
 
   // --- игры ---
   const createGame = async () => {
-    const g = await musicService.create('Новая музыкальная игра');
-    await loadGames();
-    selectGame(g._id);
+    try {
+      const g = await musicService.create('Новая музыкальная игра');
+      await loadGames(true);
+      await selectGame(g._id, true);
+      setError('');
+    } catch (e: any) {
+      setError(apiErrorMessage(e, 'Ошибка создания музыкальной игры'));
+    }
   };
   const deleteGame = async () => {
     if (!current || !confirm(`Удалить игру «${current.game.title}»?`)) return;
-    await musicService.remove(current.game._id);
-    setCurrent(null);
-    loadGames();
+    try {
+      await musicService.remove(current.game._id);
+      setCurrent(null);
+      await loadGames(true);
+      setError('');
+    } catch (e: any) {
+      setError(apiErrorMessage(e, 'Ошибка удаления музыкальной игры'));
+    }
   };
   const renameGame = async (title: string) => {
     if (!current) return;
+    const previous = current.game.title;
     setCurrent({ ...current, game: { ...current.game, title } });
-    await musicService.update(current.game._id, title);
-    loadGames();
+    try {
+      await musicService.update(current.game._id, title);
+      await loadGames(true);
+      setError('');
+    } catch (e: any) {
+      setCurrent({ ...current, game: { ...current.game, title: previous } });
+      setError(apiErrorMessage(e, 'Ошибка переименования музыкальной игры'));
+    }
   };
 
   // --- блоки ---
   const addBlock = async () => {
     if (!current) return;
-    await musicService.addBlock(current.game._id);
-    refreshCurrent();
+    try {
+      await musicService.addBlock(current.game._id);
+      await refreshCurrent();
+      setError('');
+    } catch (e: any) {
+      setError(apiErrorMessage(e, 'Ошибка добавления блока'));
+    }
   };
   const renameBlock = async (blockId: string, name: string) => {
     if (!current) return;
-    await musicService.updateBlock(current.game._id, blockId, name);
+    try {
+      await musicService.updateBlock(current.game._id, blockId, name);
+      setError('');
+    } catch (e: any) {
+      const message = apiErrorMessage(e, 'Ошибка переименования блока');
+      setError(message);
+      try {
+        await refreshCurrent();
+      } catch {
+        setError(message);
+      }
+    }
   };
   const removeBlock = async (blockId: string) => {
     if (!current || !confirm('Удалить блок со всеми песнями?')) return;
-    await musicService.removeBlock(current.game._id, blockId);
-    refreshCurrent();
+    try {
+      await musicService.removeBlock(current.game._id, blockId);
+      await refreshCurrent();
+      setError('');
+    } catch (e: any) {
+      setError(apiErrorMessage(e, 'Ошибка удаления блока'));
+    }
   };
 
   // --- песни ---
   const removeSong = async (songId: string) => {
     if (!current) return;
-    await musicService.removeSong(current.game._id, songId);
-    refreshCurrent();
+    try {
+      await musicService.removeSong(current.game._id, songId);
+      await refreshCurrent();
+      setError('');
+    } catch (e: any) {
+      setError(apiErrorMessage(e, 'Ошибка удаления песни'));
+    }
   };
   const uploadFile = (songId: string) => {
     const inp = document.createElement('input');
@@ -108,8 +169,13 @@ export default function MusicAdmin({ isTab = false }: { isTab?: boolean }) {
     inp.accept = 'audio/*,.flac,.mp3,.m4a,.ogg,.wav';
     inp.onchange = async () => {
       if (inp.files?.[0] && current) {
-        await musicService.uploadSongFile(current.game._id, songId, inp.files[0]);
-        refreshCurrent();
+        try {
+          await musicService.uploadSongFile(current.game._id, songId, inp.files[0]);
+          await refreshCurrent();
+          setError('');
+        } catch (e: any) {
+          setError(apiErrorMessage(e, 'Ошибка загрузки файла песни'));
+        }
       }
     };
     inp.click();
@@ -120,13 +186,18 @@ export default function MusicAdmin({ isTab = false }: { isTab?: boolean }) {
     inp.accept = 'audio/*,.flac,.mp3,.m4a,.ogg,.wav';
     inp.onchange = async () => {
       if (inp.files?.[0] && current) {
-        const f = inp.files[0];
-        const song = await musicService.addSong(current.game._id, blockId, {
-          title: f.name.replace(/\.[^.]+$/, ''),
-          artist: '',
-        });
-        await musicService.uploadSongFile(current.game._id, song._id, f);
-        refreshCurrent();
+        try {
+          const f = inp.files[0];
+          const song = await musicService.addSong(current.game._id, blockId, {
+            title: f.name.replace(/\.[^.]+$/, ''),
+            artist: '',
+          });
+          await musicService.uploadSongFile(current.game._id, song._id, f);
+          await refreshCurrent();
+          setError('');
+        } catch (e: any) {
+          setError(apiErrorMessage(e, 'Ошибка добавления файла в блок'));
+        }
       }
     };
     inp.click();
@@ -137,20 +208,34 @@ export default function MusicAdmin({ isTab = false }: { isTab?: boolean }) {
     if (!searchQ.trim()) return;
     setSearching(true);
     setResults([]);
-    try { setResults(await musicService.search(searchQ.trim())); }
-    catch (e: any) { setError(e.response?.data?.error || 'Поиск недоступен'); }
+    try {
+      setResults(await musicService.search(searchQ.trim()));
+      setError('');
+    } catch (e: any) {
+      setError(apiErrorMessage(e, 'Поиск недоступен'));
+    }
     finally { setSearching(false); }
   };
   const addResult = async (r: SongSearchResult) => {
     if (!current || !targetBlock) return;
-    await musicService.addSong(current.game._id, targetBlock, r);
-    refreshCurrent();
+    try {
+      await musicService.addSong(current.game._id, targetBlock, r);
+      await refreshCurrent();
+      setError('');
+    } catch (e: any) {
+      setError(apiErrorMessage(e, 'Ошибка добавления песни'));
+    }
   };
 
   const updateSpotiflac = async () => {
     setSpotiVersion('обновление…');
-    try { setSpotiVersion((await musicService.spotiflacUpdate()).version); }
-    catch { setError('Не удалось обновить SpotiFLAC'); setSpotiVersion(null); }
+    try {
+      setSpotiVersion((await musicService.spotiflacUpdate()).version);
+      setError('');
+    } catch (e: any) {
+      setError(apiErrorMessage(e, 'Не удалось обновить SpotiFLAC'));
+      setSpotiVersion(null);
+    }
   };
 
   const songById = (id: string) => current?.songs.find((s) => s._id === id);
@@ -329,7 +414,15 @@ export default function MusicAdmin({ isTab = false }: { isTab?: boolean }) {
                                 )}
                                 {s.sourceUrl && (s.status === 'error' || s.status === 'pending') && (
                                   <button
-                                    onClick={() => musicService.downloadSong(current.game._id, s._id)}
+                                    onClick={async () => {
+                                      try {
+                                        await musicService.downloadSong(current.game._id, s._id);
+                                        await refreshCurrent();
+                                        setError('');
+                                      } catch (e: any) {
+                                        setError(apiErrorMessage(e, 'Ошибка запуска загрузки песни'));
+                                      }
+                                    }}
                                     className="text-zinc-400 hover:text-white p-1"
                                     title="Повторить авто-загрузку"
                                   >
@@ -380,4 +473,3 @@ export default function MusicAdmin({ isTab = false }: { isTab?: boolean }) {
     </div>
   );
 }
-

@@ -29,6 +29,14 @@ const loadModerableGame = async (req: AuthenticatedRequest, res: Response) => {
   return game;
 };
 
+const isDuplicateTitleError = (error: any) =>
+  error?.code === 11000 && (!error.keyPattern || error.keyPattern.title);
+
+const normalizeMusicGameTitle = (title?: string) => {
+  const trimmed = title?.trim();
+  return trimmed || 'Новая музыкальная игра';
+};
+
 // ----- игры -----
 export const listMusicGames = async (
   req: AuthenticatedRequest,
@@ -63,19 +71,47 @@ export const createMusicGame = async (
   req: AuthenticatedRequest,
   res: Response
 ): Promise<void> => {
+  const baseTitle = normalizeMusicGameTitle(req.body?.title);
+
   try {
+    for (let attempt = 0; attempt < 20; attempt += 1) {
+      const code = await generateJoinCode();
+      const title = attempt === 0 ? baseTitle : `${baseTitle} ${attempt + 1}`;
+      const game = new Game({
+        kind: 'guess_song',
+        format: 'offline',
+        title,
+        code,
+        blocks: [{ name: 'Блок 1', songIds: [] }],
+        createdBy: req.user.id,
+      });
+
+      try {
+        await game.save();
+        res.status(201).json({ game });
+        return;
+      } catch (error: any) {
+        if (isDuplicateTitleError(error)) continue;
+        throw error;
+      }
+    }
+
     const code = await generateJoinCode();
     const game = new Game({
       kind: 'guess_song',
       format: 'offline',
-      title: (req.body?.title || 'Новая музыкальная игра').trim(),
+      title: `${baseTitle} ${Date.now()}`,
       code,
       blocks: [{ name: 'Блок 1', songIds: [] }],
       createdBy: req.user.id,
     });
     await game.save();
     res.status(201).json({ game });
-  } catch (error) {
+  } catch (error: any) {
+    if (isDuplicateTitleError(error)) {
+      res.status(409).json({ error: 'Игра с таким названием уже существует' });
+      return;
+    }
     console.error('Ошибка создания музыкальной игры:', error);
     res.status(500).json({ error: 'Ошибка сервера' });
   }
