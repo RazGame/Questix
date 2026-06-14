@@ -2,6 +2,7 @@ import { useEffect, useState, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Plus, Play, Trash2, Upload, RefreshCw, Search, RotateCw, Scissors } from 'lucide-react';
 import { musicService, MusicGameFull, SongSearchResult } from '../services/music';
+import { createSocket } from '../services/socket';
 import { MusicGame, Song } from '../types';
 import MusicSegmentModal from './MusicSegmentModal';
 
@@ -12,7 +13,7 @@ const fmtTime = (s: number) => {
 const statusLabels: Record<Song['status'], string> = {
   ready: 'готово',
   pending: 'ожидает',
-  downloading: 'качаю…',
+  downloading: 'скачивание',
   error: 'ошибка',
 };
 const statusTone: Record<Song['status'], string> = {
@@ -53,6 +54,31 @@ export default function MusicAdmin({ isTab = false }: { isTab?: boolean }) {
   useEffect(() => {
     musicService.spotiflacVersion().then((v) => setSpotiVersion(v.version)).catch(() => {});
   }, []);
+
+  useEffect(() => {
+    if (!current?.game._id) return;
+
+    const socket = createSocket(localStorage.getItem('token'));
+    socket.emit('join', { role: 'admin', gameId: current.game._id });
+    socket.on('song-updated', ({ song }: { song?: Song }) => {
+      if (!song) return;
+      setCurrent((prev) => {
+        if (!prev || prev.game._id !== current.game._id) return prev;
+        return {
+          ...prev,
+          songs: prev.songs.map((item) => (item._id === song._id ? song : item)),
+        };
+      });
+      setSegmentSong((prev) => (prev?._id === song._id ? song : prev));
+    });
+    socket.on('error-msg', ({ message }: { message?: string }) => {
+      if (message) setError(message);
+    });
+
+    return () => {
+      socket.disconnect();
+    };
+  }, [current?.game._id]);
 
   const selectGame = async (id: string, throwOnError = false) => {
     try {
