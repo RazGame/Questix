@@ -21,6 +21,9 @@ interface AudioEngine {
 const apiOrigin =
   import.meta.env.VITE_SOCKET_URL ||
   `${window.location.protocol}//${window.location.hostname}:5000`;
+const TRACK_FADE_IN_MS = 650;
+const ANSWER_RESUME_FADE_IN_MS = 450;
+const ANSWER_FADE_OUT_MS = 320;
 
 export default function MusicScreen() {
   const { gameId } = useParams<{ gameId: string }>();
@@ -123,7 +126,8 @@ export default function MusicScreen() {
     if (e.maxFreq) e.maxFreq.fill(0);
     if (e.smoothed) e.smoothed.fill(0);
     e.gain.gain.cancelScheduledValues(e.ctx.currentTime);
-    e.gain.gain.setValueAtTime(1, e.ctx.currentTime);
+    e.gain.gain.setValueAtTime(0.0001, e.ctx.currentTime);
+    e.gain.gain.linearRampToValueAtTime(1, e.ctx.currentTime + TRACK_FADE_IN_MS / 1000);
     segmentRef.current = { start: startSec || 0, end: endSec, active: true, ended: false };
     const src = apiOrigin + fileUrl;
     if (e.audio.src !== src) {
@@ -155,7 +159,8 @@ export default function MusicScreen() {
     if (e) {
       if (e.ctx.state === 'suspended') e.ctx.resume();
       e.gain.gain.cancelScheduledValues(e.ctx.currentTime);
-      e.gain.gain.setValueAtTime(1, e.ctx.currentTime);
+      e.gain.gain.setValueAtTime(0.0001, e.ctx.currentTime);
+      e.gain.gain.linearRampToValueAtTime(1, e.ctx.currentTime + ANSWER_RESUME_FADE_IN_MS / 1000);
       if (e.audio.paused) {
         e.audio.play().catch(() => setNeedGate(true));
       }
@@ -169,6 +174,33 @@ export default function MusicScreen() {
       current.gain.gain.linearRampToValueAtTime(0.0001, now + fadeMs / 1000);
       setTimeout(() => current.audio.pause(), fadeMs + 100);
     }, playMs);
+  };
+
+  const fadePause = (fadeMs = ANSWER_FADE_OUT_MS) => {
+    const e = engineRef.current;
+    if (!e || e.audio.paused) return;
+    const now = e.ctx.currentTime;
+    e.gain.gain.cancelScheduledValues(now);
+    e.gain.gain.setValueAtTime(e.gain.gain.value, now);
+    e.gain.gain.linearRampToValueAtTime(0.0001, now + fadeMs / 1000);
+    window.setTimeout(() => {
+      const current = engineRef.current;
+      if (!current) return;
+      current.audio.pause();
+    }, fadeMs + 40);
+  };
+
+  const fadeResume = (fadeMs = ANSWER_RESUME_FADE_IN_MS) => {
+    const e = engineRef.current;
+    if (!e) return;
+    if (e.ctx.state === 'suspended') e.ctx.resume();
+    segmentRef.current.active = true;
+    segmentRef.current.ended = false;
+    const now = e.ctx.currentTime;
+    e.gain.gain.cancelScheduledValues(now);
+    e.gain.gain.setValueAtTime(0.0001, now);
+    e.gain.gain.linearRampToValueAtTime(1, now + fadeMs / 1000);
+    e.audio.play().catch(() => setNeedGate(true));
   };
 
   // ---------- круговой эквалайзер ----------
@@ -346,11 +378,9 @@ export default function MusicScreen() {
     });
     socket.on('cmd', (m: any) => {
       if (m.action === 'play') playFrom(m.fileUrl, m.startSec, m.endSec ?? null, m.nextUrl);
-      else if (m.action === 'pause') engineRef.current?.audio.pause();
+      else if (m.action === 'pause') fadePause(m.fadeMs);
       else if (m.action === 'resume') {
-        segmentRef.current.active = true;
-        segmentRef.current.ended = false;
-        engineRef.current?.audio.play().catch(() => {});
+        fadeResume(m.fadeMs);
       }
       else if (m.action === 'fadeAndStop') fadeAndStop(m.playMs, m.fadeMs);
       else if (m.action === 'stop') {

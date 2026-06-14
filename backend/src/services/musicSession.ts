@@ -5,6 +5,9 @@ import { buildPlaylist, PlaylistItem } from './musicStore';
 // Тайминги после правильного ответа (мс): доиграть, затем плавно затихнуть.
 const REVEAL_PLAY_MS = 5000;
 const REVEAL_FADE_MS = 1500;
+const NEXT_TRACK_PAUSE_MS = 900;
+const BUZZ_FADE_OUT_MS = 320;
+const RESUME_FADE_IN_MS = 450;
 
 interface Player {
   id: string;
@@ -152,7 +155,7 @@ class Session {
     const p = this.players.get(playerId)!;
     this.buzzed = { id: p.id, name: p.name };
     this.phase = 'buzzed';
-    this.cmd('pause');
+    this.cmd('pause', { fadeMs: BUZZ_FADE_OUT_MS });
     this.broadcast();
   }
 
@@ -172,7 +175,7 @@ class Session {
     if (this.buzzed) this.locked.add(this.buzzed.id); // выбывает до конца песни
     this.buzzed = null;
     this.phase = 'playing';
-    this.cmd('resume');
+    this.cmd('resume', { fadeMs: RESUME_FADE_IN_MS });
     this.broadcast();
   }
 
@@ -189,7 +192,8 @@ class Session {
       this.cmd('stop');
       this.broadcast();
     } else {
-      this.loadCurrent();
+      this.cmd('stop');
+      this.advanceTimer = setTimeout(() => this.loadCurrent(), NEXT_TRACK_PAUSE_MS);
     }
   }
 
