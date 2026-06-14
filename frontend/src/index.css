@@ -82,6 +82,19 @@ select.input-dark optgroup {
   color: #e4e4e7;
 }
 
+/* Анимации центрального круга эквалайзера «Угадай мелодию» */
+@keyframes qgs-pulse {
+  0%, 100% { transform: scale(1); opacity: 0.85; }
+  50% { transform: scale(1.08); opacity: 1; }
+}
+@keyframes qgs-pop {
+  0% { transform: scale(0.6); opacity: 0; }
+  60% { transform: scale(1.1); opacity: 1; }
+  100% { transform: scale(1); opacity: 1; }
+}
+.qgs-pulse { animation: qgs-pulse 0.9s ease-in-out infinite; }
+.qgs-pop { animation: qgs-pop 0.6s cubic-bezier(0.22, 1, 0.36, 1); }
+
 .rich-content,
 .rich-editor-content {
   line-height: 1.7;

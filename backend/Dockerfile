@@ -1,19 +1,26 @@
-FROM node:18-alpine
+FROM node:18-bookworm-slim
 
 WORKDIR /app
 
-# Install dependencies
+# Python + pip для SpotiFLAC (загрузка/поиск песен «Угадай мелодию»).
+# Debian-база надёжнее alpine/musl для сборки колёс SpotiFLAC.
+RUN apt-get update \
+  && apt-get install -y --no-install-recommends python3 python3-pip ca-certificates \
+  && rm -rf /var/lib/apt/lists/*
+
+# Node-зависимости
 COPY package*.json ./
 RUN npm install
 
-# Copy source code
-COPY . .
+# Python-зависимости (SpotiFLAC). PEP 668: ставим в системный python.
+COPY tools/ ./tools/
+RUN pip3 install --no-cache-dir --break-system-packages -r tools/requirements.txt || true
 
-# Build TypeScript
+# Исходники и сборка
+COPY . .
 RUN npm run build
 
-# Expose port
+ENV PYTHON=python3
 EXPOSE 5000
 
-# Start server
 CMD ["npm", "start"]

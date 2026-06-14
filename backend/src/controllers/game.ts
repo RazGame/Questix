@@ -41,7 +41,8 @@ export const getAllGames = async (
   res: Response
 ): Promise<void> => {
   try {
-    const games = await Game.find()
+    // Каталог показывает только квесты; игры «Угадай мелодию» сюда не попадают.
+    const games = await Game.find({ kind: { $ne: 'guess_song' } })
       .populate('createdBy', 'nickname firstName lastName')
       .populate('organizers', 'nickname firstName lastName')
       .populate({

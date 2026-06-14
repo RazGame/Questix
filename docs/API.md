@@ -340,6 +340,31 @@ Admin only. Назначает порядок заданий для команд
 
 Администратор или организатор игры (создатель или соорганизатор). Возвращает результаты команд по квесту.
 
+## Music («Угадай мелодию»)
+
+Все `/music/*` REST-маршруты - для администратора или организатора. Игроки и экран
+взаимодействуют через **Socket.IO** (не REST) и не требуют регистрации.
+
+REST (управление, под auth + organizer):
+
+- `GET /music/games`, `POST /music/games`, `GET|PATCH|DELETE /music/games/:id` - игры (создание ставит `kind=guess_song`, `format=offline`, генерит `code`).
+- `POST|PATCH|DELETE /music/games/:id/blocks[/:blockId]` - блоки песен.
+- `POST|PATCH|DELETE /music/games/:id/songs[/:songId]` - песни.
+- `POST /music/games/:id/songs/:songId/upload` - ручная загрузка аудиофайла (raw body, `?ext=`).
+- `POST /music/games/:id/songs/:songId/download` - повторная авто-загрузка через SpotiFLAC.
+- `GET /music/search?q=` - поиск песен (SpotiFLAC).
+- `GET /music/net`, `GET /music/qr?text=` - LAN-IP и QR для входа игроков.
+- `GET /music/spotiflac/version`, `POST /music/spotiflac/update` - версия и обновление SpotiFLAC.
+
+Socket.IO события:
+
+- игрок: `join {role:'player', code, name, playerId}`, `player:ready`, `player:buzz`, `player:rename`;
+- экран: `join {role:'screen', gameId}` (получает команды `cmd`: play/pause/resume/fadeAndStop/stop);
+- ведущий (JWT в `handshake.auth.token`): `join {role:'admin', gameId}`, `admin:start|correct|wrong|skip|reset`;
+- сервер шлёт `state` (публичное состояние), `joined`, `song-updated`, `error-msg`.
+
+Аудиофайлы раздаются из `/media/<file>`. Каталог квестов `/games` игры `guess_song` не возвращает.
+
 ## Users
 
 ### GET `/users`

@@ -23,8 +23,15 @@ export interface GameOrganizer {
 // manual - порядок задаётся организатором для каждой команды.
 export type TaskOrderMode = 'linear' | 'random' | 'manual';
 
+// Вид игры: квест или «Угадай мелодию».
+export type GameKind = 'quest' | 'guess_song';
+// Формат проведения. Угадайка пока только offline.
+export type GameFormat = 'online' | 'offline';
+
 export interface Game {
   _id: string;
+  kind?: GameKind;
+  format?: GameFormat;
   title: string;
   city: string;
   dateofstart: string;
@@ -37,6 +44,67 @@ export interface Game {
   createdBy?: GameOrganizer | string; // populated-документ или ID
   organizers?: GameOrganizer[]; // соорганизаторы
   gameAppls: GameAppl[];
+}
+
+// --- Игра «Угадай мелодию» ---
+export interface Song {
+  _id: string;
+  gameId: string;
+  title: string;
+  artist: string;
+  album: string;
+  cover: string;
+  duration: number;
+  startSec: number;
+  endSec?: number | null;
+  sourceUrl: string;
+  preview: string;
+  file: string | null;
+  status: 'pending' | 'downloading' | 'ready' | 'error';
+  error: string | null;
+}
+
+export interface MusicBlock {
+  _id: string;
+  name: string;
+  songIds: string[];
+}
+
+export interface MusicGame {
+  _id: string;
+  kind: 'guess_song';
+  format: 'offline';
+  title: string;
+  code: string;
+  blocks: MusicBlock[];
+  createdBy?: GameOrganizer | string;
+  organizers?: GameOrganizer[];
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+// Публичное состояние сессии (зеркало publicState() сервера).
+export interface MusicPlayer {
+  id: string;
+  name: string;
+  ready: boolean;
+  connected: boolean;
+  score: number;
+  armed: boolean;
+  locked: boolean;
+}
+
+export interface MusicState {
+  gameId: string;
+  gameName: string;
+  code: string;
+  phase: 'lobby' | 'playing' | 'buzzed' | 'reveal' | 'finished';
+  total: number;
+  currentIndex: number;
+  buzzed: { id: string; name: string } | null;
+  reveal: { title: string; artist: string; album: string; cover: string } | null;
+  blockName: string;
+  players: MusicPlayer[];
 }
 
 export interface GameAppl {
