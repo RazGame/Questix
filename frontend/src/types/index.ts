@@ -104,6 +104,8 @@ export interface MusicState {
   buzzed: { id: string; name: string } | null;
   reveal: { title: string; artist: string; album: string; cover: string } | null;
   blockName: string;
+  blockCurrentIndex?: number;
+  blockTotal?: number;
   players: MusicPlayer[];
   fileUrl?: string | null;
   startSec?: number;

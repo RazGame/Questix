@@ -222,6 +222,10 @@ class Session {
         ? Math.min(Math.max(this.currentIndex, 0), this.playlist.length - 1)
         : -1;
     const cur = safeCurrentIndex >= 0 ? this.playlist[safeCurrentIndex] : null;
+    const blockSongs = cur ? this.playlist.filter((song) => song.blockName === cur.blockName) : [];
+    const blockSongIndex = cur
+      ? blockSongs.findIndex((song) => String(song._id) === String(cur._id))
+      : -1;
     const showReveal = this.phase === 'reveal';
     return {
       gameId: this.gameId,
@@ -235,6 +239,8 @@ class Session {
         ? { title: cur.title, artist: cur.artist, album: cur.album, cover: cur.cover }
         : null,
       blockName: cur ? cur.blockName : '',
+      blockCurrentIndex: blockSongIndex,
+      blockTotal: blockSongs.length,
       fileUrl: cur ? `/media/${cur.file}` : null,
       startSec: cur ? (cur.startSec || 0) : 0,
       endSec: cur ? (cur.endSec ?? null) : null,

@@ -496,6 +496,10 @@ export default function MusicScreen() {
     state && state.total > 0
       ? Math.min(Math.max(state.currentIndex + 1, 1), state.total)
       : 0;
+  const displayBlockRound =
+    state && (state.blockTotal || 0) > 0
+      ? Math.min(Math.max((state.blockCurrentIndex ?? 0) + 1, 1), state.blockTotal || 1)
+      : 0;
 
   // классы центрального круга
   let centerCls = 'border-violet-400/50 bg-surface/70';
@@ -515,10 +519,26 @@ export default function MusicScreen() {
       )}
 
       {state && (
-        <div className="mb-6">
-          <h1 className="font-display text-3xl font-bold">{state.gameName}</h1>
+        <div className="mb-7 flex flex-col items-center gap-2">
+          <h1 className="font-display text-3xl font-extrabold leading-tight text-white">
+            {state.gameName}
+          </h1>
           {state.total > 0 && (
-            <p className="font-mono text-zinc-400 mt-1">{displayRound} / {state.total}</p>
+            <p className="font-mono text-sm font-semibold uppercase tracking-[0.22em] text-zinc-400">
+              Песня {displayRound} из {state.total}
+            </p>
+          )}
+          {inRound && state.blockName && (
+            <div className="mt-2 flex flex-col items-center gap-1">
+              <p className="text-sm font-extrabold uppercase tracking-[0.24em] text-violet-300">
+                {state.blockName}
+              </p>
+              {(state.blockTotal || 0) > 0 && (
+                <p className="font-mono text-xs font-semibold uppercase tracking-[0.2em] text-zinc-500">
+                  В блоке {displayBlockRound} из {state.blockTotal}
+                </p>
+              )}
+            </div>
           )}
         </div>
       )}
