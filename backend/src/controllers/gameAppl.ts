@@ -39,33 +39,56 @@ export const createAppl = async (
       return;
     }
 
-    // Заявка подаётся от команды: пользователь должен быть капитаном
-    const team = await Team.findOne({ captain: req.user.id });
+    let newAppl;
 
-    if (!team) {
-      res.status(400).json({
-        error: 'Заявку может подать только капитан команды. Сначала создайте команду',
+    if (game.participation === 'solo') {
+      // Одиночный квест: заявку подаёт сам игрок, команда не нужна.
+      const existingAppl = await GameAppl.findOne({
+        gameId: value.gameId,
+        userId: req.user.id,
       });
-      return;
+      if (existingAppl) {
+        res.status(409).json({ error: 'Вы уже подали заявку на этот квест' });
+        return;
+      }
+      const user = await User.findById(req.user.id).lean();
+      const soloName =
+        user?.nickname ||
+        `${user?.firstName || ''} ${user?.lastName || ''}`.trim() ||
+        'Игрок';
+      newAppl = new GameAppl({
+        userId: req.user.id,
+        gameId: value.gameId,
+        teamName: soloName,
+      });
+    } else {
+      // Командный квест: заявку подаёт капитан от своей команды.
+      const team = await Team.findOne({ captain: req.user.id });
+
+      if (!team) {
+        res.status(400).json({
+          error: 'Заявку может подать только капитан команды. Сначала создайте команду',
+        });
+        return;
+      }
+
+      const existingAppl = await GameAppl.findOne({
+        gameId: value.gameId,
+        $or: [{ userId: req.user.id }, { team: team._id }],
+      });
+
+      if (existingAppl) {
+        res.status(409).json({ error: 'Ваша команда уже подала заявку на этот квест' });
+        return;
+      }
+
+      newAppl = new GameAppl({
+        userId: req.user.id,
+        gameId: value.gameId,
+        team: team._id,
+        teamName: team.name,
+      });
     }
-
-    // Проверить, не подана ли уже заявка этой командой или этим пользователем
-    const existingAppl = await GameAppl.findOne({
-      gameId: value.gameId,
-      $or: [{ userId: req.user.id }, { team: team._id }],
-    });
-
-    if (existingAppl) {
-      res.status(409).json({ error: 'Ваша команда уже подала заявку на этот квест' });
-      return;
-    }
-
-    const newAppl = new GameAppl({
-      userId: req.user.id,
-      gameId: value.gameId,
-      team: team._id,
-      teamName: team.name,
-    });
 
     await newAppl.save();
 

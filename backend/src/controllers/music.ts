@@ -72,6 +72,10 @@ export const createMusicGame = async (
   res: Response
 ): Promise<void> => {
   const baseTitle = normalizeMusicGameTitle(req.body?.title);
+  // Угадайка: вход по аккаунту (required) или по имени/коду (open, дефолт).
+  // participation пока фиксируем solo — командный режим следующим этапом.
+  const auth = req.body?.auth === 'required' ? 'required' : 'open';
+  const participation = 'solo';
 
   try {
     for (let attempt = 0; attempt < 20; attempt += 1) {
@@ -80,6 +84,8 @@ export const createMusicGame = async (
       const game = new Game({
         kind: 'guess_song',
         format: 'offline',
+        participation,
+        auth,
         title,
         code,
         blocks: [{ name: 'Блок 1', songIds: [] }],
@@ -100,6 +106,8 @@ export const createMusicGame = async (
     const game = new Game({
       kind: 'guess_song',
       format: 'offline',
+      participation,
+      auth,
       title: `${baseTitle} ${Date.now()}`,
       code,
       blocks: [{ name: 'Блок 1', songIds: [] }],
@@ -147,10 +155,40 @@ export const updateMusicGame = async (
     const game = await loadModerableGame(req, res);
     if (!game) return;
     if (typeof req.body?.title === 'string') game.title = req.body.title.trim();
+    // Режим входа угадайки можно менять; participation пока только solo.
+    if (req.body?.auth === 'open' || req.body?.auth === 'required') {
+      game.auth = req.body.auth;
+    }
     await game.save();
     res.status(200).json({ game });
   } catch (error) {
     console.error('Ошибка обновления музыкальной игры:', error);
+    res.status(500).json({ error: 'Ошибка сервера' });
+  }
+};
+
+// Публичная мета по коду (без авторизации) — нужна странице игрока,
+// чтобы понять: показать вход по аккаунту или ввод имени.
+export const getPublicMeta = async (
+  req: AuthenticatedRequest,
+  res: Response
+): Promise<void> => {
+  try {
+    const game = await Game.findOne({
+      code: (req.params.code || '').toUpperCase(),
+      kind: 'guess_song',
+    }).lean();
+    if (!game) {
+      res.status(404).json({ error: 'Игра не найдена' });
+      return;
+    }
+    res.status(200).json({
+      title: game.title,
+      auth: game.auth || 'open',
+      participation: game.participation || 'solo',
+    });
+  } catch (error) {
+    console.error('Ошибка получения меты игры:', error);
     res.status(500).json({ error: 'Ошибка сервера' });
   }
 };

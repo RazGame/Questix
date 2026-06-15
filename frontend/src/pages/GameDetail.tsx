@@ -80,7 +80,8 @@ export default function GameDetail() {
       return;
     }
 
-    if (!isCaptain) {
+    // Командный квест требует капитана; одиночный — нет.
+    if (!isSolo && !isCaptain) {
       return;
     }
 
@@ -108,6 +109,7 @@ export default function GameDetail() {
   }
 
   const questState = getQuestState(game.dateofstart, game.dateofend, now);
+  const isSolo = game.participation === 'solo';
   const isCaptain = myTeams.some((team) => team.captain._id === user?.id);
   const myAppl = myAppls.find((appl) => {
     const applGame = (appl as any).gameId;
@@ -120,7 +122,8 @@ export default function GameDetail() {
   const isCurrentTeamAppl = myApplTeamId ? myTeamIds.has(myApplTeamId) : !!myAppl;
   const canEnterGame =
     myAppl?.status === 'approved' && questState === 'active' && isCurrentTeamAppl;
-  const canApply = !myAppl && questState === 'scheduled' && isCaptain;
+  // Одиночный квест: подать заявку может любой залогиненный игрок (команда не нужна).
+  const canApply = !myAppl && questState === 'scheduled' && (isSolo ? !!token : isCaptain);
   const applyButtonText = isTeamsLoading
     ? 'Проверяем команду...'
     : canEnterGame
@@ -253,17 +256,21 @@ export default function GameDetail() {
             </div>
             {token ? (
               <div className="space-y-3">
-                {!isTeamsLoading && !isCaptain && (
-                  <p className="text-sm text-zinc-400">
-                    Заявка подаётся от вашей команды. Подать её может только капитан —{' '}
-                    <button
-                      onClick={() => navigate('/teams')}
-                      className="text-primary underline"
-                    >
-                      управление командой
-                    </button>
-                    .
-                  </p>
+                {isSolo ? (
+                  <p className="text-sm text-zinc-400">Одиночный квест — играете самостоятельно.</p>
+                ) : (
+                  !isTeamsLoading && !isCaptain && (
+                    <p className="text-sm text-zinc-400">
+                      Заявка подаётся от вашей команды. Подать её может только капитан —{' '}
+                      <button
+                        onClick={() => navigate('/teams')}
+                        className="text-primary underline"
+                      >
+                        управление командой
+                      </button>
+                      .
+                    </p>
+                  )
                 )}
                 <button
                   onClick={() => {

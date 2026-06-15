@@ -27,11 +27,17 @@ export type TaskOrderMode = 'linear' | 'random' | 'manual';
 export type GameKind = 'quest' | 'guess_song';
 // Формат проведения. Угадайка пока только offline.
 export type GameFormat = 'online' | 'offline';
+// Кто играет: одиночка или команда.
+export type GameParticipation = 'solo' | 'team';
+// Авторизация: required — по аккаунту, open — вход по имени/коду.
+export type GameAuth = 'required' | 'open';
 
 export interface Game {
   _id: string;
   kind?: GameKind;
   format?: GameFormat;
+  participation?: GameParticipation;
+  auth?: GameAuth;
   title: string;
   city: string;
   dateofstart: string;
@@ -74,6 +80,8 @@ export interface MusicGame {
   _id: string;
   kind: 'guess_song';
   format: 'offline';
+  participation?: GameParticipation;
+  auth?: GameAuth;
   title: string;
   code: string;
   blocks: MusicBlock[];

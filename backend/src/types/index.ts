@@ -26,6 +26,10 @@ export type TaskOrderMode = 'linear' | 'random' | 'manual';
 export type GameKind = 'quest' | 'guess_song';
 // Формат проведения. Угадайка пока только offline.
 export type GameFormat = 'online' | 'offline';
+// Кто играет: одиночка или команда.
+export type GameParticipation = 'solo' | 'team';
+// Нужна ли авторизация на сайте: required — по аккаунту, open — вход по имени/коду.
+export type GameAuth = 'required' | 'open';
 
 // Блок песен в игре «Угадай мелодию» (тематическая группа).
 export interface IMusicBlock {
@@ -38,6 +42,8 @@ export interface IGame {
   _id?: string;
   kind: GameKind;
   format: GameFormat;
+  participation: GameParticipation;
+  auth: GameAuth;
   title: string;
   city: string;
   dateofstart: Date;
@@ -108,7 +114,7 @@ export interface ITaskHint {
 
 export interface ITeamLog {
   _id?: string;
-  team: Types.ObjectId; // ID Team
+  team?: Types.ObjectId | null; // ID Team (null для одиночного квеста)
   gameAppl: Types.ObjectId; // ID GameAppl
   game: Types.ObjectId; // ID Game
   user: Types.ObjectId; // ID пользователя, совершившего действие

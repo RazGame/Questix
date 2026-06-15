@@ -5,7 +5,7 @@ import { applService } from '../services/appls';
 import { progressService } from '../services/progress';
 import { taskService } from '../services/tasks';
 import { userService, AdminUser } from '../services/users';
-import { Game, GameAppl, GameTeamProgress, GameOrganizer, Task, TaskOrderMode } from '../types';
+import { Game, GameAppl, GameTeamProgress, GameOrganizer, Task, TaskOrderMode, GameParticipation } from '../types';
 import { ArrowDown, ArrowUp, Edit2, Plus, Save, Search, Settings, Trash2, UserPlus, X } from 'lucide-react';
 import { dateTimeLocalToIso, getQuestState } from '../utils/date';
 import { useAuthStore } from '../store/authStore';
@@ -212,6 +212,7 @@ export default function AdminPanel() {
     prize: '',
     description: '',
     taskOrderMode: 'linear' as TaskOrderMode,
+    participation: 'team' as GameParticipation,
   });
   const [editFormData, setEditFormData] = useState({
     title: '',
@@ -222,6 +223,7 @@ export default function AdminPanel() {
     prize: '',
     description: '',
     taskOrderMode: 'linear' as TaskOrderMode,
+    participation: 'team' as GameParticipation,
   });
 
   const resetCreateForm = () => {
@@ -234,6 +236,7 @@ export default function AdminPanel() {
       prize: '',
       description: '',
       taskOrderMode: 'linear',
+      participation: 'team',
     });
     setDraftOrganizerNickname('');
     setDraftOrganizerNicknames([]);
@@ -262,6 +265,7 @@ export default function AdminPanel() {
       prize: currentGame.prize || '',
       description: currentGame.description || '',
       taskOrderMode: currentGame.taskOrderMode || 'linear',
+      participation: (currentGame.participation as GameParticipation) || 'team',
     });
   }, [currentGame?._id]);
 
@@ -848,6 +852,36 @@ export default function AdminPanel() {
                 </span>
               </label>
 
+              {/* Оси игры. Квест всегда с авторизацией. */}
+              <div className="flex flex-wrap gap-6">
+                <div>
+                  <p className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-zinc-500">Участники</p>
+                  <div className="inline-flex rounded-lg border border-white/10 bg-white/[0.03] p-1">
+                    {([
+                      { v: 'team', label: 'Командный' },
+                      { v: 'solo', label: 'Одиночный' },
+                    ] as const).map((o) => (
+                      <button
+                        key={o.v}
+                        type="button"
+                        onClick={() => setFormData({ ...formData, participation: o.v })}
+                        className={`rounded-md px-3 py-1.5 text-sm font-semibold transition ${
+                          formData.participation === o.v ? 'btn-grad' : 'text-zinc-300 hover:bg-white/10'
+                        }`}
+                      >
+                        {o.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                <div>
+                  <p className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-zinc-500">Вход</p>
+                  <span className="inline-block rounded-lg border border-white/10 bg-white/[0.03] px-3 py-1.5 text-sm text-zinc-300">
+                    🔒 По аккаунту (квест всегда с авторизацией)
+                  </span>
+                </div>
+              </div>
+
               <div className="grid gap-3 sm:grid-cols-2">
                 <label className="block">
                   <span className="mb-1 block text-xs font-semibold text-zinc-400">Депозит</span>
@@ -1154,6 +1188,27 @@ export default function AdminPanel() {
                           {ORDER_MODES.find((m) => m.value === editFormData.taskOrderMode)?.hint}
                         </span>
                       </label>
+
+                      <div>
+                        <p className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-zinc-500">Участники</p>
+                        <div className="inline-flex rounded-lg border border-white/10 bg-white/[0.03] p-1">
+                          {([
+                            { v: 'team', label: 'Командный' },
+                            { v: 'solo', label: 'Одиночный' },
+                          ] as const).map((o) => (
+                            <button
+                              key={o.v}
+                              type="button"
+                              onClick={() => setEditFormData({ ...editFormData, participation: o.v })}
+                              className={`rounded-md px-3 py-1.5 text-sm font-semibold transition ${
+                                editFormData.participation === o.v ? 'btn-grad' : 'text-zinc-300 hover:bg-white/10'
+                              }`}
+                            >
+                              {o.label}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
 
                       <div className="grid gap-3 sm:grid-cols-2">
                         <label className="block">

@@ -34,17 +34,22 @@ export const musicService = {
     const res = await api.get('/music/games');
     return res.data;
   },
-  create: async (title?: string): Promise<MusicGame> => {
-    const res = await api.post('/music/games', { title });
+  create: async (title?: string, auth?: 'open' | 'required'): Promise<MusicGame> => {
+    const res = await api.post('/music/games', { title, auth });
     return res.data.game;
   },
   get: async (id: string): Promise<MusicGameFull> => {
     const res = await api.get(`/music/games/${id}`);
     return res.data;
   },
-  update: async (id: string, title: string): Promise<MusicGame> => {
-    const res = await api.patch(`/music/games/${id}`, { title });
+  update: async (id: string, patch: { title?: string; auth?: 'open' | 'required' }): Promise<MusicGame> => {
+    const res = await api.patch(`/music/games/${id}`, patch);
     return res.data.game;
+  },
+  // Публичная мета по коду (без токена) — для страницы игрока.
+  publicMeta: async (code: string): Promise<{ title: string; auth: 'open' | 'required'; participation: 'solo' | 'team' }> => {
+    const res = await api.get(`/music/public/${code}`);
+    return res.data;
   },
   remove: async (id: string): Promise<void> => {
     await api.delete(`/music/games/${id}`);

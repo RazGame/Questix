@@ -1,5 +1,6 @@
 import { Server, Socket } from 'socket.io';
 import { Game } from '../models/Game';
+import { User } from '../models/User';
 import { verifyToken } from '../utils/jwt';
 import { isGameModerator } from '../services/gamePermissions';
 import { getSession } from '../services/musicSession';
@@ -47,6 +48,26 @@ export const registerMusicSockets = (io: Server): void => {
         return;
       }
 
+      // Игрок: если у игры auth=required — вход только по аккаунту (имя из профиля).
+      let playerName: string | undefined = data.name;
+      if (role === 'player' && game.auth === 'required') {
+        const token = socket.handshake.auth?.token;
+        let payload: any = null;
+        try { payload = token ? verifyToken(token) : null; } catch { payload = null; }
+        if (!payload) {
+          socket.emit('error-msg', { message: 'Эта игра требует входа в аккаунт.' });
+          return;
+        }
+        const user = await User.findById(payload.id).lean();
+        if (!user) {
+          socket.emit('error-msg', { message: 'Аккаунт не найден.' });
+          return;
+        }
+        // идентификатор игрока стабильно привязан к аккаунту
+        data.playerId = `u:${payload.id}`;
+        playerName = user.nickname || `${user.firstName || ''} ${user.lastName || ''}`.trim() || 'Игрок';
+      }
+
       const session = getSession(io, gameId);
       socket.join(`g:${gameId}`);
       if (role === 'screen') {
@@ -57,7 +78,7 @@ export const registerMusicSockets = (io: Server): void => {
 
       if (role === 'player') {
         playerId = data.playerId || newPlayerId();
-        session.upsertPlayer(playerId!, data.name);
+        session.upsertPlayer(playerId!, playerName);
         socket.emit('joined', { playerId, gameName: game.title, code: game.code });
       }
       socket.emit('state', await session.publicState());

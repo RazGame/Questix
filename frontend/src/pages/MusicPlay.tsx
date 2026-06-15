@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import { createSocket } from '../services/socket';
+import { musicService } from '../services/music';
 import { MusicState } from '../types';
 
 const vibrate = (pattern: number | number[]) => {
@@ -29,6 +30,21 @@ export default function MusicPlay() {
   const [joined, setJoined] = useState(false);
   const [error, setError] = useState('');
   const [state, setState] = useState<MusicState | null>(null);
+  // Режим входа игры: open (по имени) или required (по аккаунту). null — пока грузим мету.
+  const [authMode, setAuthMode] = useState<'open' | 'required' | null>(codeFromUrl ? null : 'open');
+  const token = localStorage.getItem('token');
+  let storedUser: { nickname?: string } | null = null;
+  try { storedUser = JSON.parse(localStorage.getItem('user') || 'null'); } catch { storedUser = null; }
+  const needsLogin = authMode === 'required' && !token;
+
+  // Узнаём режим входа по коду (публично, без токена).
+  useEffect(() => {
+    if (!codeFromUrl) return;
+    musicService
+      .publicMeta(codeFromUrl)
+      .then((m) => setAuthMode(m.auth))
+      .catch(() => setAuthMode('open'));
+  }, [codeFromUrl]);
 
   const pidKey = (c: string) => `qgs_pid_${c}`;
   const emitJoin = (targetCode: string, targetName: string) => {
@@ -76,7 +92,8 @@ export default function MusicPlay() {
   }, []);
 
   useEffect(() => {
-    const socket = createSocket();
+    // Токен нужен для игр с авторизацией (сервер берёт имя из профиля).
+    const socket = createSocket(localStorage.getItem('token'));
     socketRef.current = socket;
 
     socket.on('joined', (d: { playerId: string }) => {
@@ -94,8 +111,12 @@ export default function MusicPlay() {
     socket.on('state', (st: MusicState) => setState(st));
     socket.on('connect', () => {
       const currentCode = joinedCodeRef.current || codeFromUrl;
+      if (!currentCode) return;
+      // С авторизацией имя берётся из профиля на сервере — локальное не требуется.
+      const authRequired = authMode === 'required';
       const currentName = (joinedNameRef.current || localStorage.getItem('qgs_name') || '').trim();
-      if (!currentCode || !currentName) return;
+      if (!authRequired && !currentName) return;
+      if (authRequired && !localStorage.getItem('token')) return;
       if (!autoJoinTriedRef.current || joinedRef.current) {
         autoJoinTriedRef.current = true;
         emitJoin(currentCode, currentName);
@@ -104,7 +125,7 @@ export default function MusicPlay() {
 
     return () => { socket.disconnect(); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [authMode]);
 
   useEffect(() => {
     const markOffline = () => {
@@ -164,7 +185,47 @@ export default function MusicPlay() {
     }
   }, [joined, state]);
 
-  // ---------- экран входа ----------
+  // ---------- загрузка меты ----------
+  if (!joined && authMode === null) {
+    return (
+      <div className="h-[calc(100dvh-4rem)] flex items-center justify-center text-zinc-400">
+        Загрузка…
+      </div>
+    );
+  }
+
+  // ---------- игра с авторизацией: нужен вход в аккаунт ----------
+  if (!joined && needsLogin) {
+    const redirect = encodeURIComponent(`/m/play?code=${code}`);
+    return (
+      <div className="h-[calc(100dvh-4rem)] overflow-hidden flex items-center justify-center px-4 py-6">
+        <div className="glass w-full max-w-sm p-6 text-center">
+          <h1 className="font-display text-2xl font-bold mb-3">🔒 Нужен вход</h1>
+          <p className="text-zinc-400 mb-6">Эта игра — для зарегистрированных игроков. Войдите в аккаунт, чтобы участвовать.</p>
+          <Link to={`/login?redirect=${redirect}`} className="btn-grad inline-block w-full rounded-lg py-3 font-bold text-lg">
+            Войти в аккаунт
+          </Link>
+        </div>
+      </div>
+    );
+  }
+
+  // ---------- игра с авторизацией: подключаемся по аккаунту ----------
+  if (!joined && authMode === 'required') {
+    return (
+      <div className="h-[calc(100dvh-4rem)] flex flex-col items-center justify-center px-4 text-center">
+        {error ? (
+          <div className="glass max-w-sm p-6">
+            <p className="text-rose-300">{error}</p>
+          </div>
+        ) : (
+          <p className="text-zinc-400">Подключаемся как @{storedUser?.nickname || 'игрок'}…</p>
+        )}
+      </div>
+    );
+  }
+
+  // ---------- вход по имени (open) ----------
   if (!joined) {
     return (
       <div className="h-[calc(100dvh-4rem)] overflow-hidden flex items-center justify-center px-4 py-6">

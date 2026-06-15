@@ -43,8 +43,9 @@ async function api(method, path, body, token) {
   }, token);
   check('add ready song', song.status === 'ready');
 
-  // 5. сокеты: ведущий + игрок
+  // 5. сокеты: ведущий + экран + игрок
   const admin = io(BASE, { transports: ['websocket'], auth: { token } });
+  const screen = io(BASE, { transports: ['websocket'] });
   const player = io(BASE, { transports: ['websocket'] });
   let adminState = null, playerState = null, playerId = null;
   admin.on('state', (st) => { adminState = st; });
@@ -52,7 +53,12 @@ async function api(method, path, body, token) {
   player.on('joined', (d) => { playerId = d.playerId; });
 
   admin.emit('join', { role: 'admin', gameId: game._id });
-  await sleep(300);
+  await sleep(200);
+  // экран присоединяется и сообщает, что звук разблокирован (старт этого требует)
+  screen.emit('join', { role: 'screen', gameId: game._id });
+  await sleep(200);
+  screen.emit('screen:audio-ready');
+  await sleep(200);
   player.emit('join', { role: 'player', code: game.code, name: 'Игрок1' });
   await sleep(400);
   check('admin sees lobby', adminState && adminState.phase === 'lobby');
@@ -93,7 +99,7 @@ async function api(method, path, body, token) {
 
   // очистка
   await api('DELETE', `/music/games/${game._id}`, null, token);
-  admin.close(); player.close();
+  admin.close(); player.close(); screen.close();
 
   console.log(`\nRESULT: ${pass} passed, ${fail} failed`);
   process.exit(fail === 0 ? 0 : 1);

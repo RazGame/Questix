@@ -20,6 +20,8 @@ const gameSchema = Joi.object({
   prize: Joi.string().required().trim(),
   description: Joi.string().required().trim(),
   taskOrderMode: Joi.string().valid('linear', 'random', 'manual').default('linear'),
+  // Квест: одиночный или командный (по умолчанию командный).
+  participation: Joi.string().valid('solo', 'team').default('team'),
   organizerNicknames: Joi.array().items(Joi.string().trim()).default([]),
 });
 
@@ -34,6 +36,7 @@ const gameUpdateSchema = Joi.object({
   prize: Joi.string().trim(),
   description: Joi.string().trim(),
   taskOrderMode: Joi.string().valid('linear', 'random', 'manual'),
+  participation: Joi.string().valid('solo', 'team'),
 }).min(1);
 
 export const getAllGames = async (
@@ -135,6 +138,8 @@ export const createGame = async (
     delete gameData.organizerNicknames;
     const newGame = new Game({
       ...gameData,
+      kind: 'quest',
+      auth: 'required', // квест всегда с авторизацией на сайте
       organizers: organizerIds,
       createdBy: req.user.id,
     });
@@ -437,7 +442,10 @@ export const getGameStatistics = async (
     const progressList = await GameTeamProgress.find({ gameId })
       .populate({
         path: 'gameApplId',
-        populate: { path: 'team', populate: { path: 'captain members', select: 'nickname firstName lastName' } },
+        populate: [
+          { path: 'team', populate: { path: 'captain members', select: 'nickname firstName lastName' } },
+          { path: 'userId', select: 'nickname firstName lastName' },
+        ],
       })
       .populate('taskOrder', 'title description')
       .populate('completedTasks.submittedBy', 'nickname firstName lastName')
@@ -448,10 +456,13 @@ export const getGameStatistics = async (
 
     // Построить статистику
     const statistics = progressList.map((progress) => {
-      const teamInfo = (progress.gameApplId as any)?.team || {
-        name: 'Неизвестная команда',
-        captain: null,
-        members: [],
+      const appl = progress.gameApplId as any;
+      // Одиночный квест: «участник» — сам игрок (команды нет).
+      const soloUser = appl?.userId || null;
+      const teamInfo = appl?.team || {
+        name: appl?.teamName || soloUser?.nickname || 'Игрок',
+        captain: soloUser,
+        members: soloUser ? [soloUser] : [],
       };
 
       // Штрафы (+) и бонусы (-) организаторов входят в итоговое время

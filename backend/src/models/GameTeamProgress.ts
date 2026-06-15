@@ -2,10 +2,10 @@ import mongoose from 'mongoose';
 
 export interface IGameTeamProgress {
   _id?: string;
-  gameApplId: mongoose.Types.ObjectId; // Ссылка на GameAppl (заявка команды)
+  gameApplId: mongoose.Types.ObjectId; // Ссылка на GameAppl (заявка команды/игрока)
   gameId: mongoose.Types.ObjectId;
-  teamId: mongoose.Types.ObjectId; // ID команды (Team)
-  userId: mongoose.Types.ObjectId; // Капитан команды (кто подал заявку)
+  teamId?: mongoose.Types.ObjectId | null; // ID команды (null для одиночного квеста)
+  userId: mongoose.Types.ObjectId; // Капитан команды или одиночный игрок
   taskOrder: mongoose.Types.ObjectId[]; // Порядок заданий для этой команды (массив Task IDs)
   currentTaskIndex: number; // Какой сейчас задачи индекс
   completedTasks: {
@@ -43,10 +43,12 @@ const gameTeamProgressSchema = new mongoose.Schema<IGameTeamProgress>(
       ref: 'Game',
       required: true,
     },
+    // Для одиночных квестов команды нет — прогресс привязан к userId.
     teamId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: 'Team',
-      required: true,
+      required: false,
+      default: null,
     },
     userId: {
       type: mongoose.Schema.Types.ObjectId,

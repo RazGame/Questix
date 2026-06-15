@@ -136,12 +136,25 @@ export default function MusicAdmin({ isTab = false }: { isTab?: boolean }) {
     const previous = current.game.title;
     setCurrent({ ...current, game: { ...current.game, title } });
     try {
-      await musicService.update(current.game._id, title);
+      await musicService.update(current.game._id, { title });
       await loadGames(true);
       setError('');
     } catch (e: any) {
       setCurrent({ ...current, game: { ...current.game, title: previous } });
       setError(apiErrorMessage(e, 'Ошибка переименования музыкальной игры'));
+    }
+  };
+  // Переключение режима входа (без авторизации / по аккаунту).
+  const setAuthMode = async (auth: 'open' | 'required') => {
+    if (!current) return;
+    const previous = current.game.auth;
+    setCurrent({ ...current, game: { ...current.game, auth } });
+    try {
+      await musicService.update(current.game._id, { auth });
+      setError('');
+    } catch (e: any) {
+      setCurrent({ ...current, game: { ...current.game, auth: previous } });
+      setError(apiErrorMessage(e, 'Ошибка смены режима входа'));
     }
   };
 
@@ -373,6 +386,46 @@ export default function MusicAdmin({ isTab = false }: { isTab?: boolean }) {
                     <button onClick={deleteGame} className="text-rose-400 hover:text-rose-300 p-2" title="Удалить игру">
                       <Trash2 size={18} />
                     </button>
+                  </div>
+                </div>
+
+                {/* Режимы игры */}
+                <div className="mt-4 flex flex-wrap gap-6 border-t border-white/10 pt-4">
+                  {/* Вход */}
+                  <div>
+                    <p className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-zinc-500">Вход</p>
+                    <div className="inline-flex rounded-lg border border-white/10 bg-white/[0.03] p-1">
+                      {([
+                        { v: 'open', label: 'Без авторизации' },
+                        { v: 'required', label: 'По аккаунту' },
+                      ] as const).map((o) => (
+                        <button
+                          key={o.v}
+                          onClick={() => setAuthMode(o.v)}
+                          className={`rounded-md px-3 py-1.5 text-sm font-semibold transition ${
+                            (current.game.auth || 'open') === o.v
+                              ? 'btn-grad'
+                              : 'text-zinc-300 hover:bg-white/10'
+                          }`}
+                        >
+                          {o.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Участники (командный — скоро) */}
+                  <div>
+                    <p className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-zinc-500">Участники</p>
+                    <div className="inline-flex rounded-lg border border-white/10 bg-white/[0.03] p-1">
+                      <span className="rounded-md btn-grad px-3 py-1.5 text-sm font-semibold">Одиночная</span>
+                      <span
+                        className="cursor-not-allowed rounded-md px-3 py-1.5 text-sm font-semibold text-zinc-500"
+                        title="Командный режим скоро"
+                      >
+                        Командная · скоро
+                      </span>
+                    </div>
                   </div>
                 </div>
               </div>

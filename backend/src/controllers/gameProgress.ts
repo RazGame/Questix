@@ -57,14 +57,9 @@ export const startGame = async (
       return;
     }
 
-    // Играть могут все участники команды, а не только капитан
+    // Играть могут все участники команды (или сам игрок в одиночном квесте)
     if (!(await isTeamMember(gameAppl, req.user.id))) {
-      res.status(403).json({ error: 'Доступ запрещен: вы не состоите в команде этой заявки' });
-      return;
-    }
-
-    if (!gameAppl.team) {
-      res.status(400).json({ error: 'Заявка не привязана к команде' });
+      res.status(403).json({ error: 'Доступ запрещён: вы не участник этой заявки' });
       return;
     }
 
@@ -136,11 +131,11 @@ export const startGame = async (
       taskOrder = manualOrder.length === linearOrder.length ? manualOrder : linearOrder;
     }
 
-    // Создать прогресс: он привязан к команде и к заявке команды
+    // Создать прогресс: привязан к заявке; teamId пуст для одиночного квеста
     const progress = new GameTeamProgress({
       gameApplId,
       gameId: gameAppl.gameId,
-      teamId: gameAppl.team,
+      teamId: gameAppl.team || null,
       userId: gameAppl.userId,
       taskOrder,
       status: 'in_progress',
@@ -151,7 +146,7 @@ export const startGame = async (
 
     // Логировать старт игры
     const teamLog = new TeamLog({
-      team: gameAppl.team,
+      team: gameAppl.team || null,
       gameAppl: gameApplId,
       game: gameAppl.gameId,
       user: req.user.id,

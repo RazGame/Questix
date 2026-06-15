@@ -19,6 +19,19 @@ const gameSchema = new mongoose.Schema<IGame>(
       enum: ['online', 'offline'],
       default: 'online',
     },
+    // Кто играет: одиночка или команда.
+    participation: {
+      type: String,
+      enum: ['solo', 'team'],
+      default: 'team',
+    },
+    // Авторизация на сайте: required (по аккаунту) или open (вход по имени/коду).
+    // Для квеста на сервере всегда принудительно required.
+    auth: {
+      type: String,
+      enum: ['required', 'open'],
+      default: 'required',
+    },
     title: {
       type: String,
       required: [true, 'Название обязательно'],
