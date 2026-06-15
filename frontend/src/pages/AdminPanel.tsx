@@ -5,12 +5,13 @@ import { applService } from '../services/appls';
 import { progressService } from '../services/progress';
 import { taskService } from '../services/tasks';
 import { userService, AdminUser } from '../services/users';
-import { Game, GameAppl, GameTeamProgress, GameOrganizer, Task, TaskOrderMode } from '../types';
+import { Game, GameAppl, GameTeamProgress, GameOrganizer, Task, TaskOrderMode, GameParticipation } from '../types';
 import { ArrowDown, ArrowUp, Edit2, Plus, Save, Search, Settings, Trash2, UserPlus, X } from 'lucide-react';
 import { dateTimeLocalToIso, getQuestState } from '../utils/date';
 import { useAuthStore } from '../store/authStore';
 import RichTextEditor from '../components/RichTextEditor';
 import UserSearchInput from '../components/UserSearchInput';
+import MusicAdmin from './MusicAdmin';
 
 const organizerId = (value: Game['createdBy']): string | undefined =>
   typeof value === 'object' ? value?._id : value;
@@ -96,7 +97,7 @@ export default function AdminPanel() {
   const [error, setError] = useState('');
   const [showCreateForm, setShowCreateForm] = useState(false);
   const [activeTab, setActiveTab] = useState<'details' | 'appls' | 'results' | 'organizers'>('details');
-  const [mainTab, setMainTab] = useState<'games' | 'users'>('games');
+  const [mainTab, setMainTab] = useState<'games' | 'music' | 'users'>('games');
   const [users, setUsers] = useState<AdminUser[]>([]);
   const [usersLoaded, setUsersLoaded] = useState(false);
   const [userSearch, setUserSearch] = useState('');
@@ -211,6 +212,7 @@ export default function AdminPanel() {
     prize: '',
     description: '',
     taskOrderMode: 'linear' as TaskOrderMode,
+    participation: 'team' as GameParticipation,
   });
   const [editFormData, setEditFormData] = useState({
     title: '',
@@ -221,6 +223,7 @@ export default function AdminPanel() {
     prize: '',
     description: '',
     taskOrderMode: 'linear' as TaskOrderMode,
+    participation: 'team' as GameParticipation,
   });
 
   const resetCreateForm = () => {
@@ -233,6 +236,7 @@ export default function AdminPanel() {
       prize: '',
       description: '',
       taskOrderMode: 'linear',
+      participation: 'team',
     });
     setDraftOrganizerNickname('');
     setDraftOrganizerNicknames([]);
@@ -261,6 +265,7 @@ export default function AdminPanel() {
       prize: currentGame.prize || '',
       description: currentGame.description || '',
       taskOrderMode: currentGame.taskOrderMode || 'linear',
+      participation: (currentGame.participation as GameParticipation) || 'team',
     });
   }, [currentGame?._id]);
 
@@ -544,7 +549,9 @@ export default function AdminPanel() {
 
   return (
     <div className="max-w-7xl mx-auto p-4">
-      <h1 className="text-4xl font-bold mb-8">{isAdmin ? 'Админ панель' : 'Мои игры'}</h1>
+      <div className="flex flex-wrap items-center justify-between gap-3 mb-8">
+        <h1 className="text-4xl font-bold">{isAdmin ? 'Админ панель' : 'Мои игры'}</h1>
+      </div>
 
       {error && (
         <div className="mb-4 p-3 bg-rose-500/10 border border-rose-500/20 text-rose-300 rounded">
@@ -552,18 +559,28 @@ export default function AdminPanel() {
         </div>
       )}
 
-      {isAdmin && (
-        <div className="flex gap-2 mb-6 border-b">
-          <button
-            onClick={() => setMainTab('games')}
-            className={`px-4 py-2 font-bold border-b-2 ${
-              mainTab === 'games'
-                ? 'border-primary text-primary'
-                : 'border-transparent text-zinc-400 hover:text-zinc-100'
-            }`}
-          >
-            Квесты
-          </button>
+      <div className="flex gap-2 mb-6 border-b">
+        <button
+          onClick={() => setMainTab('games')}
+          className={`px-4 py-2 font-bold border-b-2 ${
+            mainTab === 'games'
+              ? 'border-primary text-primary'
+              : 'border-transparent text-zinc-400 hover:text-zinc-100'
+          }`}
+        >
+          Квесты
+        </button>
+        <button
+          onClick={() => setMainTab('music')}
+          className={`px-4 py-2 font-bold border-b-2 ${
+            mainTab === 'music'
+              ? 'border-primary text-primary'
+              : 'border-transparent text-zinc-400 hover:text-zinc-100'
+          }`}
+        >
+          Угадай мелодию
+        </button>
+        {isAdmin && (
           <button
             onClick={handleOpenUsersTab}
             className={`px-4 py-2 font-bold border-b-2 ${
@@ -574,8 +591,8 @@ export default function AdminPanel() {
           >
             Пользователи
           </button>
-        </div>
-      )}
+        )}
+      </div>
 
       {mainTab === 'users' && (
         <div className="glass overflow-hidden">
@@ -737,6 +754,10 @@ export default function AdminPanel() {
         </div>
       )}
 
+      {mainTab === 'music' && (
+        <MusicAdmin isTab={true} />
+      )}
+
       {mainTab === 'games' && showCreateForm && (
         <form onSubmit={handleCreateGame} className="glass mb-6 p-5">
           <div className="mb-5 flex flex-wrap items-start justify-between gap-4">
@@ -830,6 +851,36 @@ export default function AdminPanel() {
                   {ORDER_MODES.find((m) => m.value === formData.taskOrderMode)?.hint}
                 </span>
               </label>
+
+              {/* Оси игры. Квест всегда с авторизацией. */}
+              <div className="flex flex-wrap gap-6">
+                <div>
+                  <p className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-zinc-500">Участники</p>
+                  <div className="inline-flex rounded-lg border border-white/10 bg-white/[0.03] p-1">
+                    {([
+                      { v: 'team', label: 'Командный' },
+                      { v: 'solo', label: 'Одиночный' },
+                    ] as const).map((o) => (
+                      <button
+                        key={o.v}
+                        type="button"
+                        onClick={() => setFormData({ ...formData, participation: o.v })}
+                        className={`rounded-md px-3 py-1.5 text-sm font-semibold transition ${
+                          formData.participation === o.v ? 'btn-grad' : 'text-zinc-300 hover:bg-white/10'
+                        }`}
+                      >
+                        {o.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                <div>
+                  <p className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-zinc-500">Вход</p>
+                  <span className="inline-block rounded-lg border border-white/10 bg-white/[0.03] px-3 py-1.5 text-sm text-zinc-300">
+                    🔒 По аккаунту (квест всегда с авторизацией)
+                  </span>
+                </div>
+              </div>
 
               <div className="grid gap-3 sm:grid-cols-2">
                 <label className="block">
@@ -1137,6 +1188,27 @@ export default function AdminPanel() {
                           {ORDER_MODES.find((m) => m.value === editFormData.taskOrderMode)?.hint}
                         </span>
                       </label>
+
+                      <div>
+                        <p className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-zinc-500">Участники</p>
+                        <div className="inline-flex rounded-lg border border-white/10 bg-white/[0.03] p-1">
+                          {([
+                            { v: 'team', label: 'Командный' },
+                            { v: 'solo', label: 'Одиночный' },
+                          ] as const).map((o) => (
+                            <button
+                              key={o.v}
+                              type="button"
+                              onClick={() => setEditFormData({ ...editFormData, participation: o.v })}
+                              className={`rounded-md px-3 py-1.5 text-sm font-semibold transition ${
+                                editFormData.participation === o.v ? 'btn-grad' : 'text-zinc-300 hover:bg-white/10'
+                              }`}
+                            >
+                              {o.label}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
 
                       <div className="grid gap-3 sm:grid-cols-2">
                         <label className="block">

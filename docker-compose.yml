@@ -25,10 +25,17 @@ services:
       MONGODB_URI: mongodb://${MONGO_INITDB_ROOT_USERNAME}:${MONGO_INITDB_ROOT_PASSWORD}@mongodb:27017/quest?authSource=admin
       JWT_SECRET: ${JWT_SECRET}
       BCRYPT_ROUNDS: 10
+      # «Угадай мелодию» (оффлайн-LAN): база, которую QR отдаёт телефонам.
+      # Укажите LAN-IP компьютера-хоста, напр. http://192.168.0.10:5173
+      PUBLIC_WEB_BASE: ${PUBLIC_WEB_BASE:-}
+      HOST_IP: ${HOST_IP:-}
     ports:
       - "5000:5000"
     depends_on:
       - mongodb
+    volumes:
+      # аудиофайлы «Угадай мелодию»
+      - media_data:/app/media
     networks:
       - quest-network
 
@@ -46,6 +53,7 @@ services:
 
 volumes:
   mongodb_data:
+  media_data:
 
 networks:
   quest-network:

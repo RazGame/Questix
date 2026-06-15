@@ -3,10 +3,12 @@ import { ITeamLog } from '../types';
 
 const teamLogSchema = new mongoose.Schema<ITeamLog>(
   {
+    // Нет для одиночных квестов (лог привязан к user + gameAppl).
     team: {
       type: mongoose.Schema.Types.ObjectId,
       ref: 'Team',
-      required: true,
+      required: false,
+      default: null,
     },
     gameAppl: {
       type: mongoose.Schema.Types.ObjectId,

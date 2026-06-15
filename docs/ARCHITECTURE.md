@@ -29,8 +29,10 @@ backend/src/
 
 - `User` - профиль, `roles`, ссылки на заявки.
 - `Team` - команда: название, капитан, список участников.
-- `Game` - квест, даты начала/окончания, приз, депозит, заявки, флаг `published` (опубликованы ли результаты), `taskOrderMode` (linear/random/manual - порядок прохождения заданий), `createdBy` (создатель) и `organizers` (соорганизаторы - модерируют игру наравне с создателем).
-- `GameAppl` - заявка команды на квест: подаётся капитаном, хранит ссылку на `Team`, индивидуальное время старта команды (`startAt`, линейный режим) и ручной порядок заданий (`taskOrder`, режим manual).
+- `Game` - игра. Поле `kind` (`quest` | `guess_song`) и `format` (`online` | `offline`). Для квеста: даты начала/окончания, приз, депозит, заявки, `published`, `taskOrderMode` (linear/random/manual), `createdBy` и `organizers` (соорганизаторы). Для «Угадай мелодию»: `code` (код входа) и `blocks` (блоки песен); квест-поля при `kind==='guess_song'` необязательны.
+- `Song` - песня игры «Угадай мелодию»: название/исполнитель/обложка, `startSec` (таймкод старта), `sourceUrl`, `file`, `status` (pending/downloading/ready/error). Отдельная коллекция (атомарное обновление статуса фоновой загрузки).
+- `GameAppl` - заявка на квест. Командный квест: подаётся капитаном, хранит ссылку на `Team`. Одиночный квест (`participation: 'solo'`): подаётся игроком, без `team` (teamName = ник). Также хранит индивидуальное время старта (`startAt`, линейный режим) и ручной порядок заданий (`taskOrder`, режим manual).
+- Оси игры: `participation` (`solo`/`team`) и `auth` (`required`/`open`). Квест на сервере всегда `auth: required`. `GameTeamProgress.teamId` и `TeamLog.team` опциональны (null для одиночного квеста — прогресс/логи привязаны к `userId`).
 - `Task` - задание квеста, ответы, подсказки, лимит времени. Очков нет - победитель определяется по времени.
 - `GameTeamProgress` - прохождение квеста командой: привязано к заявке (`gameApplId`) и команде (`teamId`); каждая попытка ответа в `completedTasks` хранит `submittedBy` - кто из участников её отправил; `timeAdjustments` - штрафы и бонусы организаторов (входят в итоговое время).
 - `TeamLog` - лог действий команды во время игры: старт, каждый ответ (кто, текст, верный/неверный, время), переходы между заданиями, финиш.
@@ -121,6 +123,17 @@ Backend применяет эти правила через `backend/src/service
 2. Организатор может корректировать итоговое время команды (`POST /progress/:gameApplId/adjust-time`): штраф добавляет секунды, бонус убавляет; обязательна причина.
 3. Организатор завершает игру публикацией результатов: `POST /games/:id/publish` (`published: true`, необратимо).
 4. После публикации участники видят статистику `GET /games/:id/stats` на `/games/:gameId/results`: матрица «команды x шаги» - какое задание команда проходила на шаге, кто отправил правильный ответ, время прохождения и время на задание, итоговое время (с учётом штрафов и бонусов, которые показываются с причинами) и место; сортировка по моменту прохождения и по времени на задание.
+
+## «Угадай мелодию» (realtime)
+
+Оффлайн-мультиплеер на Socket.IO поверх того же Express-бэкенда и Mongo:
+
+- **Стейт-машина** `backend/src/services/musicSession.ts` (in-memory, по `gameId`): фазы `lobby → playing → buzzed → reveal → finished`. Счёт эфемерный, в Mongo не пишется - хот-путь баззера остаётся быстрым.
+- **Сокеты** `backend/src/sockets/music.ts`: игрок входит анонимно по коду, экран - по `gameId`; команды ведущего (`admin:*`) проверяют JWT и право модерации. `transports: ['websocket']` - без polling-апгрейда.
+- **REST** `backend/src/controllers/music.ts` (`/music/*`): CRUD игр/блоков/песен, поиск и загрузка через SpotiFLAC, ручной аплоад, QR/LAN-IP, версия/обновление SpotiFLAC. Аудио раздаётся из `/media` (Docker-том `media_data`).
+- **SpotiFLAC** изолирован за `backend/src/services/python.ts` + `backend/tools/` (зафиксированная версия в `requirements.txt`, обновление кнопкой `/music/spotiflac/update`). Backend-образ - Debian-slim с python3.
+- **Фронт**: `MusicAdmin` (`/admin/music`, ведущий), `MusicScreen` (`/m/screen/:gameId`, проектор, Web Audio + эквалайзер, публичный), `MusicPlay` (`/m/play?code=`, телефон-баззер, публичный). Аудио держится в `useRef` вне React-рендера, баззер на `onPointerDown`.
+- **Оффлайн-LAN/Docker**: QR кодирует `PUBLIC_WEB_BASE` (origin фронта по LAN-IP хоста), сокет коннектит backend (:5000). `HOST_IP`/`PUBLIC_WEB_BASE` задаются в `docker-compose.yml`.
 
 ## Безопасность
 

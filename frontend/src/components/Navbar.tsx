@@ -1,15 +1,53 @@
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { ChevronDown, LogOut, Menu, Shield, User, Users, X } from 'lucide-react';
 import { useAuthStore } from '../store/authStore';
 import { useEffect, useRef, useState } from 'react';
 
 export default function Navbar() {
   const navigate = useNavigate();
+  const location = useLocation();
   const { user, token, clearAuth } = useAuthStore();
   const [isOpen, setIsOpen] = useState(false);
   const [isUserMenuOpen, setIsUserMenuOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
   const canAdmin = user?.roles?.includes('admin') || user?.roles?.includes('organizer');
+
+  const isVisualizer = location.pathname.startsWith('/m/screen/');
+  const isMobilePlay = location.pathname.startsWith('/m/play');
+
+  if (isMobilePlay) {
+    return (
+      <nav className="sticky top-0 z-50 border-b border-white/10 bg-surface/70 text-white backdrop-blur-xl">
+        <div className="mx-auto max-w-7xl px-4">
+          <div className="flex h-16 items-center justify-center">
+            <span className="font-display text-xl font-bold tracking-wide select-none">
+              QUEST
+              <span className="bg-gradient-to-r from-violet-400 to-fuchsia-400 bg-clip-text text-transparent">
+                IX
+              </span>
+            </span>
+          </div>
+        </div>
+      </nav>
+    );
+  }
+
+  if (isVisualizer) {
+    return (
+      <nav className="absolute top-0 left-0 right-0 z-50 bg-transparent text-white border-b border-transparent">
+        <div className="mx-auto max-w-7xl px-4">
+          <div className="flex h-16 items-center justify-center">
+            <span className="font-display text-xl font-bold tracking-wide select-none">
+              QUEST
+              <span className="bg-gradient-to-r from-violet-400 to-fuchsia-400 bg-clip-text text-transparent">
+                IX
+              </span>
+            </span>
+          </div>
+        </div>
+      </nav>
+    );
+  }
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {

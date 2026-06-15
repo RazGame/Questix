@@ -1,10 +1,13 @@
 import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuthStore } from '../store/authStore';
 import { authService } from '../services/auth';
 
 export default function Login() {
   const navigate = useNavigate();
+  const [params] = useSearchParams();
+  // Куда вернуть после входа (напр. на страницу игрока угадайки).
+  const redirect = params.get('redirect');
   const setUser = useAuthStore((state) => state.setUser);
   const setError = useAuthStore((state) => state.setError);
 
@@ -30,7 +33,7 @@ export default function Login() {
     try {
       const response = await authService.login(formData);
       setUser(response.user, response.token);
-      navigate('/games');
+      navigate(redirect || '/games');
     } catch (err: any) {
       const message = err.response?.data?.error || 'Ошибка входа';
       setLocalError(message);

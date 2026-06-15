@@ -1,42 +1,82 @@
 import mongoose from 'mongoose';
 import { IGame } from '../types';
 
+// Квест-поля обязательны только для обычных квестов, не для «Угадай мелодию».
+function requiredForQuest(this: IGame): boolean {
+  return this.kind !== 'guess_song';
+}
+
 const gameSchema = new mongoose.Schema<IGame>(
   {
+    kind: {
+      type: String,
+      enum: ['quest', 'guess_song'],
+      default: 'quest',
+      index: true,
+    },
+    format: {
+      type: String,
+      enum: ['online', 'offline'],
+      default: 'online',
+    },
+    // Кто играет: одиночка или команда.
+    participation: {
+      type: String,
+      enum: ['solo', 'team'],
+      default: 'team',
+    },
+    // Авторизация на сайте: required (по аккаунту) или open (вход по имени/коду).
+    // Для квеста на сервере всегда принудительно required.
+    auth: {
+      type: String,
+      enum: ['required', 'open'],
+      default: 'required',
+    },
     title: {
       type: String,
-      required: [true, 'Название квеста обязательно'],
+      required: [true, 'Название обязательно'],
       unique: true,
       trim: true,
     },
     city: {
       type: String,
-      required: [true, 'Город обязателен'],
+      required: [requiredForQuest, 'Город обязателен'],
     },
     dateofstart: {
       type: Date,
-      required: [true, 'Дата начала обязательна'],
+      required: [requiredForQuest, 'Дата начала обязательна'],
     },
     dateofend: {
       type: Date,
-      required: [true, 'Дата окончания обязательна'],
+      required: [requiredForQuest, 'Дата окончания обязательна'],
     },
     deposit: {
       type: String,
-      required: [true, 'Депозит обязателен'],
+      required: [requiredForQuest, 'Депозит обязателен'],
     },
     prize: {
       type: String,
-      required: [true, 'Приз обязателен'],
+      required: [requiredForQuest, 'Приз обязателен'],
     },
     description: {
       type: String,
-      required: [true, 'Описание обязательно'],
+      required: [requiredForQuest, 'Описание обязательно'],
     },
     published: {
       type: Boolean,
       default: false,
     },
+    // --- поля игры «Угадай мелодию» ---
+    code: {
+      type: String,
+      index: true,
+    },
+    blocks: [
+      {
+        name: { type: String, required: true },
+        songIds: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Song' }],
+      },
+    ],
     taskOrderMode: {
       type: String,
       enum: ['linear', 'random', 'manual'],

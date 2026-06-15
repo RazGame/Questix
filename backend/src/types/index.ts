@@ -22,8 +22,28 @@ export interface IUser {
 // manual - порядок задаётся организатором для каждой команды отдельно.
 export type TaskOrderMode = 'linear' | 'random' | 'manual';
 
+// Вид игры: квест (как раньше) или «Угадай мелодию».
+export type GameKind = 'quest' | 'guess_song';
+// Формат проведения. Угадайка пока только offline.
+export type GameFormat = 'online' | 'offline';
+// Кто играет: одиночка или команда.
+export type GameParticipation = 'solo' | 'team';
+// Нужна ли авторизация на сайте: required — по аккаунту, open — вход по имени/коду.
+export type GameAuth = 'required' | 'open';
+
+// Блок песен в игре «Угадай мелодию» (тематическая группа).
+export interface IMusicBlock {
+  _id?: Types.ObjectId;
+  name: string;
+  songIds: Types.ObjectId[];
+}
+
 export interface IGame {
   _id?: string;
+  kind: GameKind;
+  format: GameFormat;
+  participation: GameParticipation;
+  auth: GameAuth;
   title: string;
   city: string;
   dateofstart: Date;
@@ -36,6 +56,29 @@ export interface IGame {
   gameAppls: string[]; // IDs заявок
   createdBy?: string; // ID создателя игры (организатор/админ)
   organizers?: Types.ObjectId[]; // Соорганизаторы: могут править игру наравне с создателем
+  // Поля игры «Угадай мелодию»
+  code?: string; // короткий код входа для игроков
+  blocks?: IMusicBlock[]; // блоки песен
+  createdAt?: Date;
+  updatedAt?: Date;
+}
+
+// Песня в игре «Угадай мелодию».
+export interface ISong {
+  _id?: string;
+  gameId: Types.ObjectId;
+  title: string;
+  artist: string;
+  album: string;
+  cover: string;
+  duration: number;
+  startSec: number; // таймкод старта воспроизведения
+  endSec?: number | null; // таймкод конца отрезка (null = до конца трека)
+  sourceUrl: string; // ссылка-источник для авто-загрузки
+  preview: string;
+  file: string | null; // относительный путь в /media, когда скачано
+  status: 'pending' | 'downloading' | 'ready' | 'error';
+  error: string | null;
   createdAt?: Date;
   updatedAt?: Date;
 }
@@ -71,7 +114,7 @@ export interface ITaskHint {
 
 export interface ITeamLog {
   _id?: string;
-  team: Types.ObjectId; // ID Team
+  team?: Types.ObjectId | null; // ID Team (null для одиночного квеста)
   gameAppl: Types.ObjectId; // ID GameAppl
   game: Types.ObjectId; // ID Game
   user: Types.ObjectId; // ID пользователя, совершившего действие
