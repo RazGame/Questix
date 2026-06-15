@@ -29,18 +29,277 @@ const apiErrorMessage = (error: any, fallback: string) =>
   error?.message ||
   fallback;
 
+interface BlockItemProps {
+  block: { _id: string; name: string; songIds: string[] };
+  gameId: string;
+  songById: (id: string) => Song | undefined;
+  renameBlock: (blockId: string, name: string) => Promise<void>;
+  addOwnFile: (blockId: string) => void;
+  removeBlock: (blockId: string) => void;
+  removeSong: (songId: string) => void;
+  uploadFile: (songId: string) => void;
+  setSegmentSong: (song: Song) => void;
+  refreshCurrent: () => Promise<void>;
+  setError: (err: string) => void;
+  setNotice: (notice: string) => void;
+}
+
+function BlockItem({
+  block,
+  gameId,
+  songById,
+  renameBlock,
+  addOwnFile,
+  removeBlock,
+  removeSong,
+  uploadFile,
+  setSegmentSong,
+  refreshCurrent,
+  setError,
+  setNotice,
+}: BlockItemProps) {
+  const [searchQ, setSearchQ] = useState('');
+  const [results, setResults] = useState<SongSearchResult[]>([]);
+  const [searching, setSearching] = useState(false);
+  const [playlistUrl, setPlaylistUrl] = useState('');
+  const [playlistImporting, setPlaylistImporting] = useState(false);
+  const [showSearch, setShowSearch] = useState(block.songIds.length === 0);
+
+  const doSearch = async () => {
+    if (!searchQ.trim()) return;
+    setSearching(true);
+    setResults([]);
+    try {
+      const res = await musicService.search(searchQ.trim());
+      setResults(res);
+      setError('');
+      setNotice('');
+    } catch (e: any) {
+      setError(apiErrorMessage(e, 'Поиск недоступен'));
+    } finally {
+      setSearching(false);
+    }
+  };
+
+  const addResult = async (r: SongSearchResult) => {
+    try {
+      await musicService.addSong(gameId, block._id, r);
+      await refreshCurrent();
+      setError('');
+      setNotice('');
+    } catch (e: any) {
+      setError(apiErrorMessage(e, 'Ошибка добавления песни'));
+    }
+  };
+
+  const importPlaylist = async () => {
+    if (!playlistUrl.trim()) return;
+    setPlaylistImporting(true);
+    try {
+      const result = await musicService.importPlaylist(gameId, block._id, playlistUrl.trim());
+      await refreshCurrent();
+      setPlaylistUrl('');
+      const playlistName = result.playlist?.name ? `«${result.playlist.name}» ` : '';
+      setError('');
+      setNotice(`${playlistName}добавлено: ${result.imported}, пропущено дублей: ${result.skipped}`);
+    } catch (e: any) {
+      setError(apiErrorMessage(e, 'Не удалось импортировать плейлист'));
+    } finally {
+      setPlaylistImporting(false);
+    }
+  };
+
+  return (
+    <div className="rounded-lg border border-white/10 p-3 bg-white/[0.01] hover:border-white/20 transition-all duration-300">
+      <div className="flex items-center gap-2 mb-3">
+        <input
+          defaultValue={block.name}
+          onBlur={(e) => renameBlock(block._id, e.target.value)}
+          className="input-dark flex-1 text-sm font-semibold focus:border-violet-500/50 transition-colors"
+        />
+        <button
+          onClick={() => setShowSearch(!showSearch)}
+          className={`rounded-lg px-2.5 py-1.5 text-xs font-semibold transition-all duration-200 flex items-center gap-1 ${
+            showSearch
+              ? 'bg-violet-500/20 text-violet-300 border border-violet-500/30'
+              : 'bg-white/5 text-zinc-300 hover:bg-white/10 border border-transparent'
+          }`}
+          title="Добавить музыку"
+        >
+          <Plus size={12} /> {showSearch ? 'Скрыть поиск' : 'добавить музыку'}
+        </button>
+        <button
+          onClick={() => removeBlock(block._id)}
+          className="text-rose-400 hover:text-rose-300 p-1.5 hover:bg-rose-500/10 rounded-lg transition"
+          title="Удалить блок"
+        >
+          <Trash2 size={16} />
+        </button>
+      </div>
+
+      {showSearch && (
+        <div className="mb-4 rounded-lg bg-black/20 border border-white/5 p-3.5 space-y-3 qgs-fade-in">
+          {/* Search bar */}
+          <div className="flex gap-2">
+            <input
+              value={searchQ}
+              onChange={(e) => setSearchQ(e.target.value)}
+              onKeyDown={(e) => e.key === 'Enter' && doSearch()}
+              placeholder="Поиск песни в Spotify..."
+              className="input-dark flex-1 text-xs"
+            />
+            <button
+              onClick={doSearch}
+              disabled={searching}
+              className="btn-grad flex items-center gap-1 rounded-lg px-3 text-xs font-bold disabled:opacity-50"
+            >
+              <Search size={14} /> Найти
+            </button>
+          </div>
+
+          {searching && <p className="text-zinc-500 text-xs animate-pulse">Поиск…</p>}
+
+          {/* Search results */}
+          {results.length > 0 && (
+            <div className="space-y-1.5 max-h-60 overflow-y-auto rounded bg-black/40 p-2 border border-white/5">
+              <div className="flex justify-between items-center px-1 pb-1 border-b border-white/5">
+                <span className="text-[10px] text-zinc-400 font-semibold uppercase tracking-wider">Результаты ({results.length})</span>
+                <button onClick={() => setResults([])} className="text-[10px] text-zinc-500 hover:text-zinc-300">Очистить</button>
+              </div>
+              {results.map((r, i) => (
+                <div key={i} className="flex items-center gap-3 rounded bg-white/[0.01] hover:bg-white/[0.04] p-1.5 transition text-left">
+                  {r.cover && <img src={r.cover} alt="" className="w-8 h-8 rounded" />}
+                  <div className="min-w-0 flex-1">
+                    <div className="truncate text-xs font-semibold">{r.title}</div>
+                    <div className="truncate text-[10px] text-zinc-400">{r.artist} · {fmtTime(r.duration || 0)}</div>
+                  </div>
+                  <button
+                    onClick={() => addResult(r)}
+                    className="btn-grad rounded px-2.5 py-1 text-[10px] font-bold"
+                  >
+                    + добавить
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Separator */}
+          <div className="relative flex items-center py-1">
+            <div className="flex-grow border-t border-white/5"></div>
+            <span className="flex-shrink mx-2 text-[10px] text-zinc-500 uppercase tracking-wider">или импорт плейлиста</span>
+            <div className="flex-grow border-t border-white/5"></div>
+          </div>
+
+          {/* Playlist import */}
+          <div className="flex gap-2">
+            <input
+              value={playlistUrl}
+              onChange={(e) => setPlaylistUrl(e.target.value)}
+              onKeyDown={(e) => e.key === 'Enter' && importPlaylist()}
+              placeholder="Ссылка на Spotify-плейлист..."
+              className="input-dark flex-1 text-xs"
+            />
+            <button
+              onClick={importPlaylist}
+              disabled={playlistImporting || !playlistUrl.trim()}
+              className="btn-grad flex items-center gap-1 rounded-lg px-3 text-xs font-bold disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              <Link size={14} /> {playlistImporting ? 'Импорт…' : 'Импорт'}
+            </button>
+          </div>
+
+          {/* Separator for upload */}
+          <div className="relative flex items-center py-1">
+            <div className="flex-grow border-t border-white/5"></div>
+            <span className="flex-shrink mx-2 text-[10px] text-zinc-500 uppercase tracking-wider">или загрузить аудиофайл</span>
+            <div className="flex-grow border-t border-white/5"></div>
+          </div>
+
+          {/* Own file upload button */}
+          <button
+            onClick={() => addOwnFile(block._id)}
+            className="flex items-center gap-1.5 rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-xs font-bold text-zinc-300 hover:bg-white/10 hover:text-white transition w-full justify-center"
+          >
+            📁 Выбрать свой файл (MP3, FLAC, и др.)
+          </button>
+        </div>
+      )}
+
+      {/* Song list inside block */}
+      <div className="space-y-2">
+        {block.songIds.length === 0 && (
+          <p className="text-zinc-500 text-xs py-2 text-center">
+            Нет песен в этом блоке. Воспользуйтесь кнопкой поиска выше, чтобы добавить треки.
+          </p>
+        )}
+        {block.songIds.map((sid) => {
+          const s = songById(sid);
+          if (!s) return null;
+          const seg = s.endSec
+            ? `${fmtTime(s.startSec)}–${fmtTime(s.endSec)}`
+            : `с ${fmtTime(s.startSec)}`;
+          return (
+            <div key={s._id} className="rounded-lg bg-white/[0.02] hover:bg-white/[0.04] border border-white/5 p-2 transition duration-200">
+              <div className="flex items-center gap-3">
+                {s.cover && <img src={s.cover} alt="" className="w-9 h-9 rounded shadow" />}
+                <div className="min-w-0 flex-1 text-left">
+                  <div className="truncate text-sm font-semibold">{s.title}</div>
+                  <div className="truncate text-xs text-zinc-400">{s.artist}</div>
+                </div>
+                <span className={`rounded-full px-2 py-0.5 text-xs ${statusTone[s.status]}`} title={s.error || ''}>
+                  {statusLabels[s.status]}
+                </span>
+                {s.status === 'ready' && s.file && (
+                  <button
+                    onClick={() => setSegmentSong(s)}
+                    className="flex items-center gap-1 rounded-lg bg-white/5 border border-white/10 px-2 py-1 text-xs text-zinc-200 hover:bg-white/10 transition"
+                    title="Выбрать отрезок песни"
+                  >
+                    <Scissors size={14} /> {seg}
+                  </button>
+                )}
+                {s.sourceUrl && (s.status === 'error' || s.status === 'pending') && (
+                  <button
+                    onClick={async () => {
+                      try {
+                        await musicService.downloadSong(gameId, s._id);
+                        await refreshCurrent();
+                        setError('');
+                      } catch (e: any) {
+                        setError(apiErrorMessage(e, 'Ошибка запуска загрузки песни'));
+                      }
+                    }}
+                    className="text-zinc-400 hover:text-white p-1"
+                    title="Повторить авто-загрузку"
+                  >
+                    <RotateCw size={15} />
+                  </button>
+                )}
+                <button onClick={() => uploadFile(s._id)} className="text-zinc-400 hover:text-white p-1 hover:bg-white/5 rounded transition" title="Загрузить файл">
+                  <Upload size={15} />
+                </button>
+                <button onClick={() => removeSong(s._id)} className="text-rose-400 hover:text-rose-300 p-1 hover:bg-rose-500/10 rounded transition" title="Убрать песню">
+                  <Trash2 size={15} />
+                </button>
+              </div>
+              {s.status === 'downloading' && (
+                <div className="qgs-loading-track mt-2 h-1.5 w-full rounded-full bg-white/10 overflow-hidden" />
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 export default function MusicAdmin({ isTab = false }: { isTab?: boolean }) {
   const navigate = useNavigate();
   const [games, setGames] = useState<(MusicGame & { songCount: number })[]>([]);
   const [current, setCurrent] = useState<MusicGameFull | null>(null);
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
-  const [searchQ, setSearchQ] = useState('');
-  const [results, setResults] = useState<SongSearchResult[]>([]);
-  const [searching, setSearching] = useState(false);
-  const [targetBlock, setTargetBlock] = useState('');
-  const [playlistUrl, setPlaylistUrl] = useState('');
-  const [playlistImporting, setPlaylistImporting] = useState(false);
   const [spotiVersion, setSpotiVersion] = useState<string | null>(null);
   const [segmentSong, setSegmentSong] = useState<Song | null>(null); // открытая модалка отрезка
 
@@ -87,7 +346,6 @@ export default function MusicAdmin({ isTab = false }: { isTab?: boolean }) {
     try {
       const full = await musicService.get(id);
       setCurrent(full);
-      setTargetBlock(full.game.blocks[0]?._id || '');
       setError('');
       setNotice('');
     } catch (e: any) {
@@ -246,48 +504,7 @@ export default function MusicAdmin({ isTab = false }: { isTab?: boolean }) {
     inp.click();
   };
 
-  // --- поиск ---
-  const doSearch = async () => {
-    if (!searchQ.trim()) return;
-    setSearching(true);
-    setResults([]);
-    try {
-      setResults(await musicService.search(searchQ.trim()));
-      setError('');
-      setNotice('');
-    } catch (e: any) {
-      setError(apiErrorMessage(e, 'Поиск недоступен'));
-    }
-    finally { setSearching(false); }
-  };
-  const addResult = async (r: SongSearchResult) => {
-    if (!current || !targetBlock) return;
-    try {
-      await musicService.addSong(current.game._id, targetBlock, r);
-      await refreshCurrent();
-      setError('');
-      setNotice('');
-    } catch (e: any) {
-      setError(apiErrorMessage(e, 'Ошибка добавления песни'));
-    }
-  };
 
-  const importPlaylist = async () => {
-    if (!current || !targetBlock || !playlistUrl.trim()) return;
-    setPlaylistImporting(true);
-    try {
-      const result = await musicService.importPlaylist(current.game._id, targetBlock, playlistUrl.trim());
-      await refreshCurrent();
-      setPlaylistUrl('');
-      const playlistName = result.playlist?.name ? `«${result.playlist.name}» ` : '';
-      setError('');
-      setNotice(`${playlistName}добавлено: ${result.imported}, пропущено дублей: ${result.skipped}`);
-    } catch (e: any) {
-      setError(apiErrorMessage(e, 'Не удалось импортировать плейлист'));
-    } finally {
-      setPlaylistImporting(false);
-    }
-  };
 
   const updateSpotiflac = async () => {
     setSpotiVersion('обновление…');
@@ -342,7 +559,7 @@ export default function MusicAdmin({ isTab = false }: { isTab?: boolean }) {
               <Plus size={20} />
             </button>
           </div>
-          <div className="space-y-2 max-h-[32rem] overflow-y-auto">
+          <div className="space-y-2 max-h-[calc(100vh-220px)] overflow-y-auto">
             {games.map((g) => (
               <div
                 key={g._id}
@@ -431,60 +648,6 @@ export default function MusicAdmin({ isTab = false }: { isTab?: boolean }) {
               </div>
 
 
-              {/* поиск песен */}
-              <div className="glass p-5">
-                <div className="flex gap-2 mb-3">
-                  <input
-                    value={searchQ}
-                    onChange={(e) => setSearchQ(e.target.value)}
-                    onKeyDown={(e) => e.key === 'Enter' && doSearch()}
-                    placeholder="Поиск песни…"
-                    className="input-dark flex-1"
-                  />
-                  <select value={targetBlock} onChange={(e) => setTargetBlock(e.target.value)} className="input-dark w-40 text-sm">
-                    {current.game.blocks.map((b) => (
-                      <option key={b._id} value={b._id}>{b.name}</option>
-                    ))}
-                  </select>
-                  <button onClick={doSearch} className="btn-grad flex items-center gap-1 rounded-lg px-4 font-bold">
-                    <Search size={17} /> Найти
-                  </button>
-                </div>
-                {searching && <p className="text-zinc-500 text-sm">Поиск…</p>}
-                <div className="space-y-2 max-h-72 overflow-y-auto">
-                  {results.map((r, i) => (
-                    <div key={i} className="flex items-center gap-3 rounded-lg bg-white/[0.03] p-2">
-                      {r.cover && <img src={r.cover} alt="" className="w-10 h-10 rounded" />}
-                      <div className="min-w-0 flex-1">
-                        <div className="truncate text-sm font-semibold">{r.title}</div>
-                        <div className="truncate text-xs text-zinc-400">{r.artist} · {fmtTime(r.duration || 0)}</div>
-                      </div>
-                      <button onClick={() => addResult(r)} className="btn-grad rounded-lg px-3 py-1.5 text-xs font-bold">
-                        + добавить
-                      </button>
-                    </div>
-                  ))}
-                </div>
-                <div className="mt-4 border-t border-white/10 pt-4">
-                  <div className="flex gap-2">
-                    <input
-                      value={playlistUrl}
-                      onChange={(e) => setPlaylistUrl(e.target.value)}
-                      onKeyDown={(e) => e.key === 'Enter' && importPlaylist()}
-                      placeholder="Ссылка на Spotify-плейлист…"
-                      className="input-dark flex-1"
-                    />
-                    <button
-                      onClick={importPlaylist}
-                      disabled={playlistImporting || !playlistUrl.trim()}
-                      className="btn-grad flex items-center gap-1 rounded-lg px-4 font-bold disabled:cursor-not-allowed disabled:opacity-50"
-                    >
-                      <Link size={17} /> {playlistImporting ? 'Импорт…' : 'Импорт'}
-                    </button>
-                  </div>
-                </div>
-              </div>
-
               {/* блоки и песни */}
               <div className="glass p-5">
                 <div className="flex justify-between items-center mb-4">
@@ -495,80 +658,21 @@ export default function MusicAdmin({ isTab = false }: { isTab?: boolean }) {
                 </div>
                 <div className="space-y-5">
                   {current.game.blocks.map((b) => (
-                    <div key={b._id} className="rounded-lg border border-white/10 p-3">
-                      <div className="flex items-center gap-2 mb-3">
-                        <input
-                          defaultValue={b.name}
-                          onBlur={(e) => renameBlock(b._id, e.target.value)}
-                          className="input-dark flex-1 text-sm font-semibold"
-                        />
-                        <button onClick={() => addOwnFile(b._id)} className="rounded-lg bg-white/10 px-2 py-1.5 text-xs text-zinc-200 hover:bg-white/20" title="Добавить своим файлом">
-                          📁 свой
-                        </button>
-                        <button onClick={() => removeBlock(b._id)} className="text-rose-400 hover:text-rose-300 p-1" title="Удалить блок">
-                          <Trash2 size={16} />
-                        </button>
-                      </div>
-                      <div className="space-y-2">
-                        {b.songIds.length === 0 && <p className="text-zinc-500 text-xs">Добавьте песни через поиск выше.</p>}
-                        {b.songIds.map((sid) => {
-                          const s = songById(sid);
-                          if (!s) return null;
-                          const seg = s.endSec
-                            ? `${fmtTime(s.startSec)}–${fmtTime(s.endSec)}`
-                            : `с ${fmtTime(s.startSec)}`;
-                          return (
-                            <div key={s._id} className="rounded-lg bg-white/[0.03] p-2">
-                              <div className="flex items-center gap-3">
-                                {s.cover && <img src={s.cover} alt="" className="w-9 h-9 rounded" />}
-                                <div className="min-w-0 flex-1">
-                                  <div className="truncate text-sm font-semibold">{s.title}</div>
-                                  <div className="truncate text-xs text-zinc-400">{s.artist}</div>
-                                </div>
-                                <span className={`rounded-full px-2 py-0.5 text-xs ${statusTone[s.status]}`} title={s.error || ''}>
-                                  {statusLabels[s.status]}
-                                </span>
-                                {s.status === 'ready' && s.file && (
-                                  <button
-                                    onClick={() => setSegmentSong(s)}
-                                    className="flex items-center gap-1 rounded-lg bg-white/10 px-2 py-1 text-xs text-zinc-200 hover:bg-white/20"
-                                    title="Выбрать отрезок песни"
-                                  >
-                                    <Scissors size={14} /> {seg}
-                                  </button>
-                                )}
-                                {s.sourceUrl && (s.status === 'error' || s.status === 'pending') && (
-                                  <button
-                                    onClick={async () => {
-                                      try {
-                                        await musicService.downloadSong(current.game._id, s._id);
-                                        await refreshCurrent();
-                                        setError('');
-                                      } catch (e: any) {
-                                        setError(apiErrorMessage(e, 'Ошибка запуска загрузки песни'));
-                                      }
-                                    }}
-                                    className="text-zinc-400 hover:text-white p-1"
-                                    title="Повторить авто-загрузку"
-                                  >
-                                    <RotateCw size={15} />
-                                  </button>
-                                )}
-                                <button onClick={() => uploadFile(s._id)} className="text-zinc-400 hover:text-white p-1" title="Загрузить файл">
-                                  <Upload size={15} />
-                                </button>
-                                <button onClick={() => removeSong(s._id)} className="text-rose-400 hover:text-rose-300 p-1" title="Убрать песню">
-                                  <Trash2 size={15} />
-                                </button>
-                              </div>
-                              {s.status === 'downloading' && (
-                                <div className="qgs-loading-track mt-2 h-1.5 w-full rounded-full bg-white/10" />
-                              )}
-                            </div>
-                          );
-                        })}
-                      </div>
-                    </div>
+                    <BlockItem
+                      key={b._id}
+                      block={b}
+                      gameId={current.game._id}
+                      songById={songById}
+                      renameBlock={renameBlock}
+                      addOwnFile={addOwnFile}
+                      removeBlock={removeBlock}
+                      removeSong={removeSong}
+                      uploadFile={uploadFile}
+                      setSegmentSong={setSegmentSong}
+                      refreshCurrent={refreshCurrent}
+                      setError={setError}
+                      setNotice={setNotice}
+                    />
                   ))}
                 </div>
               </div>

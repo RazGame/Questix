@@ -978,7 +978,7 @@ export default function AdminPanel() {
             </button>
           </div>
 
-          <div className="space-y-2 max-h-96 overflow-y-auto">
+          <div className="space-y-2 max-h-[calc(100vh-220px)] overflow-y-auto">
             {sortedVisibleGames.map((game) => {
               const state = getQuestState(game.dateofstart, game.dateofend);
 
@@ -1251,7 +1251,7 @@ export default function AdminPanel() {
                   {gameAppls.length === 0 ? (
                     <p className="text-zinc-400">Заявок нет</p>
                   ) : (
-                    <div className="space-y-3 max-h-96 overflow-y-auto">
+                    <div className="space-y-3 max-h-[calc(100vh-280px)] overflow-y-auto">
                       {gameAppls.map((appl) => {
                         const captain = appl.team?.captain;
                         const fallbackUser =
