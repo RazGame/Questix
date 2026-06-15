@@ -1,0 +1,144 @@
+# Архитектура
+
+## Обзор
+
+```text
+frontend/ React + Vite
+    ↓ HTTP JSON + JWT
+backend/ Express + TypeScript
+    ↓ Mongoose
+MongoDB
+```
+
+## Backend
+
+```text
+backend/src/
+├── config/        # env и MongoDB connection
+├── controllers/   # бизнес-логика
+├── middleware/    # auth/admin middleware
+├── models/        # Mongoose-модели
+├── routes/        # Express routes + Swagger comments
+├── services/      # общие бизнес-правила
+├── types/         # TypeScript interfaces
+├── utils/         # password/JWT helpers
+└── index.ts       # Express app
+```
+
+Главные модели:
+
+- `User` - профиль, `roles`, ссылки на заявки.
+- `Team` - команда: название, капитан, список участников.
+- `Game` - игра. Поле `kind` (`quest` | `guess_song`) и `format` (`online` | `offline`). Для квеста: даты начала/окончания, приз, депозит, заявки, `published`, `taskOrderMode` (linear/random/manual), `createdBy` и `organizers` (соорганизаторы). Для «Угадай мелодию»: `code` (код входа) и `blocks` (блоки песен); квест-поля при `kind==='guess_song'` необязательны.
+- `Song` - песня игры «Угадай мелодию»: название/исполнитель/обложка, `startSec` (таймкод старта), `sourceUrl`, `file`, `status` (pending/downloading/ready/error). Отдельная коллекция (атомарное обновление статуса фоновой загрузки).
+- `GameAppl` - заявка на квест. Командный квест: подаётся капитаном, хранит ссылку на `Team`. Одиночный квест (`participation: 'solo'`): подаётся игроком, без `team` (teamName = ник). Также хранит индивидуальное время старта (`startAt`, линейный режим) и ручной порядок заданий (`taskOrder`, режим manual).
+- Оси игры: `participation` (`solo`/`team`) и `auth` (`required`/`open`). Квест на сервере всегда `auth: required`. `GameTeamProgress.teamId` и `TeamLog.team` опциональны (null для одиночного квеста — прогресс/логи привязаны к `userId`).
+- `Task` - задание квеста, ответы, подсказки, лимит времени. Очков нет - победитель определяется по времени.
+- `GameTeamProgress` - прохождение квеста командой: привязано к заявке (`gameApplId`) и команде (`teamId`); каждая попытка ответа в `completedTasks` хранит `submittedBy` - кто из участников её отправил; `timeAdjustments` - штрафы и бонусы организаторов (входят в итоговое время).
+- `TeamLog` - лог действий команды во время игры: старт, каждый ответ (кто, текст, верный/неверный, время), переходы между заданиями, финиш.
+
+## Frontend
+
+```text
+frontend/src/
+├── components/    # Navbar, PrivateRoute, ErrorBoundary
+├── pages/         # экраны приложения
+├── services/      # Axios API wrappers
+├── store/         # Zustand auth state
+├── types/         # frontend-типы
+├── utils/         # date helpers
+├── App.tsx        # router
+└── index.tsx
+```
+
+## Роли
+
+`roles` хранится как массив строк:
+
+```json
+["user", "organizer"]
+```
+
+Роли:
+
+- `user` - базовая роль: редактирует свой профиль, состоит в команде, может выйти из команды, играет в составе команды.
+- `team_captain` - выдаётся автоматически при создании команды: управляет составом, подаёт заявки на игры от команды, может передать капитанство участнику. Пользователь может быть капитаном только одной команды.
+- `organizer` - создаёт игры и модерирует только свои: заявки, задания, логи, публикация результатов. У игры может быть несколько организаторов: создатель добавляет соорганизаторов по никнейму (роль `organizer` выдаётся им автоматически), и они правят игру наравне с ним.
+- `admin` - модерирует все игры и назначает роли пользователям (`PATCH /users/:id/roles`).
+
+Проверка доступа выполняется на backend (`adminMiddleware`, `organizerMiddleware`, `canModerateGame` и общий помощник `services/gamePermissions.ts` - админ, создатель или соорганизатор игры) и на frontend route guard.
+
+## Даты
+
+UI использует `datetime-local`, то есть вводит дату без timezone. Перед отправкой frontend конвертирует значение в ISO UTC через `new Date(value).toISOString()`.
+
+Состояние квеста:
+
+- `scheduled`: текущее время меньше `dateofstart`;
+- `active`: текущее время в `[dateofstart, dateofend)`;
+- `finished`: текущее время больше или равно `dateofend`.
+
+Backend применяет эти правила через `backend/src/services/questState.ts`, чтобы контроллеры не дублировали сравнения дат:
+
+- заявка закрывается после `dateofstart`;
+- старт игры возможен только для approved-заявки в активном окне;
+- получение задания и отправка ответа закрываются после `dateofend`;
+- завершённый прогресс можно открыть после `dateofend`, чтобы показать результат.
+
+## Основные Потоки
+
+### Создание команды
+
+1. Пользователь открывает `/teams` и создаёт команду.
+2. Backend создаёт `Team`, назначает создателя капитаном и добавляет роль `team_captain`.
+3. Капитан добавляет участников по никнейму (`POST /teams/:teamId/members`).
+4. Участник может выйти из команды (`POST /teams/:teamId/leave`); капитан - только после передачи прав (`POST /teams/:teamId/transfer-captain`).
+
+### Подача заявки
+
+1. Капитан выбирает предстоящий квест на `/games`.
+2. Frontend вызывает `POST /appls` - заявка подаётся от имени команды капитана.
+3. Backend проверяет, что пользователь капитан, квест ещё не начался и команда не подавала заявку-дубликат.
+4. Создаётся `GameAppl` со статусом `pending` и ссылкой на `Team`.
+
+### Одобрение заявки
+
+1. Админ или организатор-создатель игры выбирает квест на `/admin`.
+2. Меняет статус заявки через `PATCH /appls/:id/status`.
+3. Все участники команды видят approved-заявку на `/my-appls`.
+
+### Прохождение
+
+1. Любой участник команды открывает `/game/:gameId/play/:gameApplId`.
+2. Frontend вызывает `POST /progress/start`. Если команде назначено индивидуальное время старта (`startAt`), раньше него старт невозможен.
+3. Backend создаёт `GameTeamProgress` (привязан к заявке и команде) или возвращает существующий. Порядок заданий зависит от `taskOrderMode` игры: общий линейный, случайный для каждой команды или заданный организатором вручную.
+4. Frontend получает текущее задание через `/current-task`.
+5. Ответ отправляет любой участник команды через `/submit-answer`; в попытке сохраняется `submittedBy`, действие пишется в `TeamLog`.
+6. Если любой участник ответил правильно, вся команда переходит на следующее задание.
+7. После последнего задания прогресс становится `completed`.
+
+### Публикация результатов и статистика
+
+1. Во время игры технический прогресс и логи (`GET /games/:id/logs`) видят только админ и организаторы игры.
+2. Организатор может корректировать итоговое время команды (`POST /progress/:gameApplId/adjust-time`): штраф добавляет секунды, бонус убавляет; обязательна причина.
+3. Организатор завершает игру публикацией результатов: `POST /games/:id/publish` (`published: true`, необратимо).
+4. После публикации участники видят статистику `GET /games/:id/stats` на `/games/:gameId/results`: матрица «команды x шаги» - какое задание команда проходила на шаге, кто отправил правильный ответ, время прохождения и время на задание, итоговое время (с учётом штрафов и бонусов, которые показываются с причинами) и место; сортировка по моменту прохождения и по времени на задание.
+
+## «Угадай мелодию» (realtime)
+
+Оффлайн-мультиплеер на Socket.IO поверх того же Express-бэкенда и Mongo:
+
+- **Стейт-машина** `backend/src/services/musicSession.ts` (in-memory, по `gameId`): фазы `lobby → playing → buzzed → reveal → finished`. Счёт эфемерный, в Mongo не пишется - хот-путь баззера остаётся быстрым.
+- **Сокеты** `backend/src/sockets/music.ts`: игрок входит анонимно по коду, экран - по `gameId`; команды ведущего (`admin:*`) проверяют JWT и право модерации. `transports: ['websocket']` - без polling-апгрейда.
+- **REST** `backend/src/controllers/music.ts` (`/music/*`): CRUD игр/блоков/песен, поиск и загрузка через SpotiFLAC, ручной аплоад, QR/LAN-IP, версия/обновление SpotiFLAC. Аудио раздаётся из `/media` (Docker-том `media_data`).
+- **SpotiFLAC** изолирован за `backend/src/services/python.ts` + `backend/tools/` (зафиксированная версия в `requirements.txt`, обновление кнопкой `/music/spotiflac/update`). Backend-образ - Debian-slim с python3.
+- **Фронт**: `MusicAdmin` (`/admin/music`, ведущий), `MusicScreen` (`/m/screen/:gameId`, проектор, Web Audio + эквалайзер, публичный), `MusicPlay` (`/m/play?code=`, телефон-баззер, публичный). Аудио держится в `useRef` вне React-рендера, баззер на `onPointerDown`.
+- **Оффлайн-LAN/Docker**: QR кодирует `PUBLIC_WEB_BASE` (origin фронта по LAN-IP хоста), сокет коннектит backend (:5000). `HOST_IP`/`PUBLIC_WEB_BASE` задаются в `docker-compose.yml`.
+
+## Безопасность
+
+- Пароль хешируется bcryptjs на backend.
+- JWT хранит `id`, `username`, `roles`.
+- Ответы заданий не отправляются в endpoint текущего задания.
+- `hashed_pwd` не возвращается из user endpoints.
+- Секреты должны храниться в `.env`, не в репозитории.
