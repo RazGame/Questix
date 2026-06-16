@@ -1,5 +1,7 @@
 import { Request, Response, NextFunction } from 'express';
 import { verifyToken } from '../utils/jwt';
+import { Game } from '../models/Game';
+import { isGameModerator } from '../services/gamePermissions';
 
 export interface AuthenticatedRequest extends Request {
   user?: any;
@@ -72,8 +74,6 @@ export const canModerateGame = async (
   next: NextFunction
 ): Promise<void> => {
   try {
-    const { Game } = await import('../models/Game');
-    const { isGameModerator } = await import('../services/gamePermissions');
     const gameId = req.params.gameId || req.params.id;
     const game = await Game.findById(gameId);
 

@@ -150,6 +150,9 @@ export default function MusicPlay() {
   };
 
   const me = state?.players.find((p) => p.id === playerIdRef.current);
+  const isTeam = state?.mode === 'team';
+  // Ключ группы для определения «мой ли это баззер» (команда в team, иначе сам игрок).
+  const myGroupId = isTeam ? (me?.teamId || null) : playerIdRef.current;
 
   useEffect(() => {
     if (!joined || !state) return;
@@ -158,6 +161,12 @@ export default function MusicPlay() {
     const playerId = playerIdRef.current;
     prevStateRef.current = state;
     if (!prev || !playerId) return;
+
+    // Группа игрока: в team-режиме баззер привязан к команде, иначе к игроку.
+    const myGid =
+      state.mode === 'team'
+        ? state.players.find((p) => p.id === playerId)?.teamId || null
+        : playerId;
 
     const isNewPlayingRound =
       state.phase === 'playing' &&
@@ -169,18 +178,18 @@ export default function MusicPlay() {
 
     const isNewBuzz = state.phase === 'buzzed' && prev.phase !== 'buzzed';
     if (isNewBuzz) {
-      vibrate(state.buzzed?.id === playerId ? [220, 90, 320] : 180);
+      vibrate(state.buzzed?.id === myGid ? [220, 90, 320] : 180);
       return;
     }
 
     const isCorrectReveal = state.phase === 'reveal' && prev.phase === 'buzzed';
     if (isCorrectReveal) {
-      vibrate(prev.buzzed?.id === playerId ? [180, 80, 180, 80, 420] : [160, 80, 160]);
+      vibrate(prev.buzzed?.id === myGid ? [180, 80, 180, 80, 420] : [160, 80, 160]);
       return;
     }
 
     const isWrongAnswer = state.phase === 'playing' && prev.phase === 'buzzed';
-    if (isWrongAnswer && prev.buzzed?.id === playerId) {
+    if (isWrongAnswer && prev.buzzed?.id === myGid) {
       vibrate([420, 120, 420]);
     }
   }, [joined, state]);
@@ -268,7 +277,11 @@ export default function MusicPlay() {
     <div className="h-[calc(100dvh-4rem)] overflow-hidden flex flex-col items-center justify-center px-4 py-6 text-center">
       {me && (
         <div className="mb-6 text-zinc-300">
-          {me.name} · <span className="font-bold text-violet-300">{me.score}</span>
+          {isTeam && me.teamName ? (
+            <>👥 {me.teamName} · <span className="font-bold text-violet-300">{me.score}</span> <span className="text-zinc-500">({me.name})</span></>
+          ) : (
+            <>{me.name} · <span className="font-bold text-violet-300">{me.score}</span></>
+          )}
         </div>
       )}
 
@@ -310,10 +323,12 @@ export default function MusicPlay() {
           </div>
           
           <div className="flex-1 overflow-y-auto pr-1 space-y-2">
-            {[...(state?.players || [])]
+            {[...(isTeam
+              ? (state?.teams || []).map((t) => ({ id: t.id, name: `👥 ${t.name}`, score: t.score }))
+              : (state?.players || []).map((p) => ({ id: p.id, name: p.name, score: p.score })))]
               .sort((a, b) => b.score - a.score)
               .map((p, i) => {
-                const isMe = p.id === playerIdRef.current;
+                const isMe = p.id === myGroupId;
                 let badge = '';
                 let rowClass = 'bg-white/[0.02] border border-white/5';
                 let textClass = 'text-zinc-300';
@@ -377,9 +392,15 @@ export default function MusicPlay() {
 
       {phase === 'buzzed' && (
         <Buzzer
-          label={state?.buzzed?.id === playerIdRef.current ? 'Ты первый!' : `Отвечает ${state?.buzzed?.name || '…'}`}
+          label={
+            state?.buzzed?.id === myGroupId
+              ? isTeam
+                ? `Отвечает твоя команда${state?.buzzed?.by ? ` · ${state.buzzed.by}` : ''}`
+                : 'Ты первый!'
+              : `Отвечает ${state?.buzzed?.name || '…'}${isTeam && state?.buzzed?.by ? ` · ${state.buzzed.by}` : ''}`
+          }
           btnClass={
-            state?.buzzed?.id === playerIdRef.current
+            state?.buzzed?.id === myGroupId
               ? 'bg-emerald-600 border border-emerald-400/30 text-white shadow-xl shadow-emerald-500/30 scale-[1.02]'
               : 'bg-amber-600/20 border border-amber-500/30 text-amber-300 scale-95'
           }
@@ -401,7 +422,11 @@ export default function MusicPlay() {
             }
           />
           {me?.locked && (
-            <p className="mt-4 text-sm text-zinc-500">Ты уже ответил на этой песне — ждём других.</p>
+            <p className="mt-4 text-sm text-zinc-500">
+              {isTeam
+                ? 'Твоя команда уже ответила на этой песне — ждём других.'
+                : 'Ты уже ответил на этой песне — ждём других.'}
+            </p>
           )}
         </>
       )}

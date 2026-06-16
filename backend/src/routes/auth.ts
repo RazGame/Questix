@@ -1,9 +1,37 @@
 import { Router } from 'express';
+import rateLimit from 'express-rate-limit';
 import * as authController from '../controllers/auth';
 import { validateRequest } from '../middleware/validation';
+import { config } from '../config/config';
 import Joi from 'joi';
 
 const router = Router();
+
+// Защита от брутфорса пароля и перебора аккаунтов.
+// Модель угроз приложения — оффлайн-LAN: лимитируем только публичные адреса,
+// а локалхост и приватные сети (игроки в LAN, e2e-прогоны, docker-gateway)
+// не трогаем. В dev пропускаем полностью.
+const privateIp =
+  /^(::1|::ffff:127\.|127\.|10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.|fc|fd|fe80:)/i;
+const skipRateLimit = (req: { ip?: string }) =>
+  config.env !== 'production' || (!!req.ip && privateIp.test(req.ip));
+
+const loginLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 10, // 10 попыток входа на публичный IP за 15 минут
+  standardHeaders: true,
+  legacyHeaders: false,
+  skip: skipRateLimit,
+  message: { error: 'Слишком много попыток входа. Повторите позже.' },
+});
+const signupLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000,
+  max: 10, // 10 регистраций на публичный IP за час
+  standardHeaders: true,
+  legacyHeaders: false,
+  skip: skipRateLimit,
+  message: { error: 'Слишком много регистраций. Повторите позже.' },
+});
 
 const signupSchema = Joi.object({
   firstName: Joi.string().required().trim(),
@@ -56,7 +84,7 @@ const loginSchema = Joi.object({
  *       409:
  *         description: Пользователь уже существует
  */
-router.post('/signup', validateRequest(signupSchema), authController.signup);
+router.post('/signup', signupLimiter, validateRequest(signupSchema), authController.signup);
 
 /**
  * @swagger
@@ -83,6 +111,6 @@ router.post('/signup', validateRequest(signupSchema), authController.signup);
  *       401:
  *         description: Неверные учетные данные
  */
-router.post('/login', validateRequest(loginSchema), authController.login);
+router.post('/login', loginLimiter, validateRequest(loginSchema), authController.login);
 
 export default router;

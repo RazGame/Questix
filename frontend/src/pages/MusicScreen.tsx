@@ -220,20 +220,9 @@ export default function MusicScreen() {
       const e = engineRef.current;
       const playing = e && !e.audio.paused;
       const visualGain = playing ? Math.max(0, Math.min(1, e!.gain.gain.value || 0)) : 0;
-      let frameMax = 140;
       if (playing) {
+        // Снимаем спектр кадра — дальше его читают расчёты баса и столбиков.
         e!.analyser.getByteFrequencyData(e!.freq as any);
-        let maxInFrame = 0;
-        // Находим пиковое значение по низким и средним частотам для динамической нормализации
-        for (let k = 0; k < 24; k++) {
-          const val = e!.freq[k] || 0;
-          if (val > maxInFrame) maxInFrame = val;
-        }
-        frameMax = Math.max(140, maxInFrame);
-        
-        if (Math.random() < 0.01) {
-          console.log("VIZ_DEBUG frameMax:", frameMax, "freq:", Array.from(e!.freq).slice(0, 15));
-        }
       }
       const bars = 72;
 
@@ -501,6 +490,12 @@ export default function MusicScreen() {
       ? Math.min(Math.max((state.blockCurrentIndex ?? 0) + 1, 1), state.blockTotal || 1)
       : 0;
 
+  // Итоговая таблица: по командам (team) или по игрокам (solo).
+  const standings =
+    state?.mode === 'team'
+      ? (state.teams || []).map((t) => ({ id: t.id, name: `👥 ${t.name}`, score: t.score }))
+      : (state?.players || []).map((p) => ({ id: p.id, name: p.name, score: p.score }));
+
   // классы центрального круга
   let centerCls = 'border-violet-400/50 bg-surface/70';
   if (flash === 'green') centerCls = 'border-emerald-400 bg-emerald-500/25 shadow-[0_0_80px_rgba(52,211,153,0.6)]';
@@ -559,7 +554,21 @@ export default function MusicScreen() {
               иначе телефоны не смогут подключиться по QR.
             </div>
           )}
-          {!!state?.players.length && (
+          {state?.mode === 'team' && !!state?.teams?.length && (
+            <div className="mt-6 flex flex-wrap justify-center gap-2 max-w-2xl">
+              {state.teams.map((t) => (
+                <span
+                  key={t.id}
+                  className={`rounded-full px-3 py-1 text-sm ${
+                    t.ready > 0 ? 'bg-emerald-400/15 text-emerald-300' : 'bg-white/10 text-zinc-300'
+                  }`}
+                >
+                  👥 {t.name} · {t.online}{t.ready > 0 ? ` ✓${t.ready}` : ''}
+                </span>
+              ))}
+            </div>
+          )}
+          {state?.mode !== 'team' && !!state?.players.length && (
             <div className="mt-6 flex flex-wrap justify-center gap-2 max-w-2xl">
               {state.players.map((p) => (
                 <span
@@ -590,11 +599,12 @@ export default function MusicScreen() {
               <span className="font-display text-8xl font-black text-white/90">?</span>
             )}
           </div>
-          {/* имя нажавшего под кругом */}
+          {/* нажавший под кругом: команда + (кто именно) в team-режиме */}
           {phase === 'buzzed' && state?.buzzed && (
             <div className="absolute -bottom-2 left-1/2 -translate-x-1/2 whitespace-nowrap">
               <span className="rounded-full bg-amber-400/15 px-4 py-1 text-lg font-bold text-amber-200">
                 🔔 {state.buzzed.name}
+                {state.mode === 'team' && state.buzzed.by ? ` · ${state.buzzed.by}` : ''}
               </span>
             </div>
           )}
@@ -616,9 +626,9 @@ export default function MusicScreen() {
             🏆 Итоговая таблица результатов
           </h2>
           
-          {state?.players && state.players.length > 0 ? (
+          {standings.length > 0 ? (
             <div className="space-y-3">
-              {[...state.players]
+              {[...standings]
                 .sort((a, b) => b.score - a.score)
                 .map((p, i) => {
                   let badge = '';

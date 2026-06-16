@@ -97,7 +97,20 @@ export interface MusicPlayer {
   name: string;
   ready: boolean;
   connected: boolean;
+  score: number; // в team-режиме — очки команды игрока
+  teamId?: string | null;
+  teamName?: string | null;
+  armed: boolean;
+  locked: boolean;
+}
+
+// Сводка по команде (team-режим).
+export interface MusicTeam {
+  id: string;
+  name: string;
   score: number;
+  online: number;
+  ready: number;
   armed: boolean;
   locked: boolean;
 }
@@ -109,11 +122,13 @@ export interface MusicState {
   phase: 'lobby' | 'playing' | 'ended' | 'buzzed' | 'reveal' | 'finished';
   total: number;
   currentIndex: number;
-  buzzed: { id: string; name: string } | null;
+  buzzed: { id: string; name: string; by?: string } | null;
   reveal: { title: string; artist: string; album: string; cover: string } | null;
   blockName: string;
   blockCurrentIndex?: number;
   blockTotal?: number;
+  mode?: GameParticipation; // solo | team
+  teams?: MusicTeam[];
   players: MusicPlayer[];
   fileUrl?: string | null;
   startSec?: number;

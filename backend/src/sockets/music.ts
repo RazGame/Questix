@@ -1,6 +1,7 @@
 import { Server, Socket } from 'socket.io';
 import { Game } from '../models/Game';
 import { User } from '../models/User';
+import { Team } from '../models/Team';
 import { verifyToken } from '../utils/jwt';
 import { isGameModerator } from '../services/gamePermissions';
 import { getSession } from '../services/musicSession';
@@ -8,12 +9,12 @@ import { newPlayerId } from '../services/musicStore';
 
 // Проверка, что сокет принадлежит модератору игры (для admin-команд).
 // Игрок и экран НЕ проверяются — это держит хот-путь баззера тонким.
-const verifyAdmin = async (socket: Socket, gameId: string): Promise<boolean> => {
+// Игра уже загружена в join — переиспользуем, без лишнего запроса в БД.
+const verifyAdmin = (socket: Socket, game: any): boolean => {
   const token = socket.handshake.auth?.token;
   if (!token) return false;
   try {
     const user = verifyToken(token);
-    const game = await Game.findById(gameId);
     return !!game && isGameModerator(game, { id: user.id, roles: user.roles });
   } catch {
     return false;
@@ -28,29 +29,38 @@ export const registerMusicSockets = (io: Server): void => {
 
     socket.on('join', async (data: any) => {
       role = data.role;
+      // Игру грузим ровно один раз: игрок — по коду, экран/ведущий — по gameId.
+      let game = null;
       if (role === 'player') {
-        const game = await Game.findOne({ code: (data.code || '').toUpperCase(), kind: 'guess_song' });
+        game = await Game.findOne({ code: (data.code || '').toUpperCase(), kind: 'guess_song' });
         if (!game) { socket.emit('error-msg', { message: 'Игра не найдена по коду.' }); return; }
         gameId = String(game._id);
       } else {
         gameId = data.gameId;
+        game = gameId ? await Game.findById(gameId) : null;
       }
 
-      const game = gameId ? await Game.findById(gameId) : null;
       if (!gameId || !game || game.kind !== 'guess_song') {
         socket.emit('error-msg', { message: 'Игра не найдена.' });
         return;
       }
 
       // admin-роль требует прав модератора
-      if (role === 'admin' && !(await verifyAdmin(socket, gameId))) {
+      if (role === 'admin' && !verifyAdmin(socket, game)) {
         socket.emit('error-msg', { message: 'Нет прав ведущего.' });
         return;
       }
 
-      // Игрок: если у игры auth=required — вход только по аккаунту (имя из профиля).
+      const session = getSession(io, gameId);
+      session.setMeta(game.title, game.code || ''); // кэш меты для publicState
+      // Режим сессии следует за настройкой игры (команда требует авторизации).
+      const isTeam = game.participation === 'team';
+      session.setMode(isTeam ? 'team' : 'solo');
+
+      // Игрок: если у игры auth=required (или это командная) — вход только по аккаунту.
       let playerName: string | undefined = data.name;
-      if (role === 'player' && game.auth === 'required') {
+      let playerTeam: { teamId: string; teamName: string } | undefined;
+      if (role === 'player' && (game.auth === 'required' || isTeam)) {
         const token = socket.handshake.auth?.token;
         let payload: any = null;
         try { payload = token ? verifyToken(token) : null; } catch { payload = null; }
@@ -66,9 +76,20 @@ export const registerMusicSockets = (io: Server): void => {
         // идентификатор игрока стабильно привязан к аккаунту
         data.playerId = `u:${payload.id}`;
         playerName = user.nickname || `${user.firstName || ''} ${user.lastName || ''}`.trim() || 'Игрок';
+
+        // Командная угадайка: игрок должен состоять в команде Questix.
+        if (isTeam) {
+          const team = await Team.findOne({
+            $or: [{ captain: payload.id }, { members: payload.id }],
+          }).lean();
+          if (!team) {
+            socket.emit('error-msg', { message: 'Чтобы играть в командном режиме, вступите в команду Questix.' });
+            return;
+          }
+          playerTeam = { teamId: String(team._id), teamName: team.name };
+        }
       }
 
-      const session = getSession(io, gameId);
       socket.join(`g:${gameId}`);
       if (role === 'screen') {
         socket.join(`g:${gameId}:screen`);
@@ -78,10 +99,16 @@ export const registerMusicSockets = (io: Server): void => {
 
       if (role === 'player') {
         playerId = data.playerId || newPlayerId();
-        session.upsertPlayer(playerId!, playerName);
-        socket.emit('joined', { playerId, gameName: game.title, code: game.code });
+        session.upsertPlayer(playerId!, playerName, playerTeam);
+        socket.emit('joined', {
+          playerId,
+          gameName: game.title,
+          code: game.code,
+          teamId: playerTeam?.teamId || null,
+          teamName: playerTeam?.teamName || null,
+        });
       }
-      socket.emit('state', await session.publicState());
+      socket.emit('state', session.publicState());
     });
 
     socket.on('player:ready', (data: any) => {

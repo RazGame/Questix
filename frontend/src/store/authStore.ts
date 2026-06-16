@@ -12,8 +12,22 @@ interface AuthStore {
   setLoading: (loading: boolean) => void;
 }
 
+// Безопасное чтение пользователя из localStorage: порченый JSON не должен
+// ронять инициализацию приложения — чистим и стартуем разлогиненными.
+const readStoredUser = (): User | null => {
+  const raw = localStorage.getItem('user');
+  if (!raw) return null;
+  try {
+    return JSON.parse(raw) as User;
+  } catch {
+    localStorage.removeItem('user');
+    localStorage.removeItem('token');
+    return null;
+  }
+};
+
 export const useAuthStore = create<AuthStore>((set) => ({
-  user: localStorage.getItem('user') ? JSON.parse(localStorage.getItem('user')!) : null,
+  user: readStoredUser(),
   token: localStorage.getItem('token'),
   isLoading: false,
   error: null,

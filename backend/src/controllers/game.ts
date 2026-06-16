@@ -251,6 +251,7 @@ export const deleteGame = async (
 
     await Task.deleteMany({ gameId: req.params.id });
     await GameTeamProgress.deleteMany({ gameId: req.params.id });
+    await TeamLog.deleteMany({ game: req.params.id });
     await GameAppl.deleteMany({ gameId: req.params.id });
     await User.updateMany(
       { gameAppls: { $in: applIds } },

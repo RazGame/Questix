@@ -7,6 +7,7 @@ import { Song } from '../models/Song';
 import { AuthenticatedRequest } from '../middleware/auth';
 import { isGameModerator } from '../services/gamePermissions';
 import { generateJoinCode } from '../services/musicStore';
+import { dropSession } from '../services/musicSession';
 import { lanIp, webBase } from '../services/net';
 import { runTool, spotiflacVersion, spotiflacUpdate } from '../services/python';
 import { notifyAdminSongUpdated } from '../sockets/ioRef';
@@ -72,10 +73,11 @@ export const createMusicGame = async (
   res: Response
 ): Promise<void> => {
   const baseTitle = normalizeMusicGameTitle(req.body?.title);
-  // Угадайка: вход по аккаунту (required) или по имени/коду (open, дефолт).
-  // participation пока фиксируем solo — командный режим следующим этапом.
-  const auth = req.body?.auth === 'required' ? 'required' : 'open';
-  const participation = 'solo';
+  // Угадайка: одиночная или командная. Командная всегда требует авторизации
+  // (счёт и баззер привязаны к командам Questix, а команда — к аккаунтам).
+  const participation = req.body?.participation === 'team' ? 'team' : 'solo';
+  const auth =
+    participation === 'team' ? 'required' : req.body?.auth === 'required' ? 'required' : 'open';
 
   try {
     for (let attempt = 0; attempt < 20; attempt += 1) {
@@ -155,10 +157,14 @@ export const updateMusicGame = async (
     const game = await loadModerableGame(req, res);
     if (!game) return;
     if (typeof req.body?.title === 'string') game.title = req.body.title.trim();
-    // Режим входа угадайки можно менять; participation пока только solo.
+    // Можно менять состав (solo/team) и вход. Командная всегда auth=required.
+    if (req.body?.participation === 'solo' || req.body?.participation === 'team') {
+      game.participation = req.body.participation;
+    }
     if (req.body?.auth === 'open' || req.body?.auth === 'required') {
       game.auth = req.body.auth;
     }
+    if (game.participation === 'team') game.auth = 'required';
     await game.save();
     res.status(200).json({ game });
   } catch (error) {
@@ -202,6 +208,7 @@ export const deleteMusicGame = async (
     if (!game) return;
     await Song.deleteMany({ gameId: game._id });
     await game.deleteOne();
+    dropSession(String(game._id)); // снять realtime-сессию из памяти
     res.status(200).json({ ok: true });
   } catch (error) {
     console.error('Ошибка удаления музыкальной игры:', error);

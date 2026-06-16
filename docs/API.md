@@ -344,12 +344,15 @@ Admin only. Назначает порядок заданий для команд
 
 ## Music («Угадай мелодию»)
 
-Все `/music/*` REST-маршруты - для администратора или организатора. Игроки и экран
-взаимодействуют через **Socket.IO** (не REST) и не требуют регистрации.
+Все `/music/*` REST-маршруты (кроме `GET /music/public/:code`) - для администратора
+или организатора. Игроки и экран взаимодействуют через **Socket.IO** (не REST).
+В одиночной игре с `auth=open` игроки входят без регистрации (по имени/коду); при
+`auth=required` и в командном режиме - по аккаунту (JWT в `handshake.auth.token`).
 
 REST (управление, под auth + organizer):
 
-- `GET /music/games`, `POST /music/games`, `GET|PATCH|DELETE /music/games/:id` - игры (создание ставит `kind=guess_song`, `format=offline`, генерит `code`).
+- `GET /music/games`, `POST /music/games`, `GET|PATCH|DELETE /music/games/:id` - игры (создание ставит `kind=guess_song`, `format=offline`, генерит `code`). `POST`/`PATCH` принимают `participation` (`solo`/`team`) и `auth` (`open`/`required`); командная игра форсит `auth=required`.
+- `GET /music/public/:code` - публичная мета по коду (без auth): `{ title, auth, participation }` - страница игрока выбирает вход (логин vs имя).
 - `POST|PATCH|DELETE /music/games/:id/blocks[/:blockId]` - блоки песен.
 - `POST|PATCH|DELETE /music/games/:id/songs[/:songId]` - песни.
 - `POST /music/games/:id/songs/:songId/upload` - ручная загрузка аудиофайла (raw body, `?ext=`).
@@ -360,10 +363,10 @@ REST (управление, под auth + organizer):
 
 Socket.IO события:
 
-- игрок: `join {role:'player', code, name, playerId}`, `player:ready`, `player:buzz`, `player:rename`;
+- игрок: `join {role:'player', code, name, playerId}` (в командной/авторизованной игре имя берётся из профиля, токен — в `handshake.auth.token`), `player:ready`, `player:buzz`, `player:rename`;
 - экран: `join {role:'screen', gameId}` (получает команды `cmd`: play/pause/resume/fadeAndStop/stop);
 - ведущий (JWT в `handshake.auth.token`): `join {role:'admin', gameId}`, `admin:start|correct|wrong|skip|reset`;
-- сервер шлёт `state` (публичное состояние), `joined`, `song-updated`, `error-msg`.
+- сервер шлёт `state` (публичное состояние; в командном режиме `mode='team'`, `teams[]`, `buzzed.by`), `joined` (с `teamId`/`teamName`), `song-updated`, `error-msg`.
 
 Аудиофайлы раздаются из `/media/<file>`. Каталог квестов `/games` игры `guess_song` не возвращает.
 

@@ -32,7 +32,7 @@ backend/src/
 - `Game` - игра. Поле `kind` (`quest` | `guess_song`) и `format` (`online` | `offline`). Для квеста: даты начала/окончания, приз, депозит, заявки, `published`, `taskOrderMode` (linear/random/manual), `createdBy` и `organizers` (соорганизаторы). Для «Угадай мелодию»: `code` (код входа) и `blocks` (блоки песен); квест-поля при `kind==='guess_song'` необязательны.
 - `Song` - песня игры «Угадай мелодию»: название/исполнитель/обложка, `startSec` (таймкод старта), `sourceUrl`, `file`, `status` (pending/downloading/ready/error). Отдельная коллекция (атомарное обновление статуса фоновой загрузки).
 - `GameAppl` - заявка на квест. Командный квест: подаётся капитаном, хранит ссылку на `Team`. Одиночный квест (`participation: 'solo'`): подаётся игроком, без `team` (teamName = ник). Также хранит индивидуальное время старта (`startAt`, линейный режим) и ручной порядок заданий (`taskOrder`, режим manual).
-- Оси игры: `participation` (`solo`/`team`) и `auth` (`required`/`open`). Квест на сервере всегда `auth: required`. `GameTeamProgress.teamId` и `TeamLog.team` опциональны (null для одиночного квеста — прогресс/логи привязаны к `userId`).
+- Оси игры: `participation` (`solo`/`team`) и `auth` (`required`/`open`). Квест на сервере всегда `auth: required`. Командная «Угадай мелодия» (`participation: 'team'`) также форсит `auth: required` (счёт/баззер привязаны к командам Questix, а команда — к аккаунтам); одиночная угадайка может быть с авторизацией или по имени. `GameTeamProgress.teamId` и `TeamLog.team` опциональны (null для одиночного квеста — прогресс/логи привязаны к `userId`).
 - `Task` - задание квеста, ответы, подсказки, лимит времени. Очков нет - победитель определяется по времени.
 - `GameTeamProgress` - прохождение квеста командой: привязано к заявке (`gameApplId`) и команде (`teamId`); каждая попытка ответа в `completedTasks` хранит `submittedBy` - кто из участников её отправил; `timeAdjustments` - штрафы и бонусы организаторов (входят в итоговое время).
 - `TeamLog` - лог действий команды во время игры: старт, каждый ответ (кто, текст, верный/неверный, время), переходы между заданиями, финиш.
@@ -128,8 +128,8 @@ Backend применяет эти правила через `backend/src/service
 
 Оффлайн-мультиплеер на Socket.IO поверх того же Express-бэкенда и Mongo:
 
-- **Стейт-машина** `backend/src/services/musicSession.ts` (in-memory, по `gameId`): фазы `lobby → playing → buzzed → reveal → finished`. Счёт эфемерный, в Mongo не пишется - хот-путь баззера остаётся быстрым.
-- **Сокеты** `backend/src/sockets/music.ts`: игрок входит анонимно по коду, экран - по `gameId`; команды ведущего (`admin:*`) проверяют JWT и право модерации. `transports: ['websocket']` - без polling-апгрейда.
+- **Стейт-машина** `backend/src/services/musicSession.ts` (in-memory, по `gameId`): фазы `lobby → playing → buzzed → reveal → finished`. Счёт эфемерный, в Mongo не пишется - хот-путь баззера остаётся быстрым (стейт привязан к процессу: один инстанс backend, при рестарте сессия теряется - осознанный компромисс для оффлайн-сценария). Мета игры (`gameName`/`code`) кэшируется в сессии при входе (`setMeta`), `publicState()` синхронный - без запроса в БД на каждый `broadcast`. Реестр сессий чистится: `dropSession` при удалении игры + периодический свип простаивающих (нет подключённых, фаза lobby/finished, тишина >30 мин). Поле `mode` (`solo`/`team`): группировка баззера, блокировки и счёта по ключу `groupId()` - команда (team) или сам игрок (solo). В команде очки и блокировка раунда общие на всю команду; `publicState` отдаёт `teams[]` (сводка по командам) и `buzzed.by` (кто именно нажал).
+- **Сокеты** `backend/src/sockets/music.ts`: при `auth==='open'` игрок входит анонимно по коду; при `auth==='required'` (или командном режиме) - по JWT (имя из профиля). В командной игре (`participation==='team'`) сервер находит `Team` игрока (капитан или участник) и привязывает к ней; без команды вход отклоняется. Экран входит по `gameId`; команды ведущего (`admin:*`) проверяют JWT и право модерации. `transports: ['websocket']` - без polling-апгрейда.
 - **REST** `backend/src/controllers/music.ts` (`/music/*`): CRUD игр/блоков/песен, поиск и загрузка через SpotiFLAC, ручной аплоад, QR/LAN-IP, версия/обновление SpotiFLAC. Аудио раздаётся из `/media` (Docker-том `media_data`).
 - **SpotiFLAC** изолирован за `backend/src/services/python.ts` + `backend/tools/` (зафиксированная версия в `requirements.txt`, обновление кнопкой `/music/spotiflac/update`). Backend-образ - Debian-slim с python3.
 - **Фронт**: `MusicAdmin` (`/admin/music`, ведущий), `MusicScreen` (`/m/screen/:gameId`, проектор, Web Audio + эквалайзер, публичный), `MusicPlay` (`/m/play?code=`, телефон-баззер, публичный). Аудио держится в `useRef` вне React-рендера, баззер на `onPointerDown`.
@@ -138,7 +138,9 @@ Backend применяет эти правила через `backend/src/service
 ## Безопасность
 
 - Пароль хешируется bcryptjs на backend.
-- JWT хранит `id`, `username`, `roles`.
+- JWT хранит `id`, `username`, `roles`. **Роли кэшируются в токене (срок `JWT_EXPIRE`, по умолчанию 7д):** выдача/снятие роли (например соорганизатор) применяется к запросам пользователя только после релогина — осознанный компромисс ради скорости (не ходим в БД за ролями на каждый запрос). Права на конкретную игру при этом проверяются по факту (`isGameModerator` сверяет `id` со списком `organizers`/`createdBy` в БД).
+- `JWT_SECRET` обязателен в production — backend падает на старте, если не задан (в dev — небезопасный дефолт). Хранить в `.env`, не в репозитории.
+- На `/auth/login` и `/auth/signup` включён rate-limit (`express-rate-limit`, 10/IP): в dev отключён, в production лимитирует только публичные адреса — локалхост и приватные сети (игроки в LAN, e2e, docker-gateway) не троттлятся, что соответствует оффлайн-LAN модели приложения.
+- Протухший токен: фронтовый axios-интерсептор на 401 чистит сессию и уводит на `/login`.
 - Ответы заданий не отправляются в endpoint текущего задания.
 - `hashed_pwd` не возвращается из user endpoints.
-- Секреты должны храниться в `.env`, не в репозитории.

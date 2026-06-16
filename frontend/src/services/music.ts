@@ -34,15 +34,22 @@ export const musicService = {
     const res = await api.get('/music/games');
     return res.data;
   },
-  create: async (title?: string, auth?: 'open' | 'required'): Promise<MusicGame> => {
-    const res = await api.post('/music/games', { title, auth });
+  create: async (
+    title?: string,
+    auth?: 'open' | 'required',
+    participation?: 'solo' | 'team'
+  ): Promise<MusicGame> => {
+    const res = await api.post('/music/games', { title, auth, participation });
     return res.data.game;
   },
   get: async (id: string): Promise<MusicGameFull> => {
     const res = await api.get(`/music/games/${id}`);
     return res.data;
   },
-  update: async (id: string, patch: { title?: string; auth?: 'open' | 'required' }): Promise<MusicGame> => {
+  update: async (
+    id: string,
+    patch: { title?: string; auth?: 'open' | 'required'; participation?: 'solo' | 'team' }
+  ): Promise<MusicGame> => {
     const res = await api.patch(`/music/games/${id}`, patch);
     return res.data.game;
   },

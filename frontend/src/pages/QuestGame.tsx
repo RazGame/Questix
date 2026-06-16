@@ -20,30 +20,55 @@ export default function QuestGame() {
   }>({ type: null, message: '' });
   const [isLoading, setIsLoading] = useState(true);
   const [gameStarted, setGameStarted] = useState(false);
-  const [timeElapsed, setTimeElapsed] = useState(0);
   const [now, setNow] = useState(() => new Date());
 
   useEffect(() => {
     loadGameData();
   }, [gameId]);
 
+  // Тикаем раз в секунду — отсюда же считаем таймер задания (по серверному времени старта).
   useEffect(() => {
     const interval = setInterval(() => setNow(new Date()), 1000);
     return () => clearInterval(interval);
   }, []);
 
-  useEffect(() => {
-    if (gameStarted && currentTask?.status === 'in_progress') {
-      const interval = setInterval(() => {
-        setTimeElapsed((prev) => prev + 1);
-      }, 1000);
-      return () => clearInterval(interval);
+  // Тихий периодический рефреш задания: подтягивает подсказки, открывающиеся
+  // по времени, и синхронизирует переход (например, если ответил другой участник
+  // команды). Не сбрасывает поле ответа, пока задание не сменилось.
+  const refreshTask = async () => {
+    if (!gameApplId) return;
+    try {
+      const fresh = await progressService.getCurrentTask(gameApplId);
+      setCurrentTask((prev) => {
+        if (prev?.task?._id && fresh?.task?._id && prev.task._id !== fresh.task._id) {
+          setAnswer('');
+        }
+        return fresh;
+      });
+    } catch {
+      /* периодический рефреш не должен показывать ошибку */
     }
-  }, [gameStarted, currentTask]);
+  };
+
+  useEffect(() => {
+    if (!gameStarted || currentTask?.status !== 'in_progress') return;
+    const interval = setInterval(refreshTask, 20000);
+    return () => clearInterval(interval);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [gameStarted, currentTask?.status, gameApplId]);
 
   const questState = game
     ? getQuestState(game.dateofstart, game.dateofend, now)
     : 'unknown';
+
+  // Время на текущем задании считаем от серверного taskStartedAt — переживает
+  // перезагрузку страницы (локальный счётчик с нуля врал бы после reload).
+  const taskStartedAt = currentTask?.task?.taskStartedAt
+    ? new Date(currentTask.task.taskStartedAt)
+    : null;
+  const elapsedSeconds = taskStartedAt
+    ? Math.max(0, Math.floor((now.getTime() - taskStartedAt.getTime()) / 1000))
+    : currentTask?.task?.currentTaskElapsedSeconds ?? 0;
 
   useEffect(() => {
     if (game && !gameStarted && !currentTask && questState === 'active') {
@@ -58,11 +83,8 @@ export default function QuestGame() {
       if (gameId) {
         const gameData = await gameService.getGameById(gameId);
         setGame(gameData);
-
-        // Проверить, может ли команда начать игру
-        if (getQuestState(gameData.dateofstart, gameData.dateofend) === 'active') {
-          await startGame();
-        }
+        // Старт инициируется эффектом по questState — здесь не дублируем,
+        // чтобы не было двойного вызова startGame.
       }
     } catch (err: any) {
       setFeedback({
@@ -259,7 +281,7 @@ export default function QuestGame() {
             </span>
             <span className="flex items-center gap-2 font-mono">
               <Clock size={18} className="text-violet-300" />
-              {formatTime(timeElapsed)}
+              {formatTime(elapsedSeconds)}
             </span>
           </div>
         </div>

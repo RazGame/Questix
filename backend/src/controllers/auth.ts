@@ -66,6 +66,7 @@ export const signup = async (req: any, res: Response): Promise<void> => {
       },
     });
   } catch (error) {
+    console.error('Ошибка регистрации:', error);
     res.status(500).json({ error: 'Ошибка сервера' });
   }
 };
@@ -114,6 +115,7 @@ export const login = async (req: any, res: Response): Promise<void> => {
       },
     });
   } catch (error) {
+    console.error('Ошибка входа:', error);
     res.status(500).json({ error: 'Ошибка сервера' });
   }
 };

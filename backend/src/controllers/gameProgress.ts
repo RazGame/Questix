@@ -278,6 +278,7 @@ export const getCurrentTask = async (
       task: taskWithoutAnswers,
     });
   } catch (error) {
+    console.error('Ошибка получения текущего задания:', error);
     res.status(500).json({ error: 'Ошибка сервера' });
   }
 };
@@ -439,6 +440,7 @@ export const submitAnswer = async (
       nextTask: isCorrect && progress.currentTaskIndex < progress.taskOrder.length,
     });
   } catch (error) {
+    console.error('Ошибка отправки ответа:', error);
     res.status(500).json({ error: 'Ошибка сервера' });
   }
 };
@@ -474,6 +476,7 @@ export const getProgress = async (
 
     res.status(200).json(progress);
   } catch (error) {
+    console.error('Ошибка получения прогресса:', error);
     res.status(500).json({ error: 'Ошибка сервера' });
   }
 };
@@ -508,6 +511,7 @@ export const setTeamTaskOrder = async (
       progress,
     });
   } catch (error) {
+    console.error('Ошибка установки порядка заданий:', error);
     res.status(500).json({ error: 'Ошибка сервера' });
   }
 };
@@ -583,6 +587,7 @@ export const getGameResults = async (
 
     res.status(200).json(results);
   } catch (error) {
+    console.error('Ошибка получения результатов игры:', error);
     res.status(500).json({ error: 'Ошибка сервера' });
   }
 };

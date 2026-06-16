@@ -210,6 +210,9 @@ export default function MusicHost() {
                     <p className="font-display text-4xl font-extrabold text-amber-300">
                       🔔 {live.buzzed?.name}
                     </p>
+                    {live.mode === 'team' && live.buzzed?.by && (
+                      <p className="mt-1 text-sm font-semibold text-amber-200/80">отвечает {live.buzzed.by}</p>
+                    )}
                   </div>
                   <p className="text-sm text-zinc-400 mb-6">Музыка приостановлена. Выслушайте ответ игрока и отметьте результат:</p>
                   <div className="flex flex-wrap gap-3">
@@ -269,6 +272,42 @@ export default function MusicHost() {
             </div>
           )}
 
+          {/* Таблица команд (командный режим) */}
+          {live?.mode === 'team' && (
+            <div className="glass p-6">
+              <h3 className="text-lg font-bold text-zinc-100 flex items-center gap-2 mb-4">
+                <Users size={18} className="text-violet-400" />
+                Команды ({live.teams?.length || 0})
+              </h3>
+              {live.teams && live.teams.length > 0 ? (
+                <div className="grid gap-2">
+                  {[...live.teams].sort((a, b) => b.score - a.score).map((t, index) => (
+                    <div
+                      key={t.id}
+                      className={`flex items-center justify-between rounded-lg px-4 py-3 bg-white/[0.02] border border-white/5 ${
+                        t.locked ? 'opacity-60' : ''
+                      } ${t.ready > 0 ? 'ring-1 ring-emerald-400/30 bg-emerald-500/[0.01]' : ''}`}
+                    >
+                      <div className="flex items-center gap-3">
+                        <span className="w-5 text-sm font-bold text-zinc-500">#{index + 1}</span>
+                        <span className="font-semibold text-zinc-100">👥 {t.name}</span>
+                        <span className="text-[11px] text-zinc-500">в сети {t.online}{t.ready > 0 ? ` · готовы ${t.ready}` : ''}</span>
+                        {t.locked && (
+                          <span className="text-[10px] text-rose-300 uppercase tracking-wider bg-rose-500/10 px-1.5 py-0.5 rounded">
+                            заблокирована
+                          </span>
+                        )}
+                      </div>
+                      <span className="font-bold text-lg text-violet-300">{t.score} очков</span>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-zinc-500 text-sm text-center py-6">Пока ни одна команда не подключилась.</p>
+              )}
+            </div>
+          )}
+
           {/* Таблица игроков */}
           <div className="glass p-6">
             <h3 className="text-lg font-bold text-zinc-100 flex items-center gap-2 mb-4">
@@ -289,6 +328,11 @@ export default function MusicHost() {
                       <span className={`font-semibold ${p.connected ? 'text-zinc-100' : 'text-zinc-500'}`}>
                         {p.name}
                       </span>
+                      {live?.mode === 'team' && p.teamName && (
+                        <span className="text-[10px] text-violet-300 uppercase tracking-wider bg-violet-500/10 px-1.5 py-0.5 rounded">
+                          👥 {p.teamName}
+                        </span>
+                      )}
                       {!p.connected && (
                         <span className="text-[10px] text-zinc-500 uppercase tracking-wider bg-white/5 px-1.5 py-0.5 rounded">
                           оффлайн
@@ -306,7 +350,9 @@ export default function MusicHost() {
                           готов
                         </span>
                       )}
-                      <span className="font-bold text-lg text-violet-300">{p.score} очков</span>
+                      {live?.mode !== 'team' && (
+                        <span className="font-bold text-lg text-violet-300">{p.score} очков</span>
+                      )}
                     </div>
                   </div>
                 ))}
