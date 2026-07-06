@@ -138,6 +138,9 @@ export const registerMusicSockets = (io: Server): void => {
       'admin:correct': (s) => s.correct(),
       'admin:wrong': (s) => s.wrong(),
       'admin:skip': (s) => s.skip(),
+      'admin:pause': (s) => s.pause(),
+      'admin:resume': (s) => s.resume(),
+      'admin:continue': (s) => s.continueNow(),
       'admin:reset': (s) => s.reset(),
     };
     for (const [evt, fn] of Object.entries(adminActions)) {

@@ -1,7 +1,7 @@
 import { useEffect, useState, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Plus, Play, Trash2, Upload, RefreshCw, Search, RotateCw, Scissors, Link } from 'lucide-react';
-import { musicService, MusicGameFull, SongSearchResult } from '../services/music';
+import { Plus, Play, Trash2, Upload, Search, RotateCw, Scissors, Link, ChevronUp, ChevronDown } from 'lucide-react';
+import { musicCoverSrc, musicService, MusicGameFull, SongSearchResult } from '../services/music';
 import { createSocket } from '../services/socket';
 import { MusicGame, Song } from '../types';
 import MusicSegmentModal from './MusicSegmentModal';
@@ -29,11 +29,24 @@ const apiErrorMessage = (error: any, fallback: string) =>
   error?.message ||
   fallback;
 
+// Прогресс фоновой загрузки песни (событие song-progress с бэкенда).
+interface SongProgress {
+  bytes: number;
+  percent: number | null; // оценка по длительности трека; null — неизвестно
+}
+
+const fmtMb = (bytes: number) => `${(bytes / 1048576).toFixed(1)} МБ`;
+
 interface BlockItemProps {
   block: { _id: string; name: string; songIds: string[] };
   gameId: string;
+  isFirst: boolean;
+  isLast: boolean;
+  dlProgress: Record<string, SongProgress>;
   songById: (id: string) => Song | undefined;
   renameBlock: (blockId: string, name: string) => Promise<void>;
+  moveBlock: (blockId: string, dir: -1 | 1) => void;
+  moveSong: (blockId: string, songId: string, dir: -1 | 1) => void;
   addOwnFile: (blockId: string) => void;
   removeBlock: (blockId: string) => void;
   removeSong: (songId: string) => void;
@@ -47,8 +60,13 @@ interface BlockItemProps {
 function BlockItem({
   block,
   gameId,
+  isFirst,
+  isLast,
+  dlProgress,
   songById,
   renameBlock,
+  moveBlock,
+  moveSong,
   addOwnFile,
   removeBlock,
   removeSong,
@@ -112,6 +130,24 @@ function BlockItem({
   return (
     <div className="rounded-lg border border-white/10 p-3 bg-white/[0.01] hover:border-white/20 transition-all duration-300">
       <div className="flex items-center gap-2 mb-3">
+        <div className="flex flex-col">
+          <button
+            onClick={() => moveBlock(block._id, -1)}
+            disabled={isFirst}
+            className="text-zinc-500 hover:text-white disabled:opacity-20 disabled:cursor-default p-0.5"
+            title="Блок выше"
+          >
+            <ChevronUp size={14} />
+          </button>
+          <button
+            onClick={() => moveBlock(block._id, 1)}
+            disabled={isLast}
+            className="text-zinc-500 hover:text-white disabled:opacity-20 disabled:cursor-default p-0.5"
+            title="Блок ниже"
+          >
+            <ChevronDown size={14} />
+          </button>
+        </div>
         <input
           defaultValue={block.name}
           onBlur={(e) => renameBlock(block._id, e.target.value)}
@@ -168,7 +204,7 @@ function BlockItem({
               </div>
               {results.map((r, i) => (
                 <div key={i} className="flex items-center gap-3 rounded bg-white/[0.01] hover:bg-white/[0.04] p-1.5 transition text-left">
-                  {r.cover && <img src={r.cover} alt="" className="w-8 h-8 rounded" />}
+                  {r.cover && <img src={musicCoverSrc(r.cover)} alt="" className="w-8 h-8 rounded" />}
                   <div className="min-w-0 flex-1">
                     <div className="truncate text-xs font-semibold">{r.title}</div>
                     <div className="truncate text-[10px] text-zinc-400">{r.artist} · {fmtTime(r.duration || 0)}</div>
@@ -233,7 +269,7 @@ function BlockItem({
             Нет песен в этом блоке. Воспользуйтесь кнопкой поиска выше, чтобы добавить треки.
           </p>
         )}
-        {block.songIds.map((sid) => {
+        {block.songIds.map((sid, songIdx) => {
           const s = songById(sid);
           if (!s) return null;
           const seg = s.endSec
@@ -242,7 +278,25 @@ function BlockItem({
           return (
             <div key={s._id} className="rounded-lg bg-white/[0.02] hover:bg-white/[0.04] border border-white/5 p-2 transition duration-200">
               <div className="flex items-center gap-3">
-                {s.cover && <img src={s.cover} alt="" className="w-9 h-9 rounded shadow" />}
+                <div className="flex flex-col -my-1">
+                  <button
+                    onClick={() => moveSong(block._id, s._id, -1)}
+                    disabled={songIdx === 0}
+                    className="text-zinc-500 hover:text-white disabled:opacity-20 disabled:cursor-default p-0.5"
+                    title="Выше"
+                  >
+                    <ChevronUp size={13} />
+                  </button>
+                  <button
+                    onClick={() => moveSong(block._id, s._id, 1)}
+                    disabled={songIdx === block.songIds.length - 1}
+                    className="text-zinc-500 hover:text-white disabled:opacity-20 disabled:cursor-default p-0.5"
+                    title="Ниже"
+                  >
+                    <ChevronDown size={13} />
+                  </button>
+                </div>
+                {s.cover && <img src={musicCoverSrc(s.cover)} alt="" className="w-9 h-9 rounded shadow" />}
                 <div className="min-w-0 flex-1 text-left">
                   <div className="truncate text-sm font-semibold">{s.title}</div>
                   <div className="truncate text-xs text-zinc-400">{s.artist}</div>
@@ -283,9 +337,30 @@ function BlockItem({
                   <Trash2 size={15} />
                 </button>
               </div>
-              {s.status === 'downloading' && (
-                <div className="qgs-loading-track mt-2 h-1.5 w-full rounded-full bg-white/10 overflow-hidden" />
-              )}
+              {s.status === 'downloading' && (() => {
+                const p = dlProgress[s._id];
+                // Есть оценка процента — детерминированная полоса, иначе бегущая.
+                return p && p.percent != null ? (
+                  <div className="mt-2">
+                    <div className="h-1.5 w-full rounded-full bg-white/10 overflow-hidden">
+                      <div
+                        className="h-full rounded-full bg-gradient-to-r from-violet-500 to-fuchsia-500 transition-all duration-700"
+                        style={{ width: `${Math.max(3, p.percent)}%` }}
+                      />
+                    </div>
+                    <p className="mt-1 text-right text-[10px] text-zinc-500">
+                      {fmtMb(p.bytes)} · ~{p.percent}%
+                    </p>
+                  </div>
+                ) : (
+                  <div className="mt-2">
+                    <div className="qgs-loading-track h-1.5 w-full rounded-full bg-white/10 overflow-hidden" />
+                    {p && p.bytes > 0 && (
+                      <p className="mt-1 text-right text-[10px] text-zinc-500">{fmtMb(p.bytes)}</p>
+                    )}
+                  </div>
+                );
+              })()}
             </div>
           );
         })}
@@ -302,6 +377,7 @@ export default function MusicAdmin({ isTab = false }: { isTab?: boolean }) {
   const [notice, setNotice] = useState('');
   const [spotiVersion, setSpotiVersion] = useState<string | null>(null);
   const [segmentSong, setSegmentSong] = useState<Song | null>(null); // открытая модалка отрезка
+  const [dlProgress, setDlProgress] = useState<Record<string, SongProgress>>({});
 
   const loadGames = useCallback(async (throwOnError = false) => {
     try {
@@ -332,6 +408,18 @@ export default function MusicAdmin({ isTab = false }: { isTab?: boolean }) {
         };
       });
       setSegmentSong((prev) => (prev?._id === song._id ? song : prev));
+      // Загрузка завершилась (ready/error) — прогресс больше не актуален.
+      if (song.status !== 'downloading') {
+        setDlProgress((prev) => {
+          if (!(song._id in prev)) return prev;
+          const next = { ...prev };
+          delete next[song._id];
+          return next;
+        });
+      }
+    });
+    socket.on('song-progress', (p: { songId: string } & SongProgress) => {
+      setDlProgress((prev) => ({ ...prev, [p.songId]: { bytes: p.bytes, percent: p.percent } }));
     });
     socket.on('error-msg', ({ message }: { message?: string }) => {
       if (message) setError(message);
@@ -448,7 +536,7 @@ export default function MusicAdmin({ isTab = false }: { isTab?: boolean }) {
   const renameBlock = async (blockId: string, name: string) => {
     if (!current) return;
     try {
-      await musicService.updateBlock(current.game._id, blockId, name);
+      await musicService.updateBlock(current.game._id, blockId, { name });
       setError('');
     } catch (e: any) {
       const message = apiErrorMessage(e, 'Ошибка переименования блока');
@@ -458,6 +546,48 @@ export default function MusicAdmin({ isTab = false }: { isTab?: boolean }) {
       } catch {
         setError(message);
       }
+    }
+  };
+  // Перемещение блока вверх/вниз: оптимистично локально, затем сервер.
+  const moveBlock = async (blockId: string, dir: -1 | 1) => {
+    if (!current) return;
+    const blocks = [...current.game.blocks];
+    const i = blocks.findIndex((b) => b._id === blockId);
+    const j = i + dir;
+    if (i < 0 || j < 0 || j >= blocks.length) return;
+    [blocks[i], blocks[j]] = [blocks[j], blocks[i]];
+    setCurrent({ ...current, game: { ...current.game, blocks } });
+    try {
+      await musicService.update(current.game._id, { blockOrder: blocks.map((b) => b._id) });
+      setError('');
+    } catch (e: any) {
+      setError(apiErrorMessage(e, 'Ошибка перемещения блока'));
+      try { await refreshCurrent(); } catch { /* сообщение уже показано */ }
+    }
+  };
+  // Перемещение песни внутри блока вверх/вниз.
+  const moveSong = async (blockId: string, songId: string, dir: -1 | 1) => {
+    if (!current) return;
+    const block = current.game.blocks.find((b) => b._id === blockId);
+    if (!block) return;
+    const ids = [...block.songIds];
+    const i = ids.indexOf(songId);
+    const j = i + dir;
+    if (i < 0 || j < 0 || j >= ids.length) return;
+    [ids[i], ids[j]] = [ids[j], ids[i]];
+    setCurrent({
+      ...current,
+      game: {
+        ...current.game,
+        blocks: current.game.blocks.map((b) => (b._id === blockId ? { ...b, songIds: ids } : b)),
+      },
+    });
+    try {
+      await musicService.updateBlock(current.game._id, blockId, { songIds: ids });
+      setError('');
+    } catch (e: any) {
+      setError(apiErrorMessage(e, 'Ошибка перемещения песни'));
+      try { await refreshCurrent(); } catch { /* сообщение уже показано */ }
     }
   };
   const removeBlock = async (blockId: string) => {
@@ -522,20 +652,6 @@ export default function MusicAdmin({ isTab = false }: { isTab?: boolean }) {
     inp.click();
   };
 
-
-
-  const updateSpotiflac = async () => {
-    setSpotiVersion('обновление…');
-    try {
-      setSpotiVersion((await musicService.spotiflacUpdate()).version);
-      setError('');
-      setNotice('');
-    } catch (e: any) {
-      setError(apiErrorMessage(e, 'Не удалось обновить SpotiFLAC'));
-      setSpotiVersion(null);
-    }
-  };
-
   const songById = (id: string) => current?.songs.find((s) => s._id === id);
 
   const content = (
@@ -543,18 +659,9 @@ export default function MusicAdmin({ isTab = false }: { isTab?: boolean }) {
       {!isTab && <p className="tech-label mb-2">[ угадай мелодию ]</p>}
       <div className="flex flex-wrap items-center justify-between gap-3 mb-6">
         <h2 className="text-2xl font-bold">{isTab ? 'Музыкальные игры' : 'Музыкальные игры'}</h2>
-        <div className="flex items-center gap-3">
-          <span className="text-xs text-zinc-500">
-            SpotiFLAC: {spotiVersion || '—'}
-          </span>
-          <button
-            onClick={updateSpotiflac}
-            className="flex items-center gap-1 rounded-lg border border-white/10 bg-white/5 px-3 py-1.5 text-sm text-zinc-200 hover:bg-white/10"
-            title="Обновить SpotiFLAC до новой версии"
-          >
-            <RefreshCw size={15} /> Обновить
-          </button>
-        </div>
+        <span className="text-xs text-zinc-500">
+          SpotiFLAC: {spotiVersion || '—'}
+        </span>
       </div>
 
       {error && (
@@ -690,13 +797,18 @@ export default function MusicAdmin({ isTab = false }: { isTab?: boolean }) {
                   </button>
                 </div>
                 <div className="space-y-5">
-                  {current.game.blocks.map((b) => (
+                  {current.game.blocks.map((b, blockIdx) => (
                     <BlockItem
                       key={b._id}
                       block={b}
                       gameId={current.game._id}
+                      isFirst={blockIdx === 0}
+                      isLast={blockIdx === current.game.blocks.length - 1}
+                      dlProgress={dlProgress}
                       songById={songById}
                       renameBlock={renameBlock}
+                      moveBlock={moveBlock}
+                      moveSong={moveSong}
                       addOwnFile={addOwnFile}
                       removeBlock={removeBlock}
                       removeSong={removeSong}

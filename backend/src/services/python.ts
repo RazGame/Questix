@@ -24,12 +24,16 @@ export const runTool = (scriptName: string, args: string[]): Promise<ToolResult>
     child.stderr.on('data', (d) => { err += d.toString('utf8'); });
     child.on('error', (e) => resolve({ ok: false, error: `python: ${e.message}` }));
     child.on('close', () => {
-      const line = out.trim().split('\n').filter(Boolean).pop() || '';
-      try {
-        resolve(JSON.parse(line));
-      } catch {
-        resolve({ ok: false, error: err.trim() || out.trim() || 'нет вывода от python' });
+      const lines = out.trim().split('\n').filter(Boolean).reverse();
+      for (const line of lines) {
+        try {
+          resolve(JSON.parse(line));
+          return;
+        } catch {
+          // SpotiFLAC может печатать диагностические строки рядом с JSON.
+        }
       }
+      resolve({ ok: false, error: err.trim() || out.trim() || 'нет вывода от python' });
     });
   });
 };
@@ -46,14 +50,3 @@ export const spotiflacVersion = (): Promise<string | null> =>
     child.on('close', () => resolve(out.trim() || null));
   });
 
-// Обновить SpotiFLAC до последней версии (pip install -U).
-export const spotiflacUpdate = (): Promise<{ ok: boolean; error?: string }> =>
-  new Promise((resolve) => {
-    const child = spawn(PY, ['-m', 'pip', 'install', '-U', 'SpotiFLAC'], { windowsHide: true });
-    let err = '';
-    child.stderr.on('data', (d) => { err += d.toString('utf8'); });
-    child.on('error', (e) => resolve({ ok: false, error: e.message }));
-    child.on('close', (code) =>
-      resolve(code === 0 ? { ok: true } : { ok: false, error: err.trim() || `pip exited ${code}` })
-    );
-  });

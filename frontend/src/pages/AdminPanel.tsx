@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { gameService } from '../services/games';
 import { applService } from '../services/appls';
 import { progressService } from '../services/progress';
@@ -69,6 +69,11 @@ type UserColumnFilters = {
   role: string;
 };
 
+type MainTab = 'games' | 'music' | 'users';
+
+const mainTabFromValue = (value: unknown): MainTab | null =>
+  value === 'games' || value === 'music' || value === 'users' ? value : null;
+
 const toDateTimeLocalValue = (value?: string) => {
   if (!value) return '';
   const date = new Date(value);
@@ -88,6 +93,7 @@ const gameSortWeight = (game: Game) => {
 
 export default function AdminPanel() {
   const navigate = useNavigate();
+  const location = useLocation();
   const { user } = useAuthStore();
   const [games, setGames] = useState<Game[]>([]);
   const [selectedGame, setSelectedGame] = useState<string | null>(null);
@@ -97,7 +103,11 @@ export default function AdminPanel() {
   const [error, setError] = useState('');
   const [showCreateForm, setShowCreateForm] = useState(false);
   const [activeTab, setActiveTab] = useState<'details' | 'appls' | 'results' | 'organizers'>('details');
-  const [mainTab, setMainTab] = useState<'games' | 'music' | 'users'>('games');
+  const [mainTab, setMainTab] = useState<MainTab>(() => {
+    const params = new URLSearchParams(location.search);
+    const stateTab = mainTabFromValue((location.state as { tab?: unknown } | null)?.tab);
+    return stateTab || mainTabFromValue(params.get('tab')) || 'games';
+  });
   const [users, setUsers] = useState<AdminUser[]>([]);
   const [usersLoaded, setUsersLoaded] = useState(false);
   const [userSearch, setUserSearch] = useState('');
@@ -118,6 +128,43 @@ export default function AdminPanel() {
   const [adjustDrafts, setAdjustDrafts] = useState<Record<string, { minutes: string; reason: string }>>({});
 
   const isAdmin = !!user?.roles?.includes('admin');
+
+  const openMainTab = (tab: MainTab, replace = false) => {
+    const safeTab = tab === 'users' && !isAdmin ? 'games' : tab;
+    setMainTab(safeTab);
+
+    const params = new URLSearchParams(location.search);
+    if (safeTab === 'games') {
+      params.delete('tab');
+    } else {
+      params.set('tab', safeTab);
+    }
+    const search = params.toString();
+    navigate({ pathname: '/admin', search: search ? `?${search}` : '' }, { replace });
+  };
+
+  useEffect(() => {
+    const params = new URLSearchParams(location.search);
+    const stateTab = mainTabFromValue((location.state as { tab?: unknown } | null)?.tab);
+    const urlTab = mainTabFromValue(params.get('tab'));
+    const nextTab = stateTab || urlTab || 'games';
+    const safeTab = nextTab === 'users' && !isAdmin ? 'games' : nextTab;
+
+    if (mainTab !== safeTab) {
+      setMainTab(safeTab);
+    }
+
+    if (stateTab || nextTab !== safeTab) {
+      const nextParams = new URLSearchParams(location.search);
+      if (safeTab === 'games') {
+        nextParams.delete('tab');
+      } else {
+        nextParams.set('tab', safeTab);
+      }
+      const search = nextParams.toString();
+      navigate({ pathname: '/admin', search: search ? `?${search}` : '' }, { replace: true, state: null });
+    }
+  }, [isAdmin, location.search, location.state]);
 
   // Организатор видит только свои игры (созданные им или где он соорганизатор)
   const canModerate = (game: Game): boolean =>
@@ -245,6 +292,12 @@ export default function AdminPanel() {
   useEffect(() => {
     loadGames();
   }, []);
+
+  useEffect(() => {
+    if (mainTab === 'users' && isAdmin && !usersLoaded) {
+      loadUsers();
+    }
+  }, [mainTab, isAdmin, usersLoaded]);
 
   useEffect(() => {
     if (selectedGame) {
@@ -417,7 +470,7 @@ export default function AdminPanel() {
   };
 
   const handleOpenUsersTab = () => {
-    setMainTab('users');
+    openMainTab('users');
     if (!usersLoaded) {
       loadUsers();
     }
@@ -561,7 +614,7 @@ export default function AdminPanel() {
 
       <div className="flex gap-2 mb-6 border-b">
         <button
-          onClick={() => setMainTab('games')}
+          onClick={() => openMainTab('games')}
           className={`px-4 py-2 font-bold border-b-2 ${
             mainTab === 'games'
               ? 'border-primary text-primary'
@@ -571,7 +624,7 @@ export default function AdminPanel() {
           Квесты
         </button>
         <button
-          onClick={() => setMainTab('music')}
+          onClick={() => openMainTab('music')}
           className={`px-4 py-2 font-bold border-b-2 ${
             mainTab === 'music'
               ? 'border-primary text-primary'

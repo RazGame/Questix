@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { Play, Volume2, Users, ListMusic, ArrowLeft, RefreshCw, AlertCircle } from 'lucide-react';
-import { musicService, MusicGameFull } from '../services/music';
+import { Play, Pause, Volume2, Users, ListMusic, ArrowLeft, RefreshCw, AlertCircle } from 'lucide-react';
+import { musicCoverSrc, musicService, MusicGameFull } from '../services/music';
 import { createSocket } from '../services/socket';
 import { MusicState } from '../types';
 
@@ -57,16 +57,16 @@ export default function MusicHost() {
 
   const goBackToEditor = () => {
     // Возвращаемся в админку, передавая стейт для открытия вкладки музыки
-    navigate('/admin', { state: { tab: 'music' } });
+    navigate('/admin?tab=music');
   };
 
   if (isLoading) {
     return <div className="text-center py-20 text-zinc-400">Инициализация пульта ведущего...</div>;
   }
 
-  const currentSongId = live?.reveal
-    ? gameData?.songs[live.currentIndex]?._id
-    : gameData?.songs[live?.currentIndex || 0]?._id;
+  // id текущей песни приходит с сервера — индекс плейлиста нельзя применять
+  // к gameData.songs (порядок в БД может отличаться от порядка блоков).
+  const currentSongId = live?.currentSongId;
   const displayRound =
     live && live.total > 0
       ? Math.min(Math.max(live.currentIndex + 1, 1), live.total)
@@ -132,12 +132,63 @@ export default function MusicHost() {
                   <Play size={18} className="text-violet-400" />
                   Управление сессией
                 </h3>
-                {live.total > 0 && (
-                  <span className="font-mono text-sm text-zinc-400 bg-white/5 px-2 py-0.5 rounded">
-                    Раунд {displayRound} из {live.total}
-                  </span>
-                )}
+                <div className="flex items-center gap-3">
+                  {live.total > 0 && (
+                    <span className="font-mono text-sm text-zinc-400 bg-white/5 px-2 py-0.5 rounded">
+                      Раунд {displayRound} из {live.total}
+                    </span>
+                  )}
+                  {/* Пауза доступна во время песни, ожидания и интро-заставок */}
+                  {['playing', 'ended', 'intro', 'blockIntro'].includes(live.phase) && (
+                    live.paused ? (
+                      <button
+                        onClick={() => emit('admin:resume')}
+                        className="flex items-center gap-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 px-4 py-1.5 text-sm font-bold text-white transition"
+                      >
+                        <Play size={14} /> Продолжить
+                      </button>
+                    ) : (
+                      <button
+                        onClick={() => emit('admin:pause')}
+                        className="flex items-center gap-1.5 rounded-lg bg-white/10 hover:bg-white/20 px-4 py-1.5 text-sm font-bold text-white transition"
+                      >
+                        <Pause size={14} /> Пауза
+                      </button>
+                    )
+                  )}
+                </div>
               </div>
+
+              {live.paused && (
+                <div className="mb-6 rounded-lg border border-amber-500/20 bg-amber-500/10 p-3 text-amber-200 flex items-center gap-2">
+                  <Pause size={16} />
+                  <span>Игра на паузе. Баззеры и таймеры остановлены — нажмите «Продолжить», чтобы вернуться в игру.</span>
+                </div>
+              )}
+
+              {(live.phase === 'intro' || live.phase === 'blockIntro') && (
+                <div className="py-2">
+                  <div className="mb-6 rounded-lg bg-violet-500/5 border border-violet-500/10 p-4">
+                    <p className="text-xs uppercase text-zinc-400 font-semibold tracking-wider mb-2">
+                      {live.phase === 'intro' ? 'Показываем блоки игры' : 'Анонс нового блока'}
+                    </p>
+                    <p className="text-lg font-bold text-zinc-100">{live.blockName || 'Без названия блока'}</p>
+                    <p className="text-sm text-zinc-400">
+                      На экране проектора {live.phase === 'intro' ? 'список всех блоков игры' : 'название нового блока'}.
+                      Песня включится автоматически, или запустите её сразу.
+                    </p>
+                  </div>
+                  <button
+                    onClick={() => emit('admin:continue')}
+                    disabled={live.paused}
+                    className={`rounded-lg px-5 py-2.5 font-bold text-white transition flex items-center gap-2 ${
+                      live.paused ? 'cursor-not-allowed bg-white/10 text-zinc-500' : 'btn-grad'
+                    }`}
+                  >
+                    ▶ Запустить песню сейчас
+                  </button>
+                </div>
+              )}
 
               {live.phase === 'lobby' && (
                 <div className="text-center py-6">
@@ -172,7 +223,10 @@ export default function MusicHost() {
                   </div>
                   <button
                     onClick={() => emit('admin:skip')}
-                    className="rounded-lg bg-amber-600 hover:bg-amber-500 px-5 py-2.5 font-bold text-white transition flex items-center gap-2"
+                    disabled={live.paused}
+                    className={`rounded-lg px-5 py-2.5 font-bold text-white transition flex items-center gap-2 ${
+                      live.paused ? 'cursor-not-allowed bg-white/10 text-zinc-500' : 'bg-amber-600 hover:bg-amber-500'
+                    }`}
                   >
                     Пропустить эту песню ⏭
                   </button>
@@ -245,7 +299,7 @@ export default function MusicHost() {
                   {live.reveal && (
                     <div className="mb-4 inline-flex items-center gap-4 bg-emerald-500/5 border border-emerald-500/20 rounded-xl p-4 text-left">
                       {live.reveal.cover && (
-                        <img src={live.reveal.cover} alt="Cover" className="w-16 h-16 rounded-lg object-cover" />
+                        <img src={musicCoverSrc(live.reveal.cover)} alt="Cover" className="w-16 h-16 rounded-lg object-cover" />
                       )}
                       <div>
                         <p className="text-xl font-bold text-emerald-300">{live.reveal.title}</p>
@@ -390,7 +444,7 @@ export default function MusicHost() {
                         }`}
                       >
                         {song.cover ? (
-                          <img src={song.cover} alt="" className="w-8 h-8 rounded object-cover" />
+                          <img src={musicCoverSrc(song.cover)} alt="" className="w-8 h-8 rounded object-cover" />
                         ) : (
                           <div className="w-8 h-8 rounded bg-white/5 flex items-center justify-center font-bold">
                             🎵

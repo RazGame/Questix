@@ -7,6 +7,7 @@ const router = Router();
 
 // Публичная мета по коду (без авторизации) — странице игрока, до общего гварда.
 router.get('/public/:code', music.getPublicMeta);
+router.get('/cover', music.proxyCover);
 
 // Все остальные маршруты управления музыкой — для администратора или организатора.
 // (Игроки/экран ходят не сюда, а в Socket.IO и в /media.)
@@ -19,9 +20,8 @@ router.get('/qr', music.getQr);
 // поиск песен (SpotiFLAC)
 router.get('/search', music.searchSongs);
 
-// SpotiFLAC версия / обновление
+// SpotiFLAC версия
 router.get('/spotiflac/version', music.getSpotiflacVersion);
-router.post('/spotiflac/update', music.updateSpotiflac);
 
 // игры
 router.get('/games', music.listMusicGames);

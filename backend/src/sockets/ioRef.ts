@@ -14,3 +14,11 @@ export const getIo = (): Server | null => io;
 export const notifyAdminSongUpdated = (gameId: string, song: unknown): void => {
   io?.to(`g:${gameId}:admin`).emit('song-updated', { song });
 };
+
+// Прогресс фоновой загрузки песни (скачанные байты + оценка процента).
+export const notifyAdminSongProgress = (
+  gameId: string,
+  progress: { songId: string; bytes: number; percent: number | null }
+): void => {
+  io?.to(`g:${gameId}:admin`).emit('song-progress', progress);
+};

@@ -119,14 +119,18 @@ export interface MusicState {
   gameId: string;
   gameName: string;
   code: string;
-  phase: 'lobby' | 'playing' | 'ended' | 'buzzed' | 'reveal' | 'finished';
+  phase: 'lobby' | 'intro' | 'blockIntro' | 'playing' | 'ended' | 'buzzed' | 'reveal' | 'finished';
   total: number;
   currentIndex: number;
   buzzed: { id: string; name: string; by?: string } | null;
   reveal: { title: string; artist: string; album: string; cover: string } | null;
   blockName: string;
+  currentSongId?: string | null; // _id текущей песни плейлиста
   blockCurrentIndex?: number;
   blockTotal?: number;
+  blocks?: string[]; // имена всех блоков (для интро-заставок)
+  paused?: boolean; // игра поставлена на паузу ведущим
+  introMs?: number | null; // остаток интро-таймера, мс
   mode?: GameParticipation; // solo | team
   teams?: MusicTeam[];
   players: MusicPlayer[];

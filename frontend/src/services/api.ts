@@ -5,7 +5,7 @@ const defaultApiUrl =
     ? `${window.location.protocol}//${window.location.hostname}:5000`
     : 'http://localhost:5000';
 
-const API_URL = import.meta.env.VITE_API_URL || defaultApiUrl;
+export const API_URL = import.meta.env.VITE_API_URL || defaultApiUrl;
 
 const api = axios.create({
   baseURL: API_URL,

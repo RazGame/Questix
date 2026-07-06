@@ -9,7 +9,7 @@
  */
 const { io } = require('socket.io-client');
 
-const BASE = 'http://localhost:5000';
+const BASE = process.env.MUSIC_TEST_BASE || 'http://localhost:5000';
 let pass = 0, fail = 0;
 const check = (name, ok) => { if (ok) { pass++; console.log('PASS:', name); } else { fail++; console.log('FAIL:', name); } };
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -122,6 +122,9 @@ async function ensureUser(nick, mail) {
   await sleep(200);
   admin.emit('admin:start');
   await sleep(400);
+  check('phase intro after start', adminState && adminState.phase === 'intro');
+  admin.emit('admin:continue'); // пропускаем интро-заставку
+  await sleep(300);
   check('phase playing', adminState && adminState.phase === 'playing');
 
   // 7. участник команды Альфа жмёт — баззер привязан к команде
@@ -148,6 +151,8 @@ async function ensureUser(nick, mail) {
   pMemB.sock.emit('player:ready', { ready: true });
   await sleep(150);
   admin.emit('admin:start');
+  await sleep(300);
+  admin.emit('admin:continue'); // пропускаем интро-заставку
   await sleep(300);
   pMemB.sock.emit('player:buzz'); // команда Бета
   await sleep(250);

@@ -1,4 +1,4 @@
-import { Response } from 'express';
+import { Request, Response } from 'express';
 import fs from 'fs';
 import path from 'path';
 import QRCode from 'qrcode';
@@ -9,11 +9,57 @@ import { isGameModerator } from '../services/gamePermissions';
 import { generateJoinCode } from '../services/musicStore';
 import { dropSession } from '../services/musicSession';
 import { lanIp, webBase } from '../services/net';
-import { runTool, spotiflacVersion, spotiflacUpdate } from '../services/python';
-import { notifyAdminSongUpdated } from '../sockets/ioRef';
+import { runTool, spotiflacVersion } from '../services/python';
+import { notifyAdminSongUpdated, notifyAdminSongProgress } from '../sockets/ioRef';
 
 export const MEDIA_DIR = path.join(__dirname, '..', '..', 'media');
 if (!fs.existsSync(MEDIA_DIR)) fs.mkdirSync(MEDIA_DIR, { recursive: true });
+
+const COVER_HOSTS = ['scdn.co', 'spotifycdn.com', 'dzcdn.net', 'mzstatic.com'];
+
+const isAllowedCoverHost = (hostname: string): boolean =>
+  COVER_HOSTS.some((host) => hostname === host || hostname.endsWith(`.${host}`));
+
+export const proxyCover = async (req: Request, res: Response): Promise<void> => {
+  const rawUrl = String(req.query.url || '').trim();
+  let url: URL;
+  try {
+    url = new URL(rawUrl);
+  } catch {
+    res.status(400).json({ error: 'Некорректная ссылка на обложку' });
+    return;
+  }
+
+  if (!['http:', 'https:'].includes(url.protocol) || !isAllowedCoverHost(url.hostname)) {
+    res.status(400).json({ error: 'Недопустимый источник обложки' });
+    return;
+  }
+
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 10000);
+  try {
+    const upstream = await fetch(url, { signal: controller.signal });
+    if (!upstream.ok || !upstream.body) {
+      res.sendStatus(upstream.status || 502);
+      return;
+    }
+
+    const contentType = upstream.headers.get('content-type') || 'image/jpeg';
+    if (!contentType.toLowerCase().startsWith('image/')) {
+      res.status(415).json({ error: 'Ответ не является изображением' });
+      return;
+    }
+
+    const buffer = Buffer.from(await upstream.arrayBuffer());
+    res.setHeader('Content-Type', contentType);
+    res.setHeader('Cache-Control', 'public, max-age=86400');
+    res.send(buffer);
+  } catch {
+    res.sendStatus(502);
+  } finally {
+    clearTimeout(timeout);
+  }
+};
 
 // Загрузить игру угадайки и проверить права модерации. Возвращает игру или null
 // (ответ об ошибке уже отправлен).
@@ -165,6 +211,20 @@ export const updateMusicGame = async (
       game.auth = req.body.auth;
     }
     if (game.participation === 'team') game.auth = 'required';
+    // Переупорядочивание блоков: blockOrder — перестановка id всех блоков.
+    if (Array.isArray(req.body?.blockOrder)) {
+      const order = req.body.blockOrder.map(String);
+      const blocks = game.blocks || [];
+      const byId = new Map(blocks.map((b) => [String(b._id), b]));
+      const sameSet =
+        order.length === blocks.length && order.every((id: string) => byId.has(id));
+      if (!sameSet) {
+        res.status(400).json({ error: 'blockOrder должен содержать все блоки игры' });
+        return;
+      }
+      game.blocks = order.map((id: string) => byId.get(id)!) as any;
+      game.markModified('blocks');
+    }
     await game.save();
     res.status(200).json({ game });
   } catch (error) {
@@ -247,6 +307,21 @@ export const updateBlock = async (
       return;
     }
     if (typeof req.body?.name === 'string') block.name = req.body.name.trim();
+    // Переупорядочивание песен: songIds — перестановка текущего состава блока.
+    if (Array.isArray(req.body?.songIds)) {
+      const order = req.body.songIds.map(String);
+      const existing = (block.songIds || []).map(String);
+      const sameSet =
+        order.length === existing.length &&
+        new Set(order).size === order.length &&
+        order.every((id: string) => existing.includes(id));
+      if (!sameSet) {
+        res.status(400).json({ error: 'songIds должен содержать все песни блока' });
+        return;
+      }
+      block.songIds = order as any;
+      game.markModified('blocks');
+    }
     await game.save();
     res.status(200).json({ game });
   } catch (error) {
@@ -520,10 +595,41 @@ async function downloadSong(gameId: string, songId: string): Promise<void> {
   const tmpDir = path.join(MEDIA_DIR, `_dl_${songId}`);
   fs.mkdirSync(tmpDir, { recursive: true });
 
-  // SpotiFLAC не отдаёт прогресс загрузки, поэтому показываем индетерминантную
-  // полосу на фронте (статус 'downloading'), без выдуманного процента.
+  // SpotiFLAC не отдаёт процент — следим за ростом файлов во временной папке
+  // и шлём в админку скачанные байты + оценку процента по длительности трека
+  // (~33 КБ/с у m4a высокого качества; оценка, не точность).
+  const expectedBytes = (song.duration || 0) * 33000;
+  const dirSize = (dir: string): number => {
+    let total = 0;
+    for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+      const full = path.join(dir, entry.name);
+      if (entry.isDirectory()) total += dirSize(full);
+      else if (entry.isFile()) total += fs.statSync(full).size;
+    }
+    return total;
+  };
+  const progressTimer = setInterval(() => {
+    try {
+      const bytes = dirSize(tmpDir);
+      const percent =
+        expectedBytes > 0 ? Math.min(97, Math.round((bytes / expectedBytes) * 100)) : null;
+      notifyAdminSongProgress(gameId, { songId, bytes, percent });
+    } catch { /* папку могли уже удалить — прогресс больше не нужен */ }
+  }, 700);
+
   const quality = process.env.MUSIC_QUALITY || 'HIGH';
-  const result = await runTool('spotiflac_download.py', [song.sourceUrl, tmpDir, quality]);
+  let result;
+  try {
+    result = await runTool('spotiflac_download.py', [
+      song.sourceUrl,
+      tmpDir,
+      quality,
+      song.title || '',
+      song.artist || '',
+    ]);
+  } finally {
+    clearInterval(progressTimer);
+  }
 
   if (!result.ok || !result.file) {
     song.status = 'error';
@@ -579,23 +685,11 @@ export const triggerDownload = async (
   res.json({ ok: true });
 };
 
-// ----- SpotiFLAC версия / обновление -----
+// ----- SpotiFLAC версия -----
 export const getSpotiflacVersion = async (
   _req: AuthenticatedRequest,
   res: Response
 ): Promise<void> => {
-  res.json({ version: await spotiflacVersion() });
-};
-
-export const updateSpotiflac = async (
-  _req: AuthenticatedRequest,
-  res: Response
-): Promise<void> => {
-  const result = await spotiflacUpdate();
-  if (!result.ok) {
-    res.status(502).json({ error: result.error || 'update failed' });
-    return;
-  }
   res.json({ version: await spotiflacVersion() });
 };
 

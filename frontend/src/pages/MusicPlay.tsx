@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
+import NoSleep from 'nosleep.js';
 import { createSocket } from '../services/socket';
 import { musicService } from '../services/music';
 import { MusicState } from '../types';
@@ -24,6 +25,18 @@ export default function MusicPlay() {
   const joinedRef = useRef(false);
   const joinedCodeRef = useRef(codeFromUrl);
   const joinedNameRef = useRef(localStorage.getItem('qgs_name') || '');
+
+  // Не даём телефону заснуть во время игры: погасший экран = отвал сокета
+  // и проигранная гонка за баззер. Wake Lock API недоступен по http (LAN),
+  // поэтому NoSleep (скрытое видео). Включается только из жеста пользователя.
+  const noSleepRef = useRef<NoSleep | null>(null);
+  const keepAwake = () => {
+    try {
+      if (!noSleepRef.current) noSleepRef.current = new NoSleep();
+      if (!noSleepRef.current.isEnabled) noSleepRef.current.enable();
+    } catch { /* не поддерживается — не мешаем игре */ }
+  };
+  useEffect(() => () => { try { noSleepRef.current?.disable(); } catch { /* ignore */ } }, []);
 
   const [code, setCode] = useState(codeFromUrl);
   const [name, setName] = useState(localStorage.getItem('qgs_name') || '');
@@ -291,6 +304,7 @@ export default function MusicPlay() {
           <button
             onClick={() => {
               vibrate(180);
+              keepAwake();
               socketRef.current?.emit('player:ready', { ready: !(me && me.ready) });
             }}
             className={`w-full rounded-2xl py-6 text-xl font-black tracking-wide uppercase transition-all duration-500 transform active:scale-95 ${
@@ -376,6 +390,18 @@ export default function MusicPlay() {
         </div>
       )}
 
+      {(phase === 'intro' || phase === 'blockIntro') && (
+        <div className="glass w-full max-w-sm p-8">
+          <div className="font-display text-2xl font-bold text-violet-300 mb-2">
+            {phase === 'intro' ? '🎵 Игра начинается!' : '🎵 Новый блок!'}
+          </div>
+          {state?.blockName && (
+            <p className="text-xl font-bold text-white mb-2">{state.blockName}</p>
+          )}
+          <p className="text-zinc-400">Приготовься — скоро зазвучит музыка…</p>
+        </div>
+      )}
+
       {phase === 'reveal' && (
         <div className="glass w-full max-w-sm p-8">
           <div className="font-display text-2xl font-bold text-emerald-300 mb-2">✓ Правильно!</div>
@@ -401,8 +427,8 @@ export default function MusicPlay() {
           }
           btnClass={
             state?.buzzed?.id === myGroupId
-              ? 'bg-emerald-600 border border-emerald-400/30 text-white shadow-xl shadow-emerald-500/30 scale-[1.02]'
-              : 'bg-amber-600/20 border border-amber-500/30 text-amber-300 scale-95'
+              ? 'qgs-mobile-buzzer--success scale-[1.02]'
+              : 'qgs-mobile-buzzer--waiting scale-95'
           }
         />
       )}
@@ -410,15 +436,20 @@ export default function MusicPlay() {
       {phase === 'playing' && (
         <>
           <Buzzer
-            label={me?.armed ? 'ЖМИ!' : me?.locked ? 'Мимо' : 'Приготовься…'}
+            label={me?.armed ? 'ЖМИ!' : state?.paused ? '⏸ Пауза' : me?.locked ? 'Мимо' : 'Приготовься…'}
             onBuzz={me?.armed ? () => {
               vibrate(220);
+              keepAwake();
               socketRef.current?.emit('player:buzz');
             } : undefined}
             btnClass={
               me?.armed
-                ? 'bg-violet-600 border border-violet-400/40 text-white shadow-lg shadow-violet-500/30 scale-[1.02] hover:bg-violet-500 cursor-pointer animate-pulse'
-                : 'bg-white/5 border border-white/10 text-zinc-600 scale-95'
+                ? 'qgs-mobile-buzzer--armed scale-[1.02] cursor-pointer'
+                : state?.paused
+                  ? 'qgs-mobile-buzzer--paused scale-95'
+                  : me?.locked
+                    ? 'qgs-mobile-buzzer--locked scale-95'
+                    : 'qgs-mobile-buzzer--idle scale-95'
             }
           />
           {me?.locked && (
@@ -453,9 +484,9 @@ function Buzzer({
         onBuzz();
       }}
       disabled={disabled}
-      className={`select-none touch-none flex h-64 w-64 items-center justify-center rounded-full text-3xl font-black text-center p-4 transition-all duration-500 transform active:scale-95 ${btnClass}`}
+      className={`qgs-mobile-buzzer select-none touch-none flex h-64 w-64 items-center justify-center rounded-full text-3xl font-black text-center p-4 transition-all duration-500 transform active:scale-95 ${btnClass}`}
     >
-      {label}
+      <span className="relative z-10">{label}</span>
     </button>
   );
 }

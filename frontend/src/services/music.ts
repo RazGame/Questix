@@ -1,4 +1,4 @@
-import api from './api';
+import api, { API_URL } from './api';
 import { MusicGame, Song } from '../types';
 
 export interface MusicGameFull {
@@ -28,6 +28,13 @@ export interface PlaylistImportResult {
   skipped: number;
 }
 
+export const musicCoverSrc = (cover?: string): string => {
+  if (!cover) return '';
+  if (cover.startsWith('/')) return `${API_URL}${cover}`;
+  if (!/^https?:\/\//i.test(cover)) return cover;
+  return `${API_URL}/music/cover?url=${encodeURIComponent(cover)}`;
+};
+
 export const musicService = {
   // --- игры ---
   list: async (): Promise<(MusicGame & { songCount: number })[]> => {
@@ -48,7 +55,12 @@ export const musicService = {
   },
   update: async (
     id: string,
-    patch: { title?: string; auth?: 'open' | 'required'; participation?: 'solo' | 'team' }
+    patch: {
+      title?: string;
+      auth?: 'open' | 'required';
+      participation?: 'solo' | 'team';
+      blockOrder?: string[]; // перестановка id всех блоков игры
+    }
   ): Promise<MusicGame> => {
     const res = await api.patch(`/music/games/${id}`, patch);
     return res.data.game;
@@ -67,8 +79,12 @@ export const musicService = {
     const res = await api.post(`/music/games/${id}/blocks`, { name });
     return res.data.game;
   },
-  updateBlock: async (id: string, blockId: string, name: string): Promise<MusicGame> => {
-    const res = await api.patch(`/music/games/${id}/blocks/${blockId}`, { name });
+  updateBlock: async (
+    id: string,
+    blockId: string,
+    patch: { name?: string; songIds?: string[] } // songIds — перестановка песен блока
+  ): Promise<MusicGame> => {
+    const res = await api.patch(`/music/games/${id}/blocks/${blockId}`, patch);
     return res.data.game;
   },
   removeBlock: async (id: string, blockId: string): Promise<MusicGame> => {
@@ -124,10 +140,6 @@ export const musicService = {
   // --- SpotiFLAC (фаза D) ---
   spotiflacVersion: async (): Promise<{ version: string | null }> => {
     const res = await api.get('/music/spotiflac/version');
-    return res.data;
-  },
-  spotiflacUpdate: async (): Promise<{ version: string | null }> => {
-    const res = await api.post('/music/spotiflac/update');
     return res.data;
   },
 };

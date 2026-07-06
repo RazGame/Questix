@@ -1,1 +1,1 @@
-SpotiFLAC==1.1.0
+SpotiFLAC==1.3.1

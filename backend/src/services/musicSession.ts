@@ -7,6 +7,9 @@ const REVEAL_FADE_MS = 1500;
 const NEXT_TRACK_PAUSE_MS = 900;
 const BUZZ_FADE_OUT_MS = 320;
 const RESUME_FADE_IN_MS = 450;
+// Анонсы блоков: показ всех блоков на старте и заставка перед новым блоком.
+const GAME_INTRO_MS = 10000;
+const BLOCK_INTRO_MS = 10000;
 
 interface Player {
   id: string;
@@ -18,7 +21,7 @@ interface Player {
   teamName?: string | null;
 }
 
-type Phase = 'lobby' | 'playing' | 'ended' | 'buzzed' | 'reveal' | 'finished';
+type Phase = 'lobby' | 'intro' | 'blockIntro' | 'playing' | 'ended' | 'buzzed' | 'reveal' | 'finished';
 type Mode = 'solo' | 'team';
 
 // Стейт-машина одной игры «Угадай мелодию». In-memory: счёт эфемерный,
@@ -37,6 +40,13 @@ class Session {
   buzzed: { id: string; name: string; by?: string } | null = null; // id = ключ группы (игрок/команда)
   locked = new Set<string>(); // заблокированные в текущем раунде (ключи групп)
   advanceTimer: NodeJS.Timeout | null = null;
+  // Отложенный переход (анонс блока/reveal/следующий трек) — храним колбэк и
+  // дедлайн, чтобы пауза могла заморозить таймер и продолжить с остатка.
+  pendingAction: (() => void) | null = null;
+  pendingDeadline = 0;
+  pendingRemaining: number | null = null; // остаток таймера на момент паузы
+  paused = false;
+  blockNames: string[] = []; // имена блоков в порядке плейлиста (для интро)
   screenReady = false;
   lastActivityAt = Date.now(); // для отгрузки простаивающих сессий
 
@@ -53,8 +63,25 @@ class Session {
 
   // Освобождение ресурсов сессии перед удалением из реестра.
   destroy() {
+    this.clearSchedule();
+  }
+
+  // Единая точка отложенных переходов: помнит колбэк и дедлайн ради паузы.
+  schedule(fn: () => void, ms: number) {
+    this.clearSchedule();
+    this.pendingAction = fn;
+    this.pendingDeadline = Date.now() + ms;
+    this.advanceTimer = setTimeout(() => {
+      this.advanceTimer = null;
+      this.pendingAction = null;
+      fn();
+    }, ms);
+  }
+
+  clearSchedule() {
     if (this.advanceTimer) clearTimeout(this.advanceTimer);
     this.advanceTimer = null;
+    this.pendingAction = null;
   }
 
   rAll() { return `g:${this.gameId}`; }
@@ -110,7 +137,7 @@ class Session {
 
   isArmed(playerId: string) {
     const p = this.players.get(playerId);
-    if (!p || !p.ready || this.phase !== 'playing') return false;
+    if (!p || this.phase !== 'playing' || this.paused) return false;
     if (this.mode === 'team' && !p.teamId) return false; // без команды баззер недоступен
     return !this.locked.has(this.groupId(playerId));
   }
@@ -142,14 +169,22 @@ class Session {
       return false;
     }
     this.playlist = ready;
+    // Уникальные имена блоков в порядке следования — для интро-заставки.
+    this.blockNames = Array.from(new Set(ready.map((s) => s.blockName)));
     this.currentIndex = 0;
-    this.loadCurrent();
+    this.paused = false;
+    this.pendingRemaining = null;
+    // Сначала интро со списком всех блоков, затем первая песня.
+    this.phase = 'intro';
+    this.buzzed = null;
+    this.locked.clear();
+    this.broadcast();
+    this.schedule(() => this.loadCurrent(), GAME_INTRO_MS);
     return true;
   }
 
   loadCurrent() {
-    if (this.advanceTimer) clearTimeout(this.advanceTimer);
-    this.advanceTimer = null;
+    this.clearSchedule();
     this.buzzed = null;
     this.locked.clear();
     this.phase = 'playing';
@@ -168,6 +203,7 @@ class Session {
   }
 
   replayCurrent() {
+    if (this.paused) return;
     const song = this.playlist[this.currentIndex];
     if (!song || !song.file) return;
     if (this.phase !== 'ended' && this.phase !== 'playing') return;
@@ -223,8 +259,7 @@ class Session {
     this.phase = 'reveal';
     this.cmd('fadeAndStop', { playMs: REVEAL_PLAY_MS, fadeMs: REVEAL_FADE_MS });
     this.broadcast();
-    if (this.advanceTimer) clearTimeout(this.advanceTimer);
-    this.advanceTimer = setTimeout(() => this.advance(), REVEAL_PLAY_MS + REVEAL_FADE_MS + 200);
+    this.schedule(() => this.advance(), REVEAL_PLAY_MS + REVEAL_FADE_MS + 200);
   }
 
   wrong() {
@@ -237,14 +272,19 @@ class Session {
   }
 
   skip() {
-    if (this.advanceTimer) clearTimeout(this.advanceTimer);
-    this.advanceTimer = null;
+    if (this.paused) return;
+    // Во время заставки «пропустить» = запустить песню, а не потерять её.
+    if (this.phase === 'intro' || this.phase === 'blockIntro') {
+      this.continueNow();
+      return;
+    }
+    this.clearSchedule();
     this.advance();
   }
 
   advance() {
-    if (this.advanceTimer) clearTimeout(this.advanceTimer);
-    this.advanceTimer = null;
+    this.clearSchedule();
+    const prev = this.playlist[this.currentIndex];
     this.currentIndex += 1;
     if (this.currentIndex >= this.playlist.length) {
       this.currentIndex = Math.max(0, this.playlist.length - 1);
@@ -253,19 +293,67 @@ class Session {
       this.broadcast();
     } else {
       this.cmd('stop');
-      this.advanceTimer = setTimeout(() => this.loadCurrent(), NEXT_TRACK_PAUSE_MS);
+      const next = this.playlist[this.currentIndex];
+      if (prev && next.blockName !== prev.blockName) {
+        // Новый блок: заставка с названием и пауза перед первой песней.
+        this.phase = 'blockIntro';
+        this.buzzed = null;
+        this.locked.clear();
+        this.broadcast();
+        this.schedule(() => this.loadCurrent(), BLOCK_INTRO_MS);
+      } else {
+        this.schedule(() => this.loadCurrent(), NEXT_TRACK_PAUSE_MS);
+      }
     }
   }
 
+  // Пауза ведущего: замораживает баззеры, звук и отложенные переходы.
+  pause() {
+    if (this.paused) return;
+    if (!['playing', 'ended', 'intro', 'blockIntro'].includes(this.phase)) return;
+    this.paused = true;
+    if (this.advanceTimer) {
+      clearTimeout(this.advanceTimer);
+      this.advanceTimer = null;
+      this.pendingRemaining = Math.max(0, this.pendingDeadline - Date.now());
+    } else {
+      this.pendingRemaining = null;
+    }
+    if (this.phase === 'playing') this.cmd('pause', { fadeMs: BUZZ_FADE_OUT_MS });
+    this.broadcast();
+  }
+
+  resume() {
+    if (!this.paused) return;
+    this.paused = false;
+    const fn = this.pendingAction;
+    if (fn && this.pendingRemaining != null) this.schedule(fn, this.pendingRemaining);
+    this.pendingRemaining = null;
+    if (this.phase === 'playing') this.cmd('resume', { fadeMs: RESUME_FADE_IN_MS });
+    this.broadcast();
+  }
+
+  // Ведущий пропускает ожидание интро-заставки и сразу запускает песню.
+  continueNow() {
+    if (this.paused) return;
+    if (this.phase !== 'intro' && this.phase !== 'blockIntro') return;
+    const fn = this.pendingAction;
+    this.clearSchedule();
+    if (fn) fn();
+    else this.loadCurrent();
+  }
+
   reset() {
-    if (this.advanceTimer) clearTimeout(this.advanceTimer);
-    this.advanceTimer = null;
+    this.clearSchedule();
     this.phase = 'lobby';
     this.currentIndex = -1;
     this.buzzed = null;
+    this.paused = false;
+    this.pendingRemaining = null;
     this.locked.clear();
     this.teamScores.clear();
     this.playlist = [];
+    this.blockNames = [];
     for (const p of this.players.values()) { p.ready = false; p.score = 0; }
     this.cmd('stop');
     this.broadcast();
@@ -284,7 +372,7 @@ class Session {
           score: this.teamScores.get(p.teamId) || 0,
           online: 0,
           ready: 0,
-          armed: this.phase === 'playing' && !this.locked.has(p.teamId),
+          armed: this.phase === 'playing' && !this.paused && !this.locked.has(p.teamId),
           locked: this.locked.has(p.teamId),
         };
         map.set(p.teamId, t);
@@ -319,8 +407,20 @@ class Session {
         ? { title: cur.title, artist: cur.artist, album: cur.album, cover: cur.cover }
         : null,
       blockName: cur ? cur.blockName : '',
+      currentSongId: cur ? String(cur._id) : null,
       blockCurrentIndex: blockSongIndex,
       blockTotal: blockSongs.length,
+      blocks: this.blockNames,
+      paused: this.paused,
+      // Остаток интро-таймера (мс) — для обратного отсчёта на экране.
+      introMs:
+        this.phase === 'intro' || this.phase === 'blockIntro'
+          ? (this.paused
+              ? this.pendingRemaining
+              : this.advanceTimer
+                ? Math.max(0, this.pendingDeadline - Date.now())
+                : null)
+          : null,
       fileUrl: cur ? `/media/${cur.file}` : null,
       startSec: cur ? (cur.startSec || 0) : 0,
       endSec: cur ? (cur.endSec ?? null) : null,

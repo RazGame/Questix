@@ -39,6 +39,8 @@ export default function MusicSegmentModal({
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const peaksRef = useRef<number[]>([]);
   const dragRef = useRef<'start' | 'end' | null>(null);
+  const startRef = useRef(song.startSec || 0);
+  const endRef = useRef(song.endSec ?? song.duration ?? 0);
 
   const [duration, setDuration] = useState(song.duration || 0);
   const [start, setStart] = useState(song.startSec || 0);
@@ -49,6 +51,9 @@ export default function MusicSegmentModal({
   const [error, setError] = useState('');
 
   const audioUrl = `${mediaOrigin}/media/${song.file}`;
+
+  useEffect(() => { startRef.current = start; }, [start]);
+  useEffect(() => { endRef.current = end; }, [end]);
 
   // декод аудио → пики для волны
   useEffect(() => {
@@ -73,7 +78,11 @@ export default function MusicSegmentModal({
         }
         peaksRef.current = peaks;
         setDuration(audio.duration);
-        setEnd((e) => (e && e > 0 ? Math.min(e, audio.duration) : audio.duration));
+        setEnd((e) => {
+          const next = e && e > 0 ? Math.min(e, audio.duration) : audio.duration;
+          endRef.current = next;
+          return next;
+        });
         ctx.close();
       } catch {
         setError('Не удалось прочитать аудио для волны');
@@ -138,18 +147,34 @@ export default function MusicSegmentModal({
     const rect = canvasRef.current!.getBoundingClientRect();
     let t = ((e.clientX - rect.left) / rect.width) * duration;
     t = Math.max(0, Math.min(duration, t));
-    if (dragRef.current === 'start') setStart(Math.min(t, end - 0.5));
-    else setEnd(Math.max(t, start + 0.5));
+    if (dragRef.current === 'start') {
+      const next = Math.min(t, endRef.current - 0.5);
+      startRef.current = next;
+      setStart(next);
+    } else {
+      const next = Math.max(t, startRef.current + 0.5);
+      endRef.current = next;
+      setEnd(next);
+    }
   };
-  const onPointerUp = () => { dragRef.current = null; };
+  const playPreviewFromStart = () => {
+    const a = audioRef.current;
+    if (!a) return;
+    a.currentTime = startRef.current;
+    a.play().then(() => setPlaying(true)).catch(() => {});
+  };
+  const onPointerUp = () => {
+    const wasDragging = !!dragRef.current;
+    dragRef.current = null;
+    if (wasDragging) playPreviewFromStart();
+  };
 
   // превью отрезка
   const togglePreview = () => {
     const a = audioRef.current;
     if (!a) return;
     if (playing) { a.pause(); setPlaying(false); return; }
-    a.currentTime = start;
-    a.play().then(() => setPlaying(true)).catch(() => {});
+    playPreviewFromStart();
   };
   useEffect(() => {
     const a = audioRef.current;

@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
 import { useParams } from 'react-router-dom';
+import NoSleep from 'nosleep.js';
 import { createSocket } from '../services/socket';
-import { musicService } from '../services/music';
+import { musicCoverSrc, musicService } from '../services/music';
 import { MusicState } from '../types';
 
 // Аудио-движок держим вне React-рендера (в ref), чтобы команды cmd
@@ -49,7 +50,16 @@ export default function MusicScreen() {
   // Анимации центра: вспышка верно/неверно и показ обложки.
   const [flash, setFlash] = useState<'green' | 'red' | null>(null);
   const [showCover, setShowCover] = useState(false);
+  const [buzzCard, setBuzzCard] = useState<{
+    id: string;
+    name: string;
+    by?: string;
+    team: boolean;
+    leaving: boolean;
+  } | null>(null);
   const prevPhase = useRef<string | null>(null);
+  // Обратный отсчёт интро-заставок (список блоков / анонс нового блока).
+  const [introLeft, setIntroLeft] = useState<number | null>(null);
 
   // ---------- аудио ----------
   const initAudio = () => {
@@ -101,7 +111,15 @@ export default function MusicScreen() {
     return engineRef.current;
   };
 
+  // Экран проектора не должен гаснуть посреди игры (ноутбук без питания и т.п.).
+  const noSleepRef = useRef<NoSleep | null>(null);
+  useEffect(() => () => { try { noSleepRef.current?.disable(); } catch { /* ignore */ } }, []);
+
   const unlock = () => {
+    try {
+      if (!noSleepRef.current) noSleepRef.current = new NoSleep();
+      if (!noSleepRef.current.isEnabled) noSleepRef.current.enable();
+    } catch { /* не поддерживается — не критично */ }
     try {
       const e = initAudio();
       e.ctx.resume();
@@ -403,6 +421,19 @@ export default function MusicScreen() {
     }
   }, [state?.phase, state?.code, qr]);
 
+  // Отсчёт до конца интро: сервер шлёт остаток (introMs), тикаем локально.
+  // На паузе отсчёт замирает — сервер заморозил таймер и пришлёт новый остаток.
+  useEffect(() => {
+    const ms = state?.introMs ?? null;
+    setIntroLeft(ms);
+    if (ms == null || state?.paused) return;
+    const startedAt = Date.now();
+    const t = setInterval(() => {
+      setIntroLeft(Math.max(0, ms - (Date.now() - startedAt)));
+    }, 200);
+    return () => clearInterval(t);
+  }, [state?.introMs, state?.paused, state?.phase]);
+
   // визуализация активна в игре/баззере/reveal; после конца фрагмента
   // оставляем цикл живым, чтобы кольцо не замерло, а погасло в тихий режим.
   useEffect(() => {
@@ -423,7 +454,11 @@ export default function MusicScreen() {
       const cleanSrc = e.audio.src.replace(/^https?:\/\/[^/]+/i, '');
       const targetClean = targetSrc.replace(/^https?:\/\/[^/]+/i, '');
 
-      if (cleanSrc !== targetClean) {
+      if (phase === 'playing' && state.paused) {
+        // Пауза ведущего: не даём синхронизации перезапустить звук.
+        segmentRef.current.active = false;
+        if (!e.audio.paused) e.audio.pause();
+      } else if (cleanSrc !== targetClean) {
         playFrom(curFile, state.startSec || 0, state.endSec ?? null, state.nextUrl);
       } else {
         if (phase === 'playing') {
@@ -443,7 +478,7 @@ export default function MusicScreen() {
       if (!e.audio.paused) {
         e.audio.pause();
       }
-    } else if (phase === 'finished' || phase === 'lobby') {
+    } else if (phase === 'finished' || phase === 'lobby' || phase === 'intro' || phase === 'blockIntro') {
       if (!e.audio.paused) {
         segmentRef.current.active = false;
         e.audio.pause();
@@ -451,7 +486,7 @@ export default function MusicScreen() {
       }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [state?.phase, state?.fileUrl, needGate]);
+  }, [state?.phase, state?.fileUrl, state?.paused, needGate]);
 
   // анимации центра по сменам фаз
   useEffect(() => {
@@ -479,6 +514,25 @@ export default function MusicScreen() {
     }
   }, [state?.phase]);
 
+  useEffect(() => {
+    if (state?.phase === 'buzzed' && state.buzzed) {
+      setBuzzCard({
+        id: state.buzzed.id,
+        name: state.buzzed.name,
+        by: state.buzzed.by,
+        team: state.mode === 'team',
+        leaving: false,
+      });
+      return;
+    }
+
+    setBuzzCard((prev) => (prev && !prev.leaving ? { ...prev, leaving: true } : prev));
+    const t = setTimeout(() => {
+      setBuzzCard((prev) => (prev?.leaving ? null : prev));
+    }, 360);
+    return () => clearTimeout(t);
+  }, [state?.phase, state?.buzzed?.id, state?.buzzed?.name, state?.buzzed?.by, state?.mode]);
+
   const phase = state?.phase;
   const inRound = phase === 'playing' || phase === 'ended' || phase === 'buzzed' || phase === 'reveal';
   const displayRound =
@@ -502,6 +556,107 @@ export default function MusicScreen() {
   else if (flash === 'red') centerCls = 'border-rose-400 bg-rose-500/25 shadow-[0_0_80px_rgba(244,63,94,0.6)]';
   else if (phase === 'buzzed') centerCls = 'border-amber-300 bg-surface/70 qgs-pulse';
 
+  if (inRound) {
+    return (
+      <div className="min-h-screen px-6 py-4 text-center">
+        {needGate && (
+          <button
+            onClick={unlock}
+            className="fixed inset-0 z-50 flex items-center justify-center bg-surface/90 backdrop-blur-xl text-2xl font-bold"
+          >
+            🔊 Нажмите, чтобы включить звук
+          </button>
+        )}
+
+        {state?.paused && (
+          <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/60 backdrop-blur-sm">
+            <div className="text-center">
+              <div className="text-7xl mb-4">⏸</div>
+              <p className="font-display text-5xl font-extrabold text-white">Пауза</p>
+              <p className="mt-3 text-xl text-zinc-400">Игру продолжит ведущий</p>
+            </div>
+          </div>
+        )}
+
+        <main className="mx-auto grid min-h-[calc(100vh-2rem)] max-w-5xl grid-rows-[220px_520px_160px] items-center justify-items-center">
+          <section className="flex flex-col items-center justify-center gap-3 self-end pb-6">
+            {state && (
+              <>
+                <h1 className="font-display text-3xl font-extrabold leading-tight text-white">
+                  {state.gameName}
+                </h1>
+                {state.total > 0 && (
+                  <p className="font-mono text-sm font-semibold uppercase tracking-[0.22em] text-zinc-400">
+                    Песня {displayRound} из {state.total}
+                  </p>
+                )}
+                {state.blockName && (
+                  <div className="flex flex-col items-center gap-2 pt-2">
+                    <p className="text-sm font-extrabold uppercase tracking-[0.24em] text-violet-300">
+                      {state.blockName}
+                    </p>
+                    {(state.blockTotal || 0) > 0 && (
+                      <p className="font-mono text-xs font-semibold uppercase tracking-[0.2em] text-zinc-500">
+                        В блоке {displayBlockRound} из {state.blockTotal}
+                      </p>
+                    )}
+                  </div>
+                )}
+              </>
+            )}
+          </section>
+
+          <section className="relative flex items-center justify-center" style={{ width: 520, height: 520 }}>
+            <canvas ref={canvasRef} width={520} height={520} className="absolute inset-0" />
+            <div
+              className={`relative z-10 flex items-center justify-center rounded-full border-4 transition-all duration-500 overflow-hidden ${centerCls}`}
+              style={{ width: 230, height: 230 }}
+            >
+              {showCover && state?.reveal?.cover ? (
+                <img src={musicCoverSrc(state.reveal.cover)} alt="" className="qgs-pop h-full w-full object-cover" />
+              ) : (
+                <span className="font-display text-8xl font-black text-white/90">?</span>
+              )}
+            </div>
+          </section>
+
+          <section className="relative flex h-40 w-full items-start justify-center pt-2">
+            {buzzCard && (
+              <div
+                className={`absolute top-2 left-1/2 z-20 w-[min(760px,92vw)] px-4 ${
+                  buzzCard.leaving ? 'qgs-buzz-card-out' : 'qgs-buzz-card-in'
+                }`}
+              >
+                <div className="mx-auto rounded-3xl border border-amber-300/30 bg-surface/85 px-8 py-5 shadow-2xl shadow-amber-950/40 backdrop-blur-md">
+                  <p className="mb-2 text-xs font-extrabold uppercase tracking-[0.36em] text-amber-200/80">
+                    Нажал первым
+                  </p>
+                  <p className="font-display text-5xl font-black leading-none text-amber-100 drop-shadow-[0_0_28px_rgba(251,191,36,0.45)]">
+                    🔔 {buzzCard.name}
+                  </p>
+                  {buzzCard.team && buzzCard.by && (
+                    <p className="mt-3 text-xl font-bold text-amber-200/90">
+                      Кнопку нажал: {buzzCard.by}
+                    </p>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {phase === 'playing' && !buzzCard && <p className="text-zinc-400 text-xl">Слушаем… кто угадает?</p>}
+            {phase === 'ended' && !buzzCard && <p className="text-zinc-400 text-xl">Фрагмент закончился. Ждём ведущего…</p>}
+            {phase === 'reveal' && state?.reveal && !buzzCard && (
+              <div>
+                <div className="font-display text-3xl font-bold">{state.reveal.title}</div>
+                <div className="text-zinc-400 text-xl">{state.reveal.artist}</div>
+              </div>
+            )}
+          </section>
+        </main>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen flex flex-col items-center justify-center px-6 py-10 text-center">
       {needGate && (
@@ -511,6 +666,16 @@ export default function MusicScreen() {
         >
           🔊 Нажмите, чтобы включить звук
         </button>
+      )}
+
+      {state?.paused && (
+        <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/60 backdrop-blur-sm">
+          <div className="text-center">
+            <div className="text-7xl mb-4">⏸</div>
+            <p className="font-display text-5xl font-extrabold text-white">Пауза</p>
+            <p className="mt-3 text-xl text-zinc-400">Игру продолжит ведущий</p>
+          </div>
+        </div>
       )}
 
       {state && (
@@ -585,38 +750,48 @@ export default function MusicScreen() {
         </div>
       )}
 
-      {inRound && (
-        <div className="relative flex items-center justify-center" style={{ width: 520, height: 520 }}>
-          <canvas ref={canvasRef} width={520} height={520} className="absolute inset-0" />
-          {/* центральный круг: вопрос → обложка */}
-          <div
-            className={`relative z-10 flex items-center justify-center rounded-full border-4 transition-all duration-500 overflow-hidden ${centerCls}`}
-            style={{ width: 230, height: 230 }}
-          >
-            {showCover && state?.reveal?.cover ? (
-              <img src={state.reveal.cover} alt="" className="qgs-pop h-full w-full object-cover" />
-            ) : (
-              <span className="font-display text-8xl font-black text-white/90">?</span>
-            )}
-          </div>
-          {/* нажавший под кругом: команда + (кто именно) в team-режиме */}
-          {phase === 'buzzed' && state?.buzzed && (
-            <div className="absolute -bottom-2 left-1/2 -translate-x-1/2 whitespace-nowrap">
-              <span className="rounded-full bg-amber-400/15 px-4 py-1 text-lg font-bold text-amber-200">
-                🔔 {state.buzzed.name}
-                {state.mode === 'team' && state.buzzed.by ? ` · ${state.buzzed.by}` : ''}
-              </span>
-            </div>
+      {(phase === 'intro' || phase === 'blockIntro') && (
+        <div className="flex flex-col items-center w-full max-w-2xl">
+          <p className="mb-3 text-sm font-extrabold uppercase tracking-[0.3em] text-violet-300">
+            {phase === 'intro' ? 'Блоки игры' : 'Новый блок'}
+          </p>
+          {phase === 'blockIntro' && (
+            <h2 className="font-display mb-8 bg-gradient-to-r from-violet-300 via-fuchsia-300 to-amber-200 bg-clip-text text-5xl font-black text-transparent">
+              {state?.blockName}
+            </h2>
           )}
-        </div>
-      )}
-
-      {phase === 'playing' && <p className="mt-6 text-zinc-400 text-xl">Слушаем… кто угадает?</p>}
-      {phase === 'ended' && <p className="mt-6 text-zinc-400 text-xl">Фрагмент закончился. Ждём ведущего…</p>}
-      {phase === 'reveal' && state?.reveal && (
-        <div className="mt-6">
-          <div className="font-display text-3xl font-bold">{state.reveal.title}</div>
-          <div className="text-zinc-400 text-xl">{state.reveal.artist}</div>
+          <div className="w-full space-y-3">
+            {(state?.blocks || []).map((b, i) => {
+              const isCurrent = b === state?.blockName;
+              return (
+                <div
+                  key={`${b}-${i}`}
+                  className={`flex items-center gap-4 rounded-xl border px-6 py-4 text-left transition ${
+                    isCurrent
+                      ? 'border-violet-400/50 bg-violet-500/15 shadow-lg shadow-violet-950/40'
+                      : 'border-white/5 bg-white/[0.03]'
+                  }`}
+                >
+                  <span className={`font-mono text-lg font-bold ${isCurrent ? 'text-violet-300' : 'text-zinc-500'}`}>
+                    {i + 1}
+                  </span>
+                  <span className={`font-display text-2xl font-bold ${isCurrent ? 'text-white' : 'text-zinc-300'}`}>
+                    {b}
+                  </span>
+                  {isCurrent && (
+                    <span className="ml-auto rounded-full bg-violet-400/20 px-3 py-1 text-xs font-bold uppercase tracking-wider text-violet-200">
+                      {phase === 'intro' ? 'первый блок' : 'следующий'}
+                    </span>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+          {introLeft != null && !state?.paused && (
+            <p className="mt-8 font-mono text-lg text-zinc-400">
+              Начинаем через <span className="font-bold text-violet-300">{Math.max(1, Math.ceil(introLeft / 1000))}</span>…
+            </p>
+          )}
         </div>
       )}
 
