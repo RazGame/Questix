@@ -128,7 +128,11 @@ export default function MusicScreen() {
   const unlock = () => {
     try {
       if (!noSleepRef.current) noSleepRef.current = new NoSleep();
-      if (!noSleepRef.current.isEnabled) noSleepRef.current.enable();
+      if (!noSleepRef.current.isEnabled) {
+        void noSleepRef.current.enable().catch(() => {
+          // Если браузер отказал в wake lock, звук и игра всё равно продолжаются.
+        });
+      }
     } catch { /* не поддерживается — не критично */ }
     try {
       const e = initAudio();

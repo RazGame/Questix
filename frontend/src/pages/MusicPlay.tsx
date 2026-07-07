@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import NoSleep from 'nosleep.js';
 import { createSocket } from '../services/socket';
-import { musicService } from '../services/music';
+import { musicCoverSrc, musicService } from '../services/music';
 import { MusicState } from '../types';
 
 const vibrate = (pattern: number | number[]) => {
@@ -33,7 +33,11 @@ export default function MusicPlay() {
   const keepAwake = () => {
     try {
       if (!noSleepRef.current) noSleepRef.current = new NoSleep();
-      if (!noSleepRef.current.isEnabled) noSleepRef.current.enable();
+      if (!noSleepRef.current.isEnabled) {
+        void noSleepRef.current.enable().catch(() => {
+          // Браузер может отказать без пользовательского жеста; следующий tap попробует снова.
+        });
+      }
     } catch { /* не поддерживается — не мешаем игре */ }
   };
   useEffect(() => () => { try { noSleepRef.current?.disable(); } catch { /* ignore */ } }, []);
@@ -157,6 +161,7 @@ export default function MusicPlay() {
   const join = () => {
     const trimmed = name.trim();
     if (!trimmed || !code) return;
+    keepAwake();
     localStorage.setItem('qgs_name', trimmed);
     autoJoinTriedRef.current = true;
     emitJoin(code, trimmed);
@@ -166,6 +171,32 @@ export default function MusicPlay() {
   const isTeam = state?.mode === 'team';
   // Ключ группы для определения «мой ли это баззер» (команда в team, иначе сам игрок).
   const myGroupId = isTeam ? (me?.teamId || null) : playerIdRef.current;
+  const [scoreFlash, setScoreFlash] = useState(false);
+  const prevScoreRef = useRef<number | null>(null);
+  const scoreFlashTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    if (!joined || !me) {
+      prevScoreRef.current = null;
+      setScoreFlash(false);
+      return;
+    }
+
+    const prevScore = prevScoreRef.current;
+    prevScoreRef.current = me.score;
+    if (prevScore === null || me.score <= prevScore) return;
+
+    setScoreFlash(true);
+    if (scoreFlashTimerRef.current) clearTimeout(scoreFlashTimerRef.current);
+    scoreFlashTimerRef.current = setTimeout(() => {
+      setScoreFlash(false);
+      scoreFlashTimerRef.current = null;
+    }, 900);
+  }, [joined, me]);
+
+  useEffect(() => () => {
+    if (scoreFlashTimerRef.current) clearTimeout(scoreFlashTimerRef.current);
+  }, []);
 
   useEffect(() => {
     if (!joined || !state) return;
@@ -286,17 +317,74 @@ export default function MusicPlay() {
   // ---------- игровые экраны ----------
   const phase = state?.phase;
 
+  const inRoundPhase = phase === 'playing' || phase === 'buzzed' || phase === 'ended' || phase === 'reveal';
+
   return (
-    <div className="h-[calc(100dvh-4rem)] overflow-hidden flex flex-col items-center justify-center px-4 py-6 text-center">
+    <div className="h-[calc(100dvh-4rem)] overflow-hidden flex flex-col px-4 py-4 text-center">
+      {/* HUD: имя и счёт прижаты к верху — баззеру внизу просторно */}
       {me && (
-        <div className="mb-6 text-zinc-300">
-          {isTeam && me.teamName ? (
-            <>👥 {me.teamName} · <span className="font-bold text-violet-300">{me.score}</span> <span className="text-zinc-500">({me.name})</span></>
-          ) : (
-            <>{me.name} · <span className="font-bold text-violet-300">{me.score}</span></>
+        <div className="flex w-full items-center justify-between gap-3 rounded-2xl border border-white/5 bg-white/[0.03] px-4 py-2.5">
+          <div className="min-w-0 text-left">
+            <p className="truncate font-bold text-zinc-100">
+              {isTeam && me.teamName ? <>👥 {me.teamName}</> : me.name}
+            </p>
+            {isTeam && me.teamName && (
+              <p className="truncate text-xs text-zinc-500">{me.name}</p>
+            )}
+          </div>
+          <span
+            key={me.score}
+            className={`qgs-pop shrink-0 rounded-full border px-3.5 py-1 font-mono text-lg font-bold transition-colors duration-500 ${
+              scoreFlash
+                ? 'border-emerald-400/40 bg-emerald-500/20 text-emerald-300 shadow-[0_0_16px_rgba(52,211,153,0.4)]'
+                : 'border-violet-400/20 bg-violet-500/15 text-violet-300'
+            }`}
+          >
+            {me.score}
+          </span>
+        </div>
+      )}
+      {/* Контекст раунда — в том же формате, что шапка проектора:
+          служебная строка → название блока (бегущая строка, если не влезает) → точки */}
+      {state && inRoundPhase && state.blockName && (
+        <div className="mt-2.5 flex w-full flex-col items-center gap-1.5">
+          <p className="font-mono text-[10px] font-semibold uppercase tracking-[0.25em] text-zinc-500">
+            {state.gameName} · песня {Math.min(state.currentIndex + 1, state.total)} из {state.total}
+          </p>
+          <MarqueeText
+            text={state.blockName}
+            className="w-full font-display text-base font-extrabold leading-tight text-white"
+          />
+          {(state.blockTotal || 0) > 0 && (
+            (state.blockTotal || 0) <= 16 ? (
+              <div className="flex items-center gap-1.5">
+                {Array.from({ length: state.blockTotal || 0 }).map((_, i) => {
+                  const cur = state.blockCurrentIndex ?? 0;
+                  const role = i === cur ? 'cur' : i < cur ? 'done' : 'todo';
+                  return (
+                    <span
+                      key={`${i}-${role}`}
+                      className={`rounded-full ${
+                        role === 'cur'
+                          ? 'qgs-pop h-2 w-2 bg-fuchsia-400 shadow-[0_0_8px_rgba(217,70,239,0.8)]'
+                          : role === 'done'
+                            ? 'h-1.5 w-1.5 bg-violet-400/60'
+                            : 'h-1.5 w-1.5 bg-white/15'
+                      }`}
+                    />
+                  );
+                })}
+              </div>
+            ) : (
+              <p className="font-mono text-[10px] font-semibold uppercase tracking-[0.2em] text-zinc-500">
+                в блоке {(state.blockCurrentIndex ?? 0) + 1} из {state.blockTotal}
+              </p>
+            )
           )}
         </div>
       )}
+
+      <div className="flex min-h-0 w-full flex-1 flex-col items-center justify-center">
 
       {phase === 'lobby' && (
         <div className="glass w-full max-w-sm p-8">
@@ -402,18 +490,54 @@ export default function MusicPlay() {
         </div>
       )}
 
+      {/* Круг стабильно на месте во всех фазах раунда — статусы внутри него */}
       {phase === 'reveal' && (
-        <div className="glass w-full max-w-sm p-8">
-          <div className="font-display text-2xl font-bold text-emerald-300 mb-2">✓ Правильно!</div>
-          <p className="text-zinc-300">{state?.reveal?.title} — {state?.reveal?.artist}</p>
-        </div>
+        <>
+          <Buzzer label="Угадано!" btnClass="qgs-mobile-buzzer--success scale-[1.02]" />
+          {state?.reveal && (
+            <div
+              className="pointer-events-none fixed inset-x-4 z-40 mx-auto max-w-sm"
+              style={{ bottom: 'calc(env(safe-area-inset-bottom) + 1rem)' }}
+            >
+              <div className="qgs-answer-toast flex items-center gap-3 rounded-xl border border-emerald-500/20 bg-[#071512]/95 p-3 text-left shadow-2xl shadow-emerald-950/40 backdrop-blur-md">
+                {state.reveal.cover && (
+                  <img
+                    src={musicCoverSrc(state.reveal.cover)}
+                    alt=""
+                    className="h-12 w-12 shrink-0 rounded-lg object-cover"
+                  />
+                )}
+                <div className="min-w-0">
+                  <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-emerald-400/80">
+                    Правильный ответ
+                  </p>
+                  <p className="truncate text-sm font-bold text-emerald-200">
+                    {state.reveal.title} — {state.reveal.artist}
+                  </p>
+                </div>
+              </div>
+            </div>
+          )}
+        </>
       )}
 
       {phase === 'ended' && (
-        <div className="glass w-full max-w-sm p-8">
-          <div className="font-display text-2xl font-bold text-violet-300 mb-2">Фрагмент закончился</div>
-          <p className="text-zinc-400">Ждём действие ведущего…</p>
-        </div>
+        <>
+          <Buzzer label="Фрагмент закончился" btnClass="qgs-mobile-buzzer--idle scale-95" />
+          <div
+            className="pointer-events-none fixed inset-x-4 z-40 mx-auto max-w-sm"
+            style={{ bottom: 'calc(env(safe-area-inset-bottom) + 1rem)' }}
+          >
+            <div className="qgs-answer-toast rounded-xl border border-amber-500/20 bg-[#171107]/95 p-3 text-left shadow-2xl shadow-amber-950/30 backdrop-blur-md">
+              <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-amber-300/80">
+                Фрагмент закончился
+              </p>
+              <p className="text-sm font-bold text-amber-100">
+                Ждём решения ведущего…
+              </p>
+            </div>
+          </div>
+        </>
       )}
 
       {phase === 'buzzed' && (
@@ -453,14 +577,25 @@ export default function MusicPlay() {
             }
           />
           {me?.locked && (
-            <p className="mt-4 text-sm text-zinc-500">
-              {isTeam
-                ? 'Твоя команда уже ответила на этой песне — ждём других.'
-                : 'Ты уже ответил на этой песне — ждём других.'}
-            </p>
+            <div
+              className="pointer-events-none fixed inset-x-4 z-40 mx-auto max-w-sm"
+              style={{ bottom: 'calc(env(safe-area-inset-bottom) + 1rem)' }}
+            >
+              <div className="qgs-answer-toast rounded-xl border border-rose-500/20 bg-[#18070c]/95 p-3 text-left shadow-2xl shadow-rose-950/35 backdrop-blur-md">
+                <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-rose-300/80">
+                  Мимо
+                </p>
+                <p className="text-sm font-bold text-rose-100">
+                  {isTeam
+                    ? 'Команда уже ответила на этой песне — ждём других.'
+                    : 'Ты уже ответил на этой песне — ждём других.'}
+                </p>
+              </div>
+            </div>
           )}
         </>
       )}
+      </div>
     </div>
   );
 }
@@ -488,5 +623,34 @@ function Buzzer({
     >
       <span className="relative z-10">{label}</span>
     </button>
+  );
+}
+
+// Однострочный текст: влезает — по центру, не влезает — бегущая строка.
+function MarqueeText({ text, className }: { text: string; className?: string }) {
+  const wrapRef = useRef<HTMLDivElement | null>(null);
+  const [scroll, setScroll] = useState(false);
+  // Смена текста → сначала обычный режим, там же перемеряем переполнение.
+  useEffect(() => { setScroll(false); }, [text]);
+  useEffect(() => {
+    if (scroll) return;
+    const el = wrapRef.current;
+    if (el && el.scrollWidth > el.clientWidth + 4) setScroll(true);
+  });
+  if (!scroll) {
+    return (
+      <div ref={wrapRef} className={`truncate ${className || ''}`}>
+        {text}
+      </div>
+    );
+  }
+  return (
+    <div className={`overflow-hidden ${className || ''}`}>
+      {/* текст дублируется — сдвиг на 50% даёт бесшовный цикл */}
+      <div className="qgs-marquee inline-flex whitespace-nowrap will-change-transform">
+        <span className="pr-12">{text}</span>
+        <span className="pr-12" aria-hidden>{text}</span>
+      </div>
+    </div>
   );
 }

@@ -125,9 +125,51 @@ select.input-dark optgroup {
   0% { opacity: 0; transform: translateY(10px); }
   100% { opacity: 1; transform: translateY(0); }
 }
+@keyframes qgs-answer-toast {
+  0% {
+    transform: translateY(130%);
+    opacity: 0;
+    filter: blur(6px);
+  }
+  14%, 78% {
+    transform: translateY(0);
+    opacity: 1;
+    filter: blur(0);
+  }
+  100% {
+    transform: translateY(130%);
+    opacity: 0;
+    filter: blur(6px);
+  }
+}
+@keyframes qgs-buzzer-ring-spin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+@keyframes qgs-buzzer-glow {
+  0%, 100% {
+    opacity: 0.45;
+    filter: blur(10px);
+  }
+  50% {
+    opacity: 0.9;
+    filter: blur(15px);
+  }
+}
+@keyframes qgs-buzzer-armed-glint {
+  0% { background-position: 0% 50%; }
+  100% { background-position: 200% 50%; }
+}
+/* Бегущая строка: контент дублируется, сдвиг на -50% даёт бесшовный цикл */
+@keyframes qgs-marquee {
+  0% { transform: translateX(0); }
+  100% { transform: translateX(-50%); }
+}
+.qgs-marquee { animation: qgs-marquee 11s linear infinite; }
 .qgs-pulse { animation: qgs-pulse 0.9s ease-in-out infinite; }
 .qgs-pop { animation: qgs-pop 0.6s cubic-bezier(0.22, 1, 0.36, 1); }
 .qgs-fade-in { animation: qgs-fade-in 0.6s ease-out both; }
+.qgs-answer-toast { animation: qgs-answer-toast 4.2s cubic-bezier(0.2, 1, 0.22, 1) both; }
 .qgs-buzz-card-in { animation: qgs-buzz-card-in 0.52s cubic-bezier(0.2, 1, 0.22, 1) both; }
 .qgs-buzz-card-out { animation: qgs-buzz-card-out 0.34s cubic-bezier(0.4, 0, 0.2, 1) both; }
 
@@ -143,6 +185,9 @@ select.input-dark optgroup {
     inset 0 0 38px rgba(255,255,255,0.04),
     0 0 36px rgba(139,92,246,0.18);
 }
+.qgs-mobile-buzzer span {
+  text-shadow: 0 0 18px rgba(255,255,255,0.14);
+}
 .qgs-mobile-buzzer::before {
   content: '';
   position: absolute;
@@ -156,6 +201,7 @@ select.input-dark optgroup {
   );
   opacity: 0.42;
   mask: radial-gradient(circle, transparent 0 61%, #000 62% 71%, transparent 72%);
+  animation: qgs-buzzer-ring-spin 9s linear infinite;
 }
 .qgs-mobile-buzzer::after {
   content: '';
@@ -165,15 +211,23 @@ select.input-dark optgroup {
   border-radius: 9999px;
   opacity: 0.7;
   filter: blur(10px);
+  animation: qgs-buzzer-glow 2.4s ease-in-out infinite;
 }
 .qgs-mobile-buzzer--armed {
   border: 4px solid #a78bfa;
   color: #fff7ed;
+  background:
+    linear-gradient(110deg, transparent 0%, rgba(255,255,255,0.12) 18%, transparent 36%),
+    radial-gradient(circle at 50% 42%, rgba(255,255,255,0.12), transparent 42%),
+    radial-gradient(circle, #22142d 0 58%, #0b0710 100%);
+  background-size: 220% 100%, auto, auto;
   box-shadow:
     inset 0 0 42px rgba(255,255,255,0.06),
     0 0 34px rgba(168,85,247,0.42),
     0 0 80px rgba(217,70,239,0.28);
-  animation: qgs-pulse 0.95s ease-in-out infinite;
+  animation:
+    qgs-pulse 0.95s ease-in-out infinite,
+    qgs-buzzer-armed-glint 1.25s linear infinite;
 }
 .qgs-mobile-buzzer--armed::before {
   background: repeating-conic-gradient(
@@ -183,6 +237,7 @@ select.input-dark optgroup {
     transparent 3deg 5deg
   );
   opacity: 0.82;
+  animation-duration: 2.8s;
 }
 .qgs-mobile-buzzer--armed::after { background: rgba(168,85,247,0.42); }
 .qgs-mobile-buzzer--success {
@@ -193,11 +248,18 @@ select.input-dark optgroup {
 .qgs-mobile-buzzer--success::before {
   background: repeating-conic-gradient(from -3deg, rgba(52,211,153,0.7) 0deg 2deg, transparent 2deg 5deg);
   opacity: 0.72;
+  animation-duration: 4.5s;
+}
+.qgs-mobile-buzzer--success::after {
+  background: rgba(52,211,153,0.34);
 }
 .qgs-mobile-buzzer--waiting {
   border: 4px solid rgba(251,191,36,0.55);
   color: #fde68a;
   box-shadow: 0 0 36px rgba(251,191,36,0.18);
+}
+.qgs-mobile-buzzer--waiting::after {
+  background: rgba(251,191,36,0.2);
 }
 .qgs-mobile-buzzer--locked,
 .qgs-mobile-buzzer--idle,
@@ -207,7 +269,9 @@ select.input-dark optgroup {
   box-shadow: inset 0 0 30px rgba(255,255,255,0.025);
 }
 .qgs-mobile-buzzer--locked { color: rgba(251,113,133,0.72); }
+.qgs-mobile-buzzer--locked::after { background: rgba(244,63,94,0.14); }
 .qgs-mobile-buzzer--paused { color: rgba(253,230,138,0.78); }
+.qgs-mobile-buzzer--paused::after { background: rgba(251,191,36,0.12); }
 
 /* Индетерминантная полоса загрузки (SpotiFLAC не отдаёт реальный прогресс) */
 @keyframes qgs-indeterminate {
