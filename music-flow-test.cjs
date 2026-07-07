@@ -111,6 +111,15 @@ async function api(method, path, body, token) {
   await sleep(250);
   check('resume re-arms player', playerState.players[0].armed === true);
 
+  // 7a. фрагмент закончился, никто не нажал → «доиграть дальше»
+  screen.emit('screen:ended');
+  await sleep(250);
+  check('phase ended after clip end', adminState && adminState.phase === 'ended');
+  admin.emit('admin:playon');
+  await sleep(250);
+  check('playon resumes playing', adminState && adminState.phase === 'playing');
+  check('playon re-arms player', playerState.players[0].armed === true);
+
   // 8. баззер
   player.emit('player:buzz');
   await sleep(300);

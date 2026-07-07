@@ -22,9 +22,10 @@ interface AudioEngine {
 const apiOrigin =
   import.meta.env.VITE_SOCKET_URL ||
   `${window.location.protocol}//${window.location.hostname}:5000`;
-const TRACK_FADE_IN_MS = 650;
+const TRACK_FADE_IN_MS = 1200; // мягкий вход трека (после заставок обрыв тишина→звук режет слух)
 const ANSWER_RESUME_FADE_IN_MS = 450;
 const ANSWER_FADE_OUT_MS = 320;
+const SEGMENT_FADE_OUT_MS = 1200; // затухание в конце отрезка вместо обрыва
 
 export default function MusicScreen() {
   const { gameId } = useParams<{ gameId: string }>();
@@ -86,7 +87,16 @@ export default function MusicScreen() {
       if (!segment.active || segment.ended) return;
       segment.active = false;
       segment.ended = true;
-      audio.pause();
+      // Плавное затухание вместо обрыва. Серверу сообщаем сразу — ведущий
+      // видит «фрагмент закончился», пока звук ещё догасает.
+      const now = ctx.currentTime;
+      gain.gain.cancelScheduledValues(now);
+      gain.gain.setValueAtTime(gain.gain.value, now);
+      gain.gain.linearRampToValueAtTime(0.0001, now + SEGMENT_FADE_OUT_MS / 1000);
+      window.setTimeout(() => {
+        // если за время фейда ведущий уже включил повтор/доигрыш — не трогаем
+        if (!segmentRef.current.active) audio.pause();
+      }, SEGMENT_FADE_OUT_MS + 60);
       socketRef.current?.emit('screen:ended');
     };
     // Один проход отрезка: при достижении конца ждём решения ведущего.
@@ -389,6 +399,11 @@ export default function MusicScreen() {
       else if (m.action === 'resume') {
         fadeResume(m.fadeMs);
       }
+      else if (m.action === 'playOn') {
+        // Доигрываем дальше: снимаем ограничение отрезка и продолжаем с места остановки.
+        segmentRef.current.end = null;
+        fadeResume(m.fadeMs);
+      }
       else if (m.action === 'fadeAndStop') fadeAndStop(m.playMs, m.fadeMs);
       else if (m.action === 'stop') {
         segmentRef.current.active = false;
@@ -578,29 +593,53 @@ export default function MusicScreen() {
           </div>
         )}
 
-        <main className="mx-auto grid min-h-[calc(100vh-2rem)] max-w-5xl grid-rows-[220px_520px_160px] items-center justify-items-center">
-          <section className="flex flex-col items-center justify-center gap-3 self-end pb-6">
+        <main className="qgs-fade-in mx-auto grid min-h-[calc(100vh-2rem)] max-w-5xl grid-rows-[220px_520px_160px] items-center justify-items-center">
+          <section className="flex flex-col items-center justify-center gap-2.5 self-end pb-6">
             {state && (
               <>
-                <h1 className="font-display text-3xl font-extrabold leading-tight text-white">
+                {/* Служебная строка: игра + сквозной счётчик, приглушённо */}
+                <p className="font-mono text-xs font-semibold uppercase tracking-[0.3em] text-zinc-500">
                   {state.gameName}
-                </h1>
-                {state.total > 0 && (
-                  <p className="font-mono text-sm font-semibold uppercase tracking-[0.22em] text-zinc-400">
-                    Песня {displayRound} из {state.total}
-                  </p>
+                  {state.total > 0 ? ` · песня ${displayRound} из ${state.total}` : ''}
+                </p>
+                {/* Герой шапки — название блока (обычный регистр, крупно) */}
+                {state.blockName ? (
+                  <h1 className="font-display max-w-3xl text-4xl font-extrabold leading-tight text-white">
+                    {state.blockName}
+                  </h1>
+                ) : (
+                  <h1 className="font-display text-4xl font-extrabold leading-tight text-white">
+                    {state.gameName}
+                  </h1>
                 )}
-                {state.blockName && (
-                  <div className="flex flex-col items-center gap-2 pt-2">
-                    <p className="text-sm font-extrabold uppercase tracking-[0.24em] text-violet-300">
-                      {state.blockName}
+                {/* Позиция в блоке: точки, если песен немного, иначе компактный чип */}
+                {state.blockName && (state.blockTotal || 0) > 0 && (
+                  (state.blockTotal || 0) <= 16 ? (
+                    <div className="mt-1 flex items-center gap-2">
+                      {Array.from({ length: state.blockTotal || 0 }).map((_, i) => {
+                        const cur = state.blockCurrentIndex ?? 0;
+                        const role = i === cur ? 'cur' : i < cur ? 'done' : 'todo';
+                        return (
+                          <span
+                            // key с ролью: при смене песни точка перемонтируется
+                            // и «выпрыгивает» через qgs-pop
+                            key={`${i}-${role}`}
+                            className={`rounded-full transition-all duration-300 ${
+                              role === 'cur'
+                                ? 'qgs-pop h-2.5 w-2.5 bg-fuchsia-400 shadow-[0_0_10px_rgba(217,70,239,0.8)]'
+                                : role === 'done'
+                                  ? 'h-2 w-2 bg-violet-400/60'
+                                  : 'h-2 w-2 bg-white/15'
+                            }`}
+                          />
+                        );
+                      })}
+                    </div>
+                  ) : (
+                    <p className="mt-1 rounded-full bg-white/5 px-3 py-1 font-mono text-xs font-semibold uppercase tracking-[0.2em] text-zinc-400">
+                      В блоке {displayBlockRound} из {state.blockTotal}
                     </p>
-                    {(state.blockTotal || 0) > 0 && (
-                      <p className="font-mono text-xs font-semibold uppercase tracking-[0.2em] text-zinc-500">
-                        В блоке {displayBlockRound} из {state.blockTotal}
-                      </p>
-                    )}
-                  </div>
+                  )
                 )}
               </>
             )}
@@ -750,50 +789,61 @@ export default function MusicScreen() {
         </div>
       )}
 
-      {(phase === 'intro' || phase === 'blockIntro') && (
-        <div className="flex flex-col items-center w-full max-w-2xl">
-          <p className="mb-3 text-sm font-extrabold uppercase tracking-[0.3em] text-violet-300">
-            {phase === 'intro' ? 'Блоки игры' : 'Новый блок'}
-          </p>
-          {phase === 'blockIntro' && (
-            <h2 className="font-display mb-8 bg-gradient-to-r from-violet-300 via-fuchsia-300 to-amber-200 bg-clip-text text-5xl font-black text-transparent">
-              {state?.blockName}
-            </h2>
-          )}
-          <div className="w-full space-y-3">
-            {(state?.blocks || []).map((b, i) => {
-              const isCurrent = b === state?.blockName;
-              return (
-                <div
-                  key={`${b}-${i}`}
-                  className={`flex items-center gap-4 rounded-xl border px-6 py-4 text-left transition ${
-                    isCurrent
-                      ? 'border-violet-400/50 bg-violet-500/15 shadow-lg shadow-violet-950/40'
-                      : 'border-white/5 bg-white/[0.03]'
-                  }`}
-                >
-                  <span className={`font-mono text-lg font-bold ${isCurrent ? 'text-violet-300' : 'text-zinc-500'}`}>
-                    {i + 1}
-                  </span>
-                  <span className={`font-display text-2xl font-bold ${isCurrent ? 'text-white' : 'text-zinc-300'}`}>
-                    {b}
-                  </span>
-                  {isCurrent && (
-                    <span className="ml-auto rounded-full bg-violet-400/20 px-3 py-1 text-xs font-bold uppercase tracking-wider text-violet-200">
-                      {phase === 'intro' ? 'первый блок' : 'следующий'}
-                    </span>
-                  )}
-                </div>
-              );
-            })}
-          </div>
-          {introLeft != null && !state?.paused && (
-            <p className="mt-8 font-mono text-lg text-zinc-400">
-              Начинаем через <span className="font-bold text-violet-300">{Math.max(1, Math.ceil(introLeft / 1000))}</span>…
+      {(phase === 'intro' || phase === 'blockIntro') && (() => {
+        const blocks = state?.blocks || [];
+        // Много блоков — две колонки и компактные карточки, чтобы всё влезло на экран.
+        const compact = blocks.length > 5;
+        return (
+          <div className={`qgs-fade-in flex w-full flex-col items-center ${compact ? 'max-w-5xl' : 'max-w-2xl'}`}>
+            <p className="mb-3 text-sm font-extrabold uppercase tracking-[0.3em] text-violet-300">
+              {phase === 'intro' ? 'Блоки игры' : 'Новый блок'}
             </p>
-          )}
-        </div>
-      )}
+            {phase === 'blockIntro' && (
+              <h2 className={`font-display bg-gradient-to-r from-violet-300 via-fuchsia-300 to-amber-200 bg-clip-text font-black text-transparent ${
+                compact ? 'mb-5 text-4xl' : 'mb-8 text-5xl'
+              }`}>
+                {state?.blockName}
+              </h2>
+            )}
+            <div className={`w-full ${compact ? 'grid grid-cols-2 gap-2.5' : 'space-y-3'}`}>
+              {blocks.map((b, i) => {
+                const isCurrent = b === state?.blockName;
+                return (
+                  <div
+                    key={`${b}-${i}`}
+                    className={`flex items-center rounded-xl border text-left transition ${
+                      compact ? 'gap-3 px-4 py-2.5' : 'gap-4 px-6 py-4'
+                    } ${
+                      isCurrent
+                        ? 'border-violet-400/50 bg-violet-500/15 shadow-lg shadow-violet-950/40'
+                        : 'border-white/5 bg-white/[0.03]'
+                    }`}
+                  >
+                    <span className={`font-mono font-bold ${compact ? 'text-base' : 'text-lg'} ${isCurrent ? 'text-violet-300' : 'text-zinc-500'}`}>
+                      {i + 1}
+                    </span>
+                    <span className={`font-display font-bold ${compact ? 'text-lg leading-snug' : 'text-2xl'} ${isCurrent ? 'text-white' : 'text-zinc-300'}`}>
+                      {b}
+                    </span>
+                    {isCurrent && (
+                      <span className={`ml-auto shrink-0 rounded-full bg-violet-400/20 font-bold uppercase tracking-wider text-violet-200 ${
+                        compact ? 'px-2 py-0.5 text-[10px]' : 'px-3 py-1 text-xs'
+                      }`}>
+                        {phase === 'intro' ? 'первый блок' : 'следующий'}
+                      </span>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+            {introLeft != null && !state?.paused && (
+              <p className={`font-mono text-lg text-zinc-400 ${compact ? 'mt-5' : 'mt-8'}`}>
+                Начинаем через <span className="font-bold text-violet-300">{Math.max(1, Math.ceil(introLeft / 1000))}</span>…
+              </p>
+            )}
+          </div>
+        );
+      })()}
 
       {phase === 'finished' && (
         <div className="glass p-10 w-full max-w-2xl rounded-2xl border border-violet-500/20 bg-surface/80 backdrop-blur-xl shadow-2xl">

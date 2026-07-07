@@ -135,6 +135,7 @@ export const registerMusicSockets = (io: Server): void => {
     const adminActions: Record<string, (s: ReturnType<typeof getSession>) => void> = {
       'admin:start': (s) => { s.start(); },
       'admin:replay': (s) => s.replayCurrent(),
+      'admin:playon': (s) => s.playOn(),
       'admin:correct': (s) => s.correct(),
       'admin:wrong': (s) => s.wrong(),
       'admin:skip': (s) => s.skip(),

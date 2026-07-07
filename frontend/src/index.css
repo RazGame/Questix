@@ -121,8 +121,13 @@ select.input-dark optgroup {
     filter: blur(8px);
   }
 }
+@keyframes qgs-fade-in {
+  0% { opacity: 0; transform: translateY(10px); }
+  100% { opacity: 1; transform: translateY(0); }
+}
 .qgs-pulse { animation: qgs-pulse 0.9s ease-in-out infinite; }
 .qgs-pop { animation: qgs-pop 0.6s cubic-bezier(0.22, 1, 0.36, 1); }
+.qgs-fade-in { animation: qgs-fade-in 0.6s ease-out both; }
 .qgs-buzz-card-in { animation: qgs-buzz-card-in 0.52s cubic-bezier(0.2, 1, 0.22, 1) both; }
 .qgs-buzz-card-out { animation: qgs-buzz-card-out 0.34s cubic-bezier(0.4, 0, 0.2, 1) both; }
 

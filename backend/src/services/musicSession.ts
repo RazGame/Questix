@@ -47,6 +47,7 @@ class Session {
   pendingRemaining: number | null = null; // остаток таймера на момент паузы
   paused = false;
   blockNames: string[] = []; // имена блоков в порядке плейлиста (для интро)
+  freePlay = false; // «доигрываем дальше»: отрезок закончился, играем без ограничения
   screenReady = false;
   lastActivityAt = Date.now(); // для отгрузки простаивающих сессий
 
@@ -185,6 +186,7 @@ class Session {
 
   loadCurrent() {
     this.clearSchedule();
+    this.freePlay = false;
     this.buzzed = null;
     this.locked.clear();
     this.phase = 'playing';
@@ -208,6 +210,7 @@ class Session {
     if (!song || !song.file) return;
     if (this.phase !== 'ended' && this.phase !== 'playing') return;
 
+    this.freePlay = false;
     this.phase = 'playing';
     this.buzzed = null;
     this.cmd('play', {
@@ -226,6 +229,20 @@ class Session {
     if (this.phase !== 'playing') return;
     this.phase = 'ended';
     this.cmd('pause');
+    this.broadcast();
+  }
+
+  // Никто не угадал фрагмент: продолжаем песню с места остановки,
+  // без ограничения отрезка (до конца файла или до баззера).
+  playOn() {
+    if (this.paused) return;
+    if (this.phase !== 'ended') return;
+    const song = this.playlist[this.currentIndex];
+    if (!song || !song.file) return;
+    this.freePlay = true;
+    this.phase = 'playing';
+    this.buzzed = null;
+    this.cmd('playOn', { fadeMs: RESUME_FADE_IN_MS });
     this.broadcast();
   }
 
@@ -350,6 +367,7 @@ class Session {
     this.buzzed = null;
     this.paused = false;
     this.pendingRemaining = null;
+    this.freePlay = false;
     this.locked.clear();
     this.teamScores.clear();
     this.playlist = [];
@@ -423,7 +441,8 @@ class Session {
           : null,
       fileUrl: cur ? `/media/${cur.file}` : null,
       startSec: cur ? (cur.startSec || 0) : 0,
-      endSec: cur ? (cur.endSec ?? null) : null,
+      // В режиме «доигрываем дальше» отрезок не ограничен (для ресинка экрана).
+      endSec: cur ? (this.freePlay ? null : (cur.endSec ?? null)) : null,
       nextUrl: cur && this.playlist[safeCurrentIndex + 1]
         ? `/media/${this.playlist[safeCurrentIndex + 1].file}`
         : null,

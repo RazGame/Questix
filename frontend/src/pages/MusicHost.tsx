@@ -67,6 +67,7 @@ export default function MusicHost() {
   // id текущей песни приходит с сервера — индекс плейлиста нельзя применять
   // к gameData.songs (порядок в БД может отличаться от порядка блоков).
   const currentSongId = live?.currentSongId;
+  const currentSong = gameData?.songs.find((s) => s._id === currentSongId);
   const displayRound =
     live && live.total > 0
       ? Math.min(Math.max(live.currentIndex + 1, 1), live.total)
@@ -218,8 +219,18 @@ export default function MusicHost() {
                 <div className="py-2">
                   <div className="mb-6 rounded-lg bg-violet-500/5 border border-violet-500/10 p-4">
                     <p className="text-xs uppercase text-zinc-400 font-semibold tracking-wider mb-2">Сейчас играет</p>
-                    <p className="text-lg font-bold text-zinc-100">{live.blockName || 'Без названия блока'}</p>
-                    <p className="text-sm text-zinc-400">Музыка звучит на экране проектора. Ожидаем нажатия кнопки игроками...</p>
+                    <div className="flex items-center gap-3">
+                      {currentSong?.cover && (
+                        <img src={musicCoverSrc(currentSong.cover)} alt="" className="w-12 h-12 rounded-lg object-cover shadow" />
+                      )}
+                      <div className="min-w-0">
+                        <p className="truncate text-lg font-bold text-zinc-100">
+                          {currentSong ? `${currentSong.title} — ${currentSong.artist}` : (live.blockName || 'Без названия блока')}
+                        </p>
+                        <p className="truncate text-xs text-zinc-500">{live.blockName || ''}</p>
+                      </div>
+                    </div>
+                    <p className="mt-2 text-sm text-zinc-400">Музыка звучит на экране проектора. Ожидаем нажатия кнопки игроками...</p>
                   </div>
                   <button
                     onClick={() => emit('admin:skip')}
@@ -237,8 +248,18 @@ export default function MusicHost() {
                 <div className="py-2">
                   <div className="mb-6 rounded-lg bg-amber-500/5 border border-amber-500/15 p-4">
                     <p className="text-xs uppercase text-zinc-400 font-semibold tracking-wider mb-2">Фрагмент закончился</p>
-                    <p className="text-lg font-bold text-zinc-100">{live.blockName || 'Без названия блока'}</p>
-                    <p className="text-sm text-zinc-400">Можно включить этот же кусок ещё раз или перейти к следующей песне.</p>
+                    <div className="flex items-center gap-3">
+                      {currentSong?.cover && (
+                        <img src={musicCoverSrc(currentSong.cover)} alt="" className="w-12 h-12 rounded-lg object-cover shadow" />
+                      )}
+                      <div className="min-w-0">
+                        <p className="truncate text-lg font-bold text-zinc-100">
+                          {currentSong ? `${currentSong.title} — ${currentSong.artist}` : (live.blockName || 'Без названия блока')}
+                        </p>
+                        <p className="truncate text-xs text-zinc-500">{live.blockName || ''}</p>
+                      </div>
+                    </div>
+                    <p className="mt-2 text-sm text-zinc-400">Можно включить этот же кусок ещё раз или перейти к следующей песне.</p>
                   </div>
                   <div className="flex flex-wrap gap-3">
                     <button
@@ -246,6 +267,16 @@ export default function MusicHost() {
                       className="btn-grad rounded-lg px-5 py-2.5 font-bold text-white transition flex items-center gap-2"
                     >
                       <RefreshCw size={16} /> Включить ещё раз
+                    </button>
+                    <button
+                      onClick={() => emit('admin:playon')}
+                      disabled={live.paused}
+                      className={`rounded-lg px-5 py-2.5 font-bold text-white transition flex items-center gap-2 ${
+                        live.paused ? 'cursor-not-allowed bg-white/10 text-zinc-500' : 'bg-emerald-600 hover:bg-emerald-500'
+                      }`}
+                      title="Никто не угадал? Продолжить песню с места остановки, без ограничения отрывка"
+                    >
+                      <Play size={16} /> Доиграть дальше
                     </button>
                     <button
                       onClick={() => emit('admin:skip')}
@@ -268,6 +299,19 @@ export default function MusicHost() {
                       <p className="mt-1 text-sm font-semibold text-amber-200/80">отвечает {live.buzzed.by}</p>
                     )}
                   </div>
+                  {currentSong && (
+                    <div className="mb-4 flex items-center gap-3 rounded-lg border border-emerald-500/15 bg-emerald-500/5 p-3">
+                      {currentSong.cover && (
+                        <img src={musicCoverSrc(currentSong.cover)} alt="" className="w-10 h-10 rounded object-cover" />
+                      )}
+                      <div className="min-w-0">
+                        <p className="text-[10px] uppercase tracking-wider text-emerald-400/80 font-semibold">Правильный ответ</p>
+                        <p className="truncate text-sm font-bold text-emerald-200">
+                          {currentSong.title} — {currentSong.artist}
+                        </p>
+                      </div>
+                    </div>
+                  )}
                   <p className="text-sm text-zinc-400 mb-6">Музыка приостановлена. Выслушайте ответ игрока и отметьте результат:</p>
                   <div className="flex flex-wrap gap-3">
                     <button
