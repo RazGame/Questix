@@ -74,6 +74,24 @@ export const musicService = {
     await api.delete(`/music/games/${id}`);
   },
 
+  // --- bundle: экспорт/импорт игры одним zip ---
+  exportBundle: async (id: string, code: string): Promise<void> => {
+    const res = await api.get(`/music/games/${id}/export`, { responseType: 'blob' });
+    // Скачивание blob через временную ссылку (токен уже ушёл в заголовке axios).
+    const url = URL.createObjectURL(res.data);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${code || 'game'}.questix.zip`;
+    a.click();
+    URL.revokeObjectURL(url);
+  },
+  importBundle: async (file: File): Promise<MusicGame> => {
+    const res = await api.post('/music/games/import', file, {
+      headers: { 'Content-Type': 'application/zip' },
+    });
+    return res.data.game;
+  },
+
   // --- блоки ---
   addBlock: async (id: string, name?: string): Promise<MusicGame> => {
     const res = await api.post(`/music/games/${id}/blocks`, { name });

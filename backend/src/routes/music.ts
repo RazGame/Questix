@@ -26,6 +26,13 @@ router.get('/spotiflac/version', music.getSpotiflacVersion);
 // игры
 router.get('/games', music.listMusicGames);
 router.post('/games', music.createMusicGame);
+// bundle: импорт до /games/:id, чтобы «import» не матчился как :id
+router.post(
+  '/games/import',
+  express.raw({ type: '*/*', limit: '2gb' }),
+  music.importGameBundle
+);
+router.get('/games/:id/export', music.exportGameBundle);
 router.get('/games/:id', music.getMusicGame);
 router.patch('/games/:id', music.updateMusicGame);
 router.delete('/games/:id', music.deleteMusicGame);

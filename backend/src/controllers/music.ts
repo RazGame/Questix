@@ -8,6 +8,7 @@ import { AuthenticatedRequest } from '../middleware/auth';
 import { isGameModerator } from '../services/gamePermissions';
 import { generateJoinCode } from '../services/musicStore';
 import { dropSession } from '../services/musicSession';
+import { exportGame, importGame, BundleError } from '../services/musicBundle';
 import { lanIp, webBase } from '../services/net';
 import { runTool, spotiflacVersion } from '../services/python';
 import { notifyAdminSongUpdated, notifyAdminSongProgress } from '../sockets/ioRef';
@@ -272,6 +273,48 @@ export const deleteMusicGame = async (
     res.status(200).json({ ok: true });
   } catch (error) {
     console.error('Ошибка удаления музыкальной игры:', error);
+    res.status(500).json({ error: 'Ошибка сервера' });
+  }
+};
+
+// ----- bundle: экспорт/импорт игры одним zip (ROADMAP этап 1) -----
+export const exportGameBundle = async (
+  req: AuthenticatedRequest,
+  res: Response
+): Promise<void> => {
+  try {
+    const game = await loadModerableGame(req, res);
+    if (!game) return;
+    const buffer = await exportGame(String(game._id), MEDIA_DIR);
+    res.setHeader('Content-Type', 'application/zip');
+    res.setHeader(
+      'Content-Disposition',
+      `attachment; filename="${game.code || 'game'}.questix.zip"`
+    );
+    res.send(buffer);
+  } catch (error: any) {
+    if (error instanceof BundleError) {
+      res.status(error.status).json({ error: error.message });
+      return;
+    }
+    console.error('Ошибка экспорта bundle:', error);
+    res.status(500).json({ error: 'Ошибка сервера' });
+  }
+};
+
+export const importGameBundle = async (
+  req: AuthenticatedRequest,
+  res: Response
+): Promise<void> => {
+  try {
+    const game = await importGame(req.body as Buffer, req.user.id, MEDIA_DIR);
+    res.status(201).json({ game });
+  } catch (error: any) {
+    if (error instanceof BundleError) {
+      res.status(error.status).json({ error: error.message });
+      return;
+    }
+    console.error('Ошибка импорта bundle:', error);
     res.status(500).json({ error: 'Ошибка сервера' });
   }
 };

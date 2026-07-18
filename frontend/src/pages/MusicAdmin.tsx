@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Plus, Play, Trash2, Upload, Search, RotateCw, Scissors, Link, ChevronUp, ChevronDown } from 'lucide-react';
+import { Plus, Play, Trash2, Upload, Search, RotateCw, Scissors, Link, ChevronUp, ChevronDown, Download, FolderInput } from 'lucide-react';
 import { musicCoverSrc, musicService, MusicGameFull, SongSearchResult } from '../services/music';
 import { createSocket } from '../services/socket';
 import { MusicGame, Song } from '../types';
@@ -477,6 +477,37 @@ export default function MusicAdmin({ isTab = false }: { isTab?: boolean }) {
       setError(apiErrorMessage(e, 'Ошибка удаления музыкальной игры'));
     }
   };
+
+  // --- bundle: скачать игру zip-файлом / импортировать из zip ---
+  const exportGameBundle = async () => {
+    if (!current) return;
+    try {
+      await musicService.exportBundle(current.game._id, current.game.code);
+      setError('');
+    } catch (e: any) {
+      setError(apiErrorMessage(e, 'Ошибка экспорта игры'));
+    }
+  };
+  const importGameBundle = () => {
+    const inp = document.createElement('input');
+    inp.type = 'file';
+    inp.accept = '.zip,application/zip';
+    inp.onchange = async () => {
+      if (!inp.files?.[0]) return;
+      try {
+        setNotice('Импортируем игру…');
+        const game = await musicService.importBundle(inp.files[0]);
+        await loadGames(true);
+        await selectGame(game._id, true);
+        setError('');
+        setNotice(`Игра «${game.title}» импортирована`);
+      } catch (e: any) {
+        setNotice('');
+        setError(apiErrorMessage(e, 'Ошибка импорта игры'));
+      }
+    };
+    inp.click();
+  };
   const renameGame = async (title: string) => {
     if (!current) return;
     const previous = current.game.title;
@@ -680,9 +711,18 @@ export default function MusicAdmin({ isTab = false }: { isTab?: boolean }) {
         <div>
           <div className="flex justify-between items-center mb-4">
             <h2 className="text-2xl font-bold">Игры</h2>
-            <button onClick={createGame} className="btn-grad p-2 rounded">
-              <Plus size={20} />
-            </button>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={importGameBundle}
+                className="rounded-lg border border-white/10 bg-white/5 p-2 text-zinc-300 hover:bg-white/10"
+                title="Импортировать игру из .questix.zip"
+              >
+                <FolderInput size={20} />
+              </button>
+              <button onClick={createGame} className="btn-grad p-2 rounded" title="Создать игру">
+                <Plus size={20} />
+              </button>
+            </div>
           </div>
           <div className="space-y-2 max-h-[calc(100vh-220px)] overflow-y-auto">
             {games.map((g) => (
@@ -724,6 +764,13 @@ export default function MusicAdmin({ isTab = false }: { isTab?: boolean }) {
                       className="btn-grad flex items-center gap-1 rounded-lg px-4 py-2 font-bold"
                     >
                       <Play size={17} /> Начать игру
+                    </button>
+                    <button
+                      onClick={exportGameBundle}
+                      className="text-zinc-400 hover:text-white p-2 hover:bg-white/5 rounded transition"
+                      title="Скачать игру (.questix.zip)"
+                    >
+                      <Download size={18} />
                     </button>
                     <button onClick={deleteGame} className="text-rose-400 hover:text-rose-300 p-2" title="Удалить игру">
                       <Trash2 size={18} />
