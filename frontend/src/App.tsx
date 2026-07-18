@@ -1,24 +1,16 @@
-import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
-import { useAuthStore } from './store/authStore';
-import Navbar from './components/Navbar';
-import Home from './pages/Home';
-import Login from './pages/Login';
-import Signup from './pages/Signup';
-import Games from './pages/Games';
-import GameDetail from './pages/GameDetail';
-import MyAppls from './pages/MyAppls';
-import AdminPanel from './pages/AdminPanel';
-import TaskManager from './pages/TaskManager';
-import QuestGame from './pages/QuestGame';
-import Profile from './pages/Profile';
-import { TeamManager } from './pages/TeamManager';
-import { GameStatisticsPage } from './pages/GameResults';
-import MusicAdmin from './pages/MusicAdmin';
-import MusicScreen from './pages/MusicScreen';
-import MusicPlay from './pages/MusicPlay';
-import MusicHost from './pages/MusicHost';
-import PrivateRoute from './components/PrivateRoute';
-import ErrorBoundary from './components/ErrorBoundary';
+import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
+import { useAuthStore } from './core/store/authStore';
+import Navbar from './core/components/Navbar';
+import Home from './core/pages/Home';
+import Login from './core/pages/Login';
+import Signup from './core/pages/Signup';
+import Profile from './core/pages/Profile';
+import AdminPanel from './core/pages/AdminPanel';
+import JoinByCode from './core/pages/JoinByCode';
+import { TeamManager } from './core/pages/TeamManager';
+import PrivateRoute from './core/components/PrivateRoute';
+import ErrorBoundary from './core/components/ErrorBoundary';
+import { gameModules } from './games/registry';
 
 function App() {
   const token = useAuthStore((state) => state.token);
@@ -30,15 +22,12 @@ function App() {
         <main className="flex-1 overflow-x-hidden">
           <ErrorBoundary>
             <Routes>
+              {/* Core: аккаунты, команды, админка, вход по коду */}
               <Route path="/" element={<Home />} />
-              <Route path="/login" element={token ? <Games /> : <Login />} />
-              <Route path="/signup" element={token ? <Games /> : <Signup />} />
-              <Route path="/games" element={<Games />} />
-              <Route path="/games/:id" element={<GameDetail />} />
-              <Route
-                path="/my-appls"
-                element={<PrivateRoute component={MyAppls} />}
-              />
+              <Route path="/login" element={token ? <Navigate to="/games" replace /> : <Login />} />
+              <Route path="/signup" element={token ? <Navigate to="/games" replace /> : <Signup />} />
+              <Route path="/join" element={<JoinByCode />} />
+              <Route path="/join/:code" element={<JoinByCode />} />
               <Route
                 path="/profile"
                 element={<PrivateRoute component={Profile} />}
@@ -46,10 +35,6 @@ function App() {
               <Route
                 path="/profile/:userId"
                 element={<PrivateRoute component={Profile} />}
-              />
-              <Route
-                path="/game/:gameId/play/:gameApplId"
-                element={<PrivateRoute component={QuestGame} />}
               />
               <Route
                 path="/teams"
@@ -60,28 +45,11 @@ function App() {
                 element={<PrivateRoute component={TeamManager} />}
               />
               <Route
-                path="/games/:gameId/results"
-                element={<PrivateRoute component={GameStatisticsPage} />}
-              />
-              <Route
                 path="/admin"
                 element={<PrivateRoute component={AdminPanel} roles={['admin', 'organizer']} />}
               />
-              <Route
-                path="/admin/game/:gameId/tasks"
-                element={<PrivateRoute component={TaskManager} roles={['admin', 'organizer']} />}
-              />
-              <Route
-                path="/admin/music"
-                element={<PrivateRoute component={MusicAdmin} roles={['admin', 'organizer']} />}
-              />
-              <Route
-                path="/admin/music/host/:gameId"
-                element={<PrivateRoute component={MusicHost} roles={['admin', 'organizer']} />}
-              />
-              {/* «Угадай мелодию»: экран-проектор и телефоны — публичные, без регистрации */}
-              <Route path="/m/screen/:gameId" element={<MusicScreen />} />
-              <Route path="/m/play" element={<MusicPlay />} />
+              {/* Роуты игровых модулей из реестра */}
+              {gameModules.flatMap((m) => m.routes)}
             </Routes>
           </ErrorBoundary>
         </main>

@@ -4,20 +4,16 @@ import cors from 'cors';
 import { Server as SocketServer } from 'socket.io';
 import swaggerJsDoc from 'swagger-jsdoc';
 import swaggerUiExpress from 'swagger-ui-express';
-import { config } from './config/config';
-import { connectDB } from './config/database';
+import { config } from './core/config/config';
+import { connectDB } from './core/config/database';
+import { MEDIA_DIR } from './core/services/media';
+import { modules } from './core/moduleRegistry';
 
-import authRoutes from './routes/auth';
-import gameRoutes from './routes/game';
-import applRoutes from './routes/gameAppl';
-import userRoutes from './routes/user';
-import taskRoutes from './routes/task';
-import progressRoutes from './routes/gameProgress';
-import teamRoutes from './routes/team';
-import musicRoutes from './routes/music';
-import { MEDIA_DIR } from './controllers/music';
-import { registerMusicSockets } from './sockets/music';
-import { setIo } from './sockets/ioRef';
+// Core-роуты (аккаунты, команды, вход по коду) — не зависят от игровых модулей.
+import authRoutes from './core/routes/auth';
+import userRoutes from './core/routes/user';
+import teamRoutes from './core/routes/team';
+import joinRoutes from './core/routes/join';
 
 const app: Application = express();
 const devOriginPattern = /^https?:\/\/(localhost|127\.0\.0\.1|192\.168\.\d{1,3}\.\d{1,3}|10\.\d{1,3}\.\d{1,3}\.\d{1,3}|172\.(1[6-9]|2\d|3[0-1])\.\d{1,3}\.\d{1,3})(:\d+)?$/;
@@ -59,21 +55,23 @@ const swaggerOptions = {
       },
     },
   },
-  apis: ['./src/routes/*.ts'],
+  apis: ['./src/core/routes/*.ts', './src/modules/*/routes/*.ts'],
 };
 
 const swaggerSpec = swaggerJsDoc(swaggerOptions);
 app.use('/api-docs', swaggerUiExpress.serve, swaggerUiExpress.setup(swaggerSpec));
 
-// Routes
+// Core-роуты
 app.use('/auth', authRoutes);
-app.use('/games', gameRoutes);
-app.use('/appls', applRoutes);
 app.use('/users', userRoutes);
-app.use('/tasks', taskRoutes);
-app.use('/progress', progressRoutes);
 app.use('/teams', teamRoutes);
-app.use('/music', musicRoutes);
+app.use('/join', joinRoutes);
+
+// Игровые модули из реестра: у каждого свой mountPath
+// (quest монтируется в '/' и держит свои исторические /games,/appls,/tasks,/progress).
+for (const gameModule of modules) {
+  app.use(gameModule.mountPath, gameModule.router);
+}
 
 // Статика аудиофайлов «Угадай мелодию»
 app.use('/media', (req, res, next) => {
@@ -93,7 +91,7 @@ app.get('/health', (req, res) => {
   res.json({ status: 'OK' });
 });
 
-// HTTP-сервер с Socket.IO для realtime «Угадай мелодию»
+// HTTP-сервер с Socket.IO; реалтайм регистрируют сами модули
 const httpServer = http.createServer(app);
 const io = new SocketServer(httpServer, {
   cors: { origin: corsOrigin },
@@ -102,10 +100,10 @@ const io = new SocketServer(httpServer, {
   pingInterval: 2500,
   pingTimeout: 3000,
 });
-registerMusicSockets(io);
-setIo(io);
+for (const gameModule of modules) {
+  gameModule.registerSockets?.(io);
+}
 
-// io доступен другим модулям (фоновая загрузка песен шлёт song-updated)
 export { io };
 
 // Connect DB and Start Server
@@ -115,7 +113,7 @@ const startServer = async () => {
     httpServer.listen(config.port, '0.0.0.0', () => {
       console.log(`🚀 Backend запущен на http://localhost:${config.port}`);
       console.log(`📚 Swagger UI: http://localhost:${config.port}/api-docs`);
-      console.log(`🎵 Socket.IO «Угадай мелодию» активен`);
+      console.log(`🧩 Модули: ${modules.map((m) => m.kind).join(', ')}`);
     });
   } catch (error) {
     console.error('❌ Ошибка запуска сервера:', error);
