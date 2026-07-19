@@ -521,11 +521,10 @@ export default function MusicAdmin({ isTab = false }: { isTab?: boolean }) {
       setError(apiErrorMessage(e, 'Ошибка переименования музыкальной игры'));
     }
   };
-  // Переключение режима входа (без авторизации / по аккаунту).
-  // В командном режиме вход всегда «по аккаунту» — менять нельзя.
+  // Переключение режима входа. Оси независимы: командная без авторизации =
+  // ad-hoc команды вечеринки (игроки вводят название команды на телефоне).
   const setAuthMode = async (auth: 'open' | 'required') => {
     if (!current) return;
-    if (current.game.participation === 'team') return;
     const previous = current.game.auth;
     setCurrent({ ...current, game: { ...current.game, auth } });
     try {
@@ -537,18 +536,16 @@ export default function MusicAdmin({ isTab = false }: { isTab?: boolean }) {
     }
   };
 
-  // Переключение состава (одиночная / командная). Командная требует авторизации.
+  // Переключение состава (одиночная / командная).
   const setParticipation = async (participation: 'solo' | 'team') => {
     if (!current) return;
     const prevPart = current.game.participation;
-    const prevAuth = current.game.auth;
-    const nextAuth = participation === 'team' ? 'required' : current.game.auth;
-    setCurrent({ ...current, game: { ...current.game, participation, auth: nextAuth } });
+    setCurrent({ ...current, game: { ...current.game, participation } });
     try {
       await musicService.update(current.game._id, { participation });
       setError('');
     } catch (e: any) {
-      setCurrent({ ...current, game: { ...current.game, participation: prevPart, auth: prevAuth } });
+      setCurrent({ ...current, game: { ...current.game, participation: prevPart } });
       setError(apiErrorMessage(e, 'Ошибка смены состава игроков'));
     }
   };
@@ -806,9 +803,7 @@ export default function MusicAdmin({ isTab = false }: { isTab?: boolean }) {
                   {/* Вход */}
                   <div>
                     <p className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-zinc-500">Вход</p>
-                    <div className={`inline-flex rounded-lg border border-white/10 bg-white/[0.03] p-1 ${
-                      current.game.participation === 'team' ? 'opacity-60' : ''
-                    }`}>
+                    <div className="inline-flex rounded-lg border border-white/10 bg-white/[0.03] p-1">
                       {([
                         { v: 'open', label: 'Без авторизации' },
                         { v: 'required', label: 'По аккаунту' },
@@ -816,19 +811,22 @@ export default function MusicAdmin({ isTab = false }: { isTab?: boolean }) {
                         <button
                           key={o.v}
                           onClick={() => setAuthMode(o.v)}
-                          disabled={current.game.participation === 'team'}
                           className={`rounded-md px-3 py-1.5 text-sm font-semibold transition ${
                             (current.game.auth || 'open') === o.v
                               ? 'btn-grad'
                               : 'text-zinc-300 hover:bg-white/10'
-                          } ${current.game.participation === 'team' ? 'cursor-not-allowed' : ''}`}
+                          }`}
                         >
                           {o.label}
                         </button>
                       ))}
                     </div>
                     {current.game.participation === 'team' && (
-                      <p className="mt-1 text-[11px] text-zinc-500">Командная игра — всегда по аккаунту</p>
+                      <p className="mt-1 text-[11px] text-zinc-500">
+                        {(current.game.auth || 'open') === 'required'
+                          ? 'Команды Questix — по аккаунтам игроков'
+                          : 'Команды вечеринки — игроки сами вводят название на телефоне'}
+                      </p>
                     )}
                   </div>
                 </div>

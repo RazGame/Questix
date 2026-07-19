@@ -127,11 +127,10 @@ export const createMusicGame = async (
   }
 
   const baseTitle = normalizeMusicGameTitle(req.body?.title);
-  // Угадайка: одиночная или командная. Командная всегда требует авторизации
-  // (счёт и баззер привязаны к командам Questix, а команда — к аккаунтам).
+  // Оси независимы: team+required — команды Questix (аккаунты),
+  // team+open — ad-hoc команды вечеринки (вход по имени, команда по названию).
   const participation = req.body?.participation === 'team' ? 'team' : 'solo';
-  const auth =
-    participation === 'team' ? 'required' : req.body?.auth === 'required' ? 'required' : 'open';
+  const auth = req.body?.auth === 'required' ? 'required' : 'open';
 
   try {
     for (let attempt = 0; attempt < 20; attempt += 1) {
@@ -211,14 +210,14 @@ export const updateMusicGame = async (
     const game = await loadModerableGame(req, res);
     if (!game) return;
     if (typeof req.body?.title === 'string') game.title = req.body.title.trim();
-    // Можно менять состав (solo/team) и вход. Командная всегда auth=required.
+    // Оси независимы: solo/team × open/required. team+open — ad-hoc команды
+    // вечеринки, team+required — команды Questix по аккаунтам.
     if (req.body?.participation === 'solo' || req.body?.participation === 'team') {
       game.participation = req.body.participation;
     }
     if (req.body?.auth === 'open' || req.body?.auth === 'required') {
       game.auth = req.body.auth;
     }
-    if (game.participation === 'team') game.auth = 'required';
     // Переупорядочивание блоков: blockOrder — перестановка id всех блоков.
     if (Array.isArray(req.body?.blockOrder)) {
       const order = req.body.blockOrder.map(String);

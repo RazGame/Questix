@@ -53,14 +53,15 @@ export const registerMusicSockets = (io: Server): void => {
 
       const session = getSession(io, gameId);
       session.setMeta(game.title, game.code || ''); // кэш меты для publicState
-      // Режим сессии следует за настройкой игры (команда требует авторизации).
       const isTeam = game.participation === 'team';
       session.setMode(isTeam ? 'team' : 'solo');
 
-      // Игрок: если у игры auth=required (или это командная) — вход только по аккаунту.
+      // Два вида командной игры:
+      //  team + required — команды Questix (нужен аккаунт, команда из БД);
+      //  team + open     — ad-hoc команды вечеринки (аноним вводит название).
       let playerName: string | undefined = data.name;
       let playerTeam: { teamId: string; teamName: string } | undefined;
-      if (role === 'player' && (game.auth === 'required' || isTeam)) {
+      if (role === 'player' && game.auth === 'required') {
         const token = socket.handshake.auth?.token;
         let payload: any = null;
         try { payload = token ? verifyToken(token) : null; } catch { payload = null; }
@@ -77,7 +78,7 @@ export const registerMusicSockets = (io: Server): void => {
         data.playerId = `u:${payload.id}`;
         playerName = user.nickname || `${user.firstName || ''} ${user.lastName || ''}`.trim() || 'Игрок';
 
-        // Командная угадайка: игрок должен состоять в команде Questix.
+        // Командная с аккаунтами: игрок должен состоять в команде Questix.
         if (isTeam) {
           const team = await Team.findOne({
             $or: [{ captain: payload.id }, { members: payload.id }],
@@ -88,6 +89,19 @@ export const registerMusicSockets = (io: Server): void => {
           }
           playerTeam = { teamId: String(team._id), teamName: team.name };
         }
+      } else if (role === 'player' && isTeam) {
+        // team + open: команда приходит названием с телефона.
+        const rawTeam = String(data.teamName || '').replace(/\s+/g, ' ').trim();
+        if (!rawTeam) {
+          socket.emit('error-msg', { message: 'Укажите название команды.' });
+          return;
+        }
+        if (rawTeam.length > 24) {
+          socket.emit('error-msg', { message: 'Название команды до 24 символов.' });
+          return;
+        }
+        // Ключ команды — нормализованное имя: «Стол 1» и «стол 1» — одна команда.
+        playerTeam = { teamId: `t:${rawTeam.toLowerCase()}`, teamName: rawTeam };
       }
 
       socket.join(`g:${gameId}`);

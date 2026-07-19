@@ -36,6 +36,9 @@ class Session {
   mode: Mode = 'solo'; // solo: счёт/баззер по игроку; team: по команде
   players = new Map<string, Player>();
   teamScores = new Map<string, number>(); // teamId -> очки (team-режим)
+  // Каноничное написание названия команды: ad-hoc команды матчатся ключом
+  // без регистра («стол 1» = «Стол 1»), показываем первое введённое.
+  teamNames = new Map<string, string>();
   phase: Phase = 'lobby';
   playlist: PlaylistItem[] = []; // снимок песен на момент старта
   currentIndex = -1;
@@ -108,10 +111,21 @@ class Session {
 
   // --- игроки ---
   upsertPlayer(playerId: string, name?: string, team?: { teamId: string; teamName: string }) {
+    if (team) {
+      // Первое написание закрепляется за командой, дальше все видят его.
+      const canonical = this.teamNames.get(team.teamId);
+      if (canonical) team = { ...team, teamName: canonical };
+      else this.teamNames.set(team.teamId, team.teamName);
+    }
     const existing = this.players.get(playerId);
     if (existing) {
       if (name) existing.name = name;
-      if (team) { existing.teamId = team.teamId; existing.teamName = team.teamName; }
+      // Сменить команду можно только в лобби: посреди игры реджойн с другим
+      // названием не должен уносить очки/блокировки в другую группу.
+      if (team && (this.phase === 'lobby' || !existing.teamId)) {
+        existing.teamId = team.teamId;
+        existing.teamName = team.teamName;
+      }
       existing.connected = true;
     } else {
       this.players.set(playerId, {

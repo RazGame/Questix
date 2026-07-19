@@ -43,11 +43,12 @@ async function ensureUser(nick, mail) {
   const org = await api('POST', '/auth/login', { username: 'design_org@t.io', hashed_pwd: 'password1' });
   check('organizer login', !!org.token);
 
-  // 1. командная музыкальная игра — auth должен форситься в required
-  const { game } = await api('POST', '/music/games', { title: `Team Music ${ts}`, participation: 'team', auth: 'open' }, org.token);
+  // 1. командная игра с аккаунтами (team + required = команды Questix).
+  // Форс auth больше нет: team+open — отдельный режим ad-hoc команд.
+  const { game } = await api('POST', '/music/games', { title: `Team Music ${ts}`, participation: 'team', auth: 'required' }, org.token);
   check('create team music game', !!game._id && game.kind === 'guess_song');
   check('team game participation=team', game.participation === 'team');
-  check('team game forces auth=required', game.auth === 'required');
+  check('team game auth=required', game.auth === 'required');
 
   // 2. публичная мета отдаёт командный режим
   const meta = await api('GET', `/music/public/${game.code}`, null);

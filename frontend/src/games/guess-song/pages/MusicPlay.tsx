@@ -44,27 +44,35 @@ export default function MusicPlay() {
 
   const [code, setCode] = useState(codeFromUrl);
   const [name, setName] = useState(localStorage.getItem('qgs_name') || '');
+  // Ad-hoc команда вечеринки (team+open): вводится на телефоне.
+  const [teamName, setTeamName] = useState(localStorage.getItem('qgs_team') || '');
   const [joined, setJoined] = useState(false);
   const [error, setError] = useState('');
   const [state, setState] = useState<MusicState | null>(null);
   // Режим входа игры: open (по имени) или required (по аккаунту). null — пока грузим мету.
   const [authMode, setAuthMode] = useState<'open' | 'required' | null>(codeFromUrl ? null : 'open');
+  const [participation, setParticipation] = useState<'solo' | 'team'>('solo');
   const token = localStorage.getItem('token');
   let storedUser: { nickname?: string } | null = null;
   try { storedUser = JSON.parse(localStorage.getItem('user') || 'null'); } catch { storedUser = null; }
   const needsLogin = authMode === 'required' && !token;
+  // team+open: на форме входа появляется поле команды.
+  const asksTeamName = authMode === 'open' && participation === 'team';
 
   // Узнаём режим входа по коду (публично, без токена).
   useEffect(() => {
     if (!codeFromUrl) return;
     musicService
       .publicMeta(codeFromUrl)
-      .then((m) => setAuthMode(m.auth))
+      .then((m) => {
+        setAuthMode(m.auth);
+        setParticipation(m.participation || 'solo');
+      })
       .catch(() => setAuthMode('open'));
   }, [codeFromUrl]);
 
   const pidKey = (c: string) => `qgs_pid_${c}`;
-  const emitJoin = (targetCode: string, targetName: string) => {
+  const emitJoin = (targetCode: string, targetName: string, targetTeam?: string) => {
     joinedCodeRef.current = targetCode;
     joinedNameRef.current = targetName;
     const savedPid = localStorage.getItem(pidKey(targetCode));
@@ -73,6 +81,7 @@ export default function MusicPlay() {
       role: 'player',
       code: targetCode,
       name: targetName,
+      teamName: targetTeam || localStorage.getItem('qgs_team') || undefined,
       playerId: savedPid,
     });
   };
@@ -160,11 +169,17 @@ export default function MusicPlay() {
 
   const join = () => {
     const trimmed = name.trim();
+    const trimmedTeam = teamName.replace(/\s+/g, ' ').trim();
     if (!trimmed || !code) return;
+    if (asksTeamName && !trimmedTeam) {
+      setError('Укажите название команды');
+      return;
+    }
     keepAwake();
     localStorage.setItem('qgs_name', trimmed);
+    if (trimmedTeam) localStorage.setItem('qgs_team', trimmedTeam);
     autoJoinTriedRef.current = true;
-    emitJoin(code, trimmed);
+    emitJoin(code, trimmed, trimmedTeam || undefined);
   };
 
   const me = state?.players.find((p) => p.id === playerIdRef.current);
@@ -304,8 +319,23 @@ export default function MusicPlay() {
             onKeyDown={(e) => e.key === 'Enter' && join()}
             placeholder="Твоё имя или ник"
             maxLength={24}
-            className="input-dark mb-4"
+            className={`input-dark ${asksTeamName ? 'mb-3' : 'mb-4'}`}
           />
+          {asksTeamName && (
+            <>
+              <input
+                value={teamName}
+                onChange={(e) => setTeamName(e.target.value)}
+                onKeyDown={(e) => e.key === 'Enter' && join()}
+                placeholder="Название команды"
+                maxLength={24}
+                className="input-dark mb-1"
+              />
+              <p className="mb-4 text-xs text-zinc-500">
+                Одинаковое название = одна команда. Договоритесь за столом 🙂
+              </p>
+            </>
+          )}
           <button onClick={join} className="btn-grad w-full rounded-lg py-3 font-bold text-lg">
             Войти в игру
           </button>
