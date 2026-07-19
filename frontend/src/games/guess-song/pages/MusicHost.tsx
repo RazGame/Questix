@@ -1,8 +1,9 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { Play, Pause, Volume2, Users, ListMusic, ArrowLeft, RefreshCw, AlertCircle } from 'lucide-react';
+import { Play, Pause, Volume2, Users, ListMusic, ArrowLeft, RefreshCw, AlertCircle, Send } from 'lucide-react';
 import { musicCoverSrc, musicService, MusicGameFull } from '../services/music';
 import { createSocket } from '../services/socket';
+import { partyResultsService } from '../../../core/services/results';
 import { MusicState } from '../../../core/types';
 
 export default function MusicHost() {
@@ -12,7 +13,29 @@ export default function MusicHost() {
   const [live, setLive] = useState<MusicState | null>(null);
   const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(true);
+  const [sendingResults, setSendingResults] = useState(false);
+  const [sendNotice, setSendNotice] = useState('');
   const socketRef = useRef<ReturnType<typeof createSocket> | null>(null);
+
+  // Отправка всех неотправленных итогов станции в облако Questix.
+  const sendResults = async () => {
+    setSendingResults(true);
+    setSendNotice('');
+    try {
+      const s = await partyResultsService.send();
+      if (s.sent === 0 && s.failed === 0 && s.pending === 0) {
+        setSendNotice('Облако не настроено (QUESTIX_CLOUD_URL) — итоги сохранены локально.');
+      } else if (s.failed > 0) {
+        setError(`Отправлено ${s.sent}, не удалось ${s.failed}. Попробуйте позже — итоги не потеряются.`);
+      } else {
+        setSendNotice(`Отправлено в Questix: ${s.sent}. Неотправленных не осталось.`);
+      }
+    } catch (e: any) {
+      setError(e.response?.data?.error || 'Не удалось отправить результаты');
+    } finally {
+      setSendingResults(false);
+    }
+  };
 
   const loadGameData = useCallback(async () => {
     if (!gameId) return;
@@ -359,12 +382,25 @@ export default function MusicHost() {
                 <div className="text-center py-6">
                   <p className="text-2xl font-bold text-emerald-400 mb-2">🏆 Игра окончена!</p>
                   <p className="text-zinc-400 mb-6">Все треки сыграны. Итоговая таблица лидеров отображается на экране.</p>
-                  <button
-                    onClick={() => emit('admin:reset')}
-                    className="flex items-center gap-2 rounded-xl bg-white/10 px-6 py-3 font-bold text-white hover:bg-white/20 mx-auto transition"
-                  >
-                    <RefreshCw size={16} /> Сбросить сессию и играть заново
-                  </button>
+                  <div className="flex flex-wrap justify-center gap-3">
+                    {/* Итоги уже сохранены на станции; кнопка шлёт их в облако Questix */}
+                    <button
+                      onClick={sendResults}
+                      disabled={sendingResults}
+                      className="btn-grad flex items-center gap-2 rounded-xl px-6 py-3 font-bold transition disabled:opacity-50"
+                    >
+                      <Send size={16} /> {sendingResults ? 'Отправляем…' : 'Отправить результаты в Questix'}
+                    </button>
+                    <button
+                      onClick={() => emit('admin:reset')}
+                      className="flex items-center gap-2 rounded-xl bg-white/10 px-6 py-3 font-bold text-white hover:bg-white/20 transition"
+                    >
+                      <RefreshCw size={16} /> Сбросить сессию и играть заново
+                    </button>
+                  </div>
+                  {sendNotice && (
+                    <p className="mt-4 text-sm text-emerald-300">{sendNotice}</p>
+                  )}
                 </div>
               )}
             </div>

@@ -136,3 +136,28 @@ export interface JWTPayload {
   roles: string[];
   organizerOf?: string[]; // типы игр для canCreateGame (['*'] — все)
 }
+
+// Итог сыгранной вечеринки (ROADMAP этап 5). Пишется станцией при финале
+// игры и уезжает в облако (апсерт по resultId — повторная отправка без дублей).
+export interface ISessionResultStanding {
+  name: string; // имя игрока (или команды в team-строках без игрока)
+  teamName?: string | null; // команда игрока (team-режим)
+  userId?: Types.ObjectId | null; // только у авторизованных игроков
+  score: number;
+  place: number; // 1..N (в team-режиме — место команды)
+}
+
+export interface ISessionResult {
+  _id?: string;
+  resultId: string; // uuid — ключ идемпотентности
+  gameId: string; // id игры на станции (строкой: в облаке такой игры может не быть)
+  kind: string; // 'guess_song' (квиз и другие — позже)
+  title: string;
+  mode: 'solo' | 'team';
+  finishedAt: Date;
+  standings: ISessionResultStanding[];
+  sentAt?: Date | null; // станция: когда успешно отправлен в облако
+  receivedAt?: Date | null; // облако: когда принят от станции
+  createdAt?: Date;
+  updatedAt?: Date;
+}

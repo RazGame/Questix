@@ -25,4 +25,8 @@ export const config = {
   jwtPublicKeyFile: process.env.JWT_PUBLIC_KEY_FILE || '',
   bcryptRounds: parseInt(process.env.BCRYPT_ROUNDS || '10', 10),
   corsOrigin: process.env.CORS_ORIGIN,
+  // Этап 5: адрес облака для отправки итогов вечеринок (пусто = не отправляем,
+  // мы сами и есть облако). Токен — опционален, только для автоотправки на старте.
+  questixCloudUrl: (process.env.QUESTIX_CLOUD_URL || '').replace(/\/+$/, ''),
+  questixCloudToken: process.env.QUESTIX_CLOUD_TOKEN || '',
 };

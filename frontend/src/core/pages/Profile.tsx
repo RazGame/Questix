@@ -1,9 +1,17 @@
 import { useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { Crown, Edit2, Mail, MapPin, Phone, Save, User, Users, X } from 'lucide-react';
+import { Crown, Edit2, Mail, MapPin, PartyPopper, Phone, Save, User, Users, X } from 'lucide-react';
 import { AdminUser, userService } from '../services/users';
 import { ITeam, teams } from '../services/teams';
+import { MyPartyResult, partyResultsService } from '../services/results';
 import { useAuthStore } from '../store/authStore';
+
+const placeBadge = (place: number | null) => {
+  if (place === 1) return '🥇';
+  if (place === 2) return '🥈';
+  if (place === 3) return '🥉';
+  return place ? `#${place}` : '—';
+};
 
 export default function Profile() {
   const { userId } = useParams<{ userId: string }>();
@@ -24,10 +32,20 @@ export default function Profile() {
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
   const [isSaving, setIsSaving] = useState(false);
+  const [parties, setParties] = useState<MyPartyResult[]>([]);
 
   useEffect(() => {
     loadProfile();
   }, [userId, user?.id]);
+
+  // «Мои вечеринки» (этап 5) — только в собственном профиле.
+  useEffect(() => {
+    if (isOwnProfile) {
+      partyResultsService.my().then(setParties).catch(() => {});
+    } else {
+      setParties([]);
+    }
+  }, [isOwnProfile, user?.id]);
 
   const applyUser = (nextUser: AdminUser) => {
     setProfileUser(nextUser);
@@ -217,6 +235,40 @@ export default function Profile() {
               <p className="text-zinc-400">Пользователь пока не состоит в команде.</p>
             )}
           </div>
+
+          {isOwnProfile && parties.length > 0 && (
+            <div className="glass p-6">
+              <div className="mb-4 flex items-center gap-2 text-zinc-400">
+                <PartyPopper size={18} className="text-violet-300" />
+                Мои вечеринки
+              </div>
+              <div className="space-y-2">
+                {parties.map((p) => (
+                  <div
+                    key={p.resultId}
+                    className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-white/5 bg-white/[0.02] px-4 py-3"
+                  >
+                    <div className="min-w-0">
+                      <p className="truncate font-semibold text-zinc-100">
+                        {p.kind === 'guess_song' ? '🎵 ' : ''}{p.title}
+                      </p>
+                      <p className="text-sm text-zinc-500">
+                        {new Date(p.finishedAt).toLocaleDateString('ru-RU', {
+                          day: 'numeric', month: 'long', year: 'numeric',
+                        })}
+                        {' · '}участников: {p.totalParticipants}
+                        {p.teamName ? ` · команда «${p.teamName}»` : ''}
+                      </p>
+                    </div>
+                    <div className="flex items-center gap-3">
+                      <span className="text-lg font-bold text-amber-300">{placeBadge(p.place)}</span>
+                      <span className="font-mono text-violet-300">{p.score ?? 0} очков</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
       </div>
 

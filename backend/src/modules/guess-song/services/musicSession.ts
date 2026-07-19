@@ -1,5 +1,7 @@
+import crypto from 'crypto';
 import { Server } from 'socket.io';
 import { buildPlaylist, PlaylistItem } from './musicStore';
+import { SessionResult } from '../../../core/models/SessionResult';
 
 // Тайминги после правильного ответа (мс): доиграть, затем плавно затихнуть.
 const REVEAL_PLAY_MS = 5000;
@@ -308,6 +310,8 @@ class Session {
       this.phase = 'finished';
       this.cmd('stop');
       this.broadcast();
+      // Снапшот итогов в Mongo (ROADMAP этап 5) — вне хот-пути, fire-and-forget.
+      this.saveResultSnapshot();
     } else {
       this.cmd('stop');
       const next = this.playlist[this.currentIndex];
@@ -375,6 +379,58 @@ class Session {
     for (const p of this.players.values()) { p.ready = false; p.score = 0; }
     this.cmd('stop');
     this.broadcast();
+  }
+
+  // Снапшот итогов вечеринки в Mongo (ROADMAP этап 5). Счёт в сессии
+  // эфемерный — это единственное место, где он персистится. Отправкой в
+  // облако занимается core (/results/send), здесь только фиксация.
+  saveResultSnapshot() {
+    if (this.players.size === 0) return;
+
+    const toUserId = (playerId: string) =>
+      playerId.startsWith('u:') ? playerId.slice(2) : null;
+
+    let standings: Array<{
+      name: string; teamName: string | null; userId: string | null; score: number; place: number;
+    }> = [];
+
+    if (this.mode === 'team') {
+      // Место — командное (teamSummary уже отсортирован по очкам),
+      // строки — по игрокам, чтобы вечеринка находилась в профиле каждого.
+      const teamPlace = new Map<string, { place: number; score: number }>();
+      this.teamSummary().forEach((t, i) => teamPlace.set(t.id, { place: i + 1, score: t.score }));
+      standings = Array.from(this.players.values())
+        .filter((p) => p.teamId && teamPlace.has(p.teamId))
+        .map((p) => ({
+          name: p.name,
+          teamName: p.teamName || 'Команда',
+          userId: toUserId(p.id),
+          score: teamPlace.get(p.teamId!)!.score,
+          place: teamPlace.get(p.teamId!)!.place,
+        }));
+    } else {
+      standings = Array.from(this.players.values())
+        .sort((a, b) => b.score - a.score)
+        .map((p, i) => ({
+          name: p.name,
+          teamName: null,
+          userId: toUserId(p.id),
+          score: p.score,
+          place: i + 1,
+        }));
+    }
+
+    SessionResult.create({
+      resultId: crypto.randomUUID(),
+      gameId: this.gameId,
+      kind: 'guess_song',
+      title: this.gameName,
+      mode: this.mode,
+      finishedAt: new Date(),
+      standings,
+    }).catch((error) => {
+      console.error('Не удалось сохранить итог вечеринки:', error);
+    });
   }
 
   // Сводка по командам (team-режим): очки + кто в сети/готов.

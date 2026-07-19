@@ -14,6 +14,8 @@ import authRoutes from './core/routes/auth';
 import userRoutes from './core/routes/user';
 import teamRoutes from './core/routes/team';
 import joinRoutes from './core/routes/join';
+import resultsRoutes from './core/routes/results';
+import { autoSendOnBoot } from './core/services/resultsSync';
 
 const app: Application = express();
 const devOriginPattern = /^https?:\/\/(localhost|127\.0\.0\.1|192\.168\.\d{1,3}\.\d{1,3}|10\.\d{1,3}\.\d{1,3}\.\d{1,3}|172\.(1[6-9]|2\d|3[0-1])\.\d{1,3}\.\d{1,3})(:\d+)?$/;
@@ -72,6 +74,7 @@ app.use('/auth', authRoutes);
 app.use('/users', userRoutes);
 app.use('/teams', teamRoutes);
 app.use('/join', joinRoutes);
+app.use('/results', resultsRoutes);
 
 // Игровые модули из реестра: у каждого свой mountPath
 // (quest монтируется в '/' и держит свои исторические /games,/appls,/tasks,/progress).
@@ -116,6 +119,8 @@ export { io };
 const startServer = async () => {
   try {
     await connectDB();
+    // Этап 5: неотправленные итоги вечеринок — при наличии URL облака и токена
+    autoSendOnBoot();
     httpServer.listen(config.port, '0.0.0.0', () => {
       console.log(`🚀 Backend запущен на http://localhost:${config.port}`);
       console.log(`📚 Swagger UI: http://localhost:${config.port}/api-docs`);

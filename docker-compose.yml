@@ -29,6 +29,10 @@ services:
       # Укажите LAN-IP компьютера-хоста, напр. http://192.168.0.10:5173
       PUBLIC_WEB_BASE: ${PUBLIC_WEB_BASE:-}
       HOST_IP: ${HOST_IP:-}
+      # Этап 5: куда станция отправляет итоги вечеринок (пусто = никуда).
+      # Токен опционален — только для автоотправки на старте.
+      QUESTIX_CLOUD_URL: ${QUESTIX_CLOUD_URL:-}
+      QUESTIX_CLOUD_TOKEN: ${QUESTIX_CLOUD_TOKEN:-}
     ports:
       - "5000:5000"
     depends_on:
