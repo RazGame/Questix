@@ -12,13 +12,14 @@ import { useAuthStore } from '../store/authStore';
 import RichTextEditor from '../components/RichTextEditor';
 import UserSearchInput from '../components/UserSearchInput';
 import { gameModules } from '../../games/registry';
+import { usePlatformInfo, kindAvailable } from '../services/platform';
 
 // Вкладки игровых модулей в админке — из реестра (сейчас: «Музыкальные игры»).
 // id вкладки берётся из adminTabId модуля, чтобы исторические ссылки
 // (?tab=music, navigate state) продолжали работать.
 const moduleTabs = gameModules
   .filter((m) => m.AdminEditor)
-  .map((m) => ({ id: m.adminTabId || m.kind, title: m.title, Editor: m.AdminEditor! }));
+  .map((m) => ({ id: m.adminTabId || m.kind, kind: m.kind, title: m.title, Editor: m.AdminEditor! }));
 
 const organizerId = (value: Game['createdBy']): string | undefined =>
   typeof value === 'object' ? value?._id : value;
@@ -137,6 +138,11 @@ export default function AdminPanel() {
   const [adjustDrafts, setAdjustDrafts] = useState<Record<string, { minutes: string; reason: string }>>({});
 
   const isAdmin = !!user?.roles?.includes('admin');
+
+  // Этап 6: доступные виды игр в текущем режиме платформы.
+  const platform = usePlatformInfo();
+  const questAvailable = kindAvailable(platform, 'quest');
+  const visibleModuleTabs = moduleTabs.filter((t) => kindAvailable(platform, t.kind));
 
   const openMainTab = (tab: MainTab, replace = false) => {
     const safeTab = tab === 'users' && !isAdmin ? 'games' : tab;
@@ -298,9 +304,25 @@ export default function AdminPanel() {
     setDraftOrganizerNicknames([]);
   };
 
+  // Квесты грузим после ответа /platform/info: на станции их API нет —
+  // без этой проверки админка встречала бы 404-баннером.
   useEffect(() => {
+    if (!platform) return;
+    if (!questAvailable) {
+      setIsLoading(false);
+      return;
+    }
     loadGames();
-  }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [platform, questAvailable]);
+
+  // Станция: вкладки «Квесты» нет — уводим на первую вкладку модуля.
+  useEffect(() => {
+    if (platform && !questAvailable && mainTab === 'games' && visibleModuleTabs.length > 0) {
+      openMainTab(visibleModuleTabs[0].id, true);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [platform, questAvailable, mainTab]);
 
   useEffect(() => {
     if (mainTab === 'users' && isAdmin && !usersLoaded) {
@@ -661,17 +683,19 @@ export default function AdminPanel() {
       )}
 
       <div className="flex gap-2 mb-6 border-b">
-        <button
-          onClick={() => openMainTab('games')}
-          className={`px-4 py-2 font-bold border-b-2 ${
-            mainTab === 'games'
-              ? 'border-primary text-primary'
-              : 'border-transparent text-zinc-400 hover:text-zinc-100'
-          }`}
-        >
-          Квесты
-        </button>
-        {moduleTabs.map((tab) => (
+        {questAvailable && (
+          <button
+            onClick={() => openMainTab('games')}
+            className={`px-4 py-2 font-bold border-b-2 ${
+              mainTab === 'games'
+                ? 'border-primary text-primary'
+                : 'border-transparent text-zinc-400 hover:text-zinc-100'
+            }`}
+          >
+            Квесты
+          </button>
+        )}
+        {visibleModuleTabs.map((tab) => (
           <button
             key={tab.id}
             onClick={() => openMainTab(tab.id)}
@@ -886,7 +910,7 @@ export default function AdminPanel() {
         </div>
       )}
 
-      {moduleTabs.map((tab) =>
+      {visibleModuleTabs.map((tab) =>
         mainTab === tab.id ? <tab.Editor key={tab.id} isTab={true} /> : null
       )}
 

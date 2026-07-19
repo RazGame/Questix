@@ -28,7 +28,10 @@ if (privateKey && !publicKey) {
   throw new Error('JWT_PRIVATE_KEY_FILE задан без JWT_PUBLIC_KEY_FILE — нужны оба');
 }
 if (publicKey && !privateKey) {
-  console.log('🔑 JWT: режим станции — только проверка облачных RS256-токенов');
+  // Этап 6: станция. Облачные RS256-токены принимаются (проверка публичным
+  // ключом, подделать нельзя), СВОИ токены станция подписывает локальным
+  // HS256-секретом — иначе офлайн (без облака) в пульт было бы не войти.
+  console.log('🔑 JWT: станция — облачные RS256 + локальные HS256');
 } else if (privateKey && publicKey) {
   console.log('🔑 JWT: RS256 (подпись и проверка)');
 }
@@ -40,10 +43,6 @@ export const generateToken = (payload: JWTPayload): string => {
       expiresIn: config.jwtExpire as StringValue,
     });
   }
-  if (publicKey) {
-    // Станция с одним публичным ключом не выдаёт токены — вход только через облако.
-    throw new Error('Подпись токенов недоступна: задан только публичный JWT-ключ');
-  }
   return jwt.sign(payload, config.jwtSecret, {
     algorithm: 'HS256',
     expiresIn: config.jwtExpire as StringValue,
@@ -51,8 +50,16 @@ export const generateToken = (payload: JWTPayload): string => {
 };
 
 export const verifyToken = (token: string): JWTPayload => {
+  // Станция: сперва облачная подпись RS256, затем локальная HS256.
+  // Алгоритм всегда пиннится к соответствующему ключу — подмена alg
+  // (HS256-токен «подписанный» публичным ключом) не проходит.
   if (publicKey) {
-    return jwt.verify(token, publicKey, { algorithms: ['RS256'] }) as JWTPayload;
+    try {
+      return jwt.verify(token, publicKey, { algorithms: ['RS256'] }) as JWTPayload;
+    } catch (rsError) {
+      if (privateKey) throw rsError; // облако: только RS256, фолбэка нет
+      return jwt.verify(token, config.jwtSecret, { algorithms: ['HS256'] }) as JWTPayload;
+    }
   }
   return jwt.verify(token, config.jwtSecret, { algorithms: ['HS256'] }) as JWTPayload;
 };

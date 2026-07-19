@@ -1,6 +1,7 @@
 import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { ChevronDown, LogOut, Menu, Shield, User, Users, X } from 'lucide-react';
 import { useAuthStore } from '../store/authStore';
+import { usePlatformInfo, kindAvailable } from '../services/platform';
 import { useEffect, useRef, useState } from 'react';
 
 export default function Navbar() {
@@ -11,6 +12,9 @@ export default function Navbar() {
   const [isUserMenuOpen, setIsUserMenuOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
   const canAdmin = user?.roles?.includes('admin') || user?.roles?.includes('organizer');
+  // Этап 6: на станции квестов нет — прячем «Квесты» и «Мои заявки».
+  const platform = usePlatformInfo();
+  const questAvailable = kindAvailable(platform, 'quest');
 
   const isVisualizer = location.pathname.startsWith('/m/screen/');
   const isMobilePlay = location.pathname.startsWith('/m/play');
@@ -87,10 +91,12 @@ export default function Navbar() {
           </Link>
 
           <div className="hidden items-center space-x-6 md:flex">
-            <Link to="/games" className={linkClass}>
-              Квесты
-            </Link>
-            {token && (
+            {questAvailable && (
+              <Link to="/games" className={linkClass}>
+                Квесты
+              </Link>
+            )}
+            {token && questAvailable && (
               <Link to="/my-appls" className={linkClass}>
                 Мои заявки
               </Link>
@@ -161,14 +167,18 @@ export default function Navbar() {
 
         {isOpen && (
           <div className="space-y-1 pb-4 md:hidden">
-            <Link to="/games" className={mobileLinkClass} onClick={() => setIsOpen(false)}>
-              Квесты
-            </Link>
+            {questAvailable && (
+              <Link to="/games" className={mobileLinkClass} onClick={() => setIsOpen(false)}>
+                Квесты
+              </Link>
+            )}
             {token && (
               <>
-                <Link to="/my-appls" className={mobileLinkClass} onClick={() => setIsOpen(false)}>
-                  Мои заявки
-                </Link>
+                {questAvailable && (
+                  <Link to="/my-appls" className={mobileLinkClass} onClick={() => setIsOpen(false)}>
+                    Мои заявки
+                  </Link>
+                )}
                 <button onClick={() => goTo('/profile')} className={`${mobileLinkClass} w-full text-left`}>
                   Мой профиль
                 </button>

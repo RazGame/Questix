@@ -30,6 +30,7 @@ services:
     environment:
       NODE_ENV: production
       PORT: 5000
+      MODE: cloud
       MONGODB_URI: mongodb://${MONGO_INITDB_ROOT_USERNAME}:${MONGO_INITDB_ROOT_PASSWORD}@mongodb:27017/quest?authSource=admin
       # RS256: приватный ключ живёт ТОЛЬКО в облаке (secrets/ не в git).
       JWT_PRIVATE_KEY_FILE: /app/secrets/jwt.key

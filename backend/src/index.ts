@@ -76,9 +76,21 @@ app.use('/teams', teamRoutes);
 app.use('/join', joinRoutes);
 app.use('/results', resultsRoutes);
 
+// Этап 6: профиль развёртывания. Станция поднимает только offline-модули
+// (угадайка), облако и режим разработки — все.
+const activeModules = modules.filter(
+  (m) => config.mode !== 'station' || m.offline
+);
+
+// Публичная информация о платформе: фронт по ней скрывает разделы,
+// недоступные в текущем режиме.
+app.get('/platform/info', (req, res) => {
+  res.json({ mode: config.mode, kinds: activeModules.map((m) => m.kind) });
+});
+
 // Игровые модули из реестра: у каждого свой mountPath
 // (quest монтируется в '/' и держит свои исторические /games,/appls,/tasks,/progress).
-for (const gameModule of modules) {
+for (const gameModule of activeModules) {
   app.use(gameModule.mountPath, gameModule.router);
 }
 
@@ -109,7 +121,7 @@ const io = new SocketServer(httpServer, {
   pingInterval: 2500,
   pingTimeout: 3000,
 });
-for (const gameModule of modules) {
+for (const gameModule of activeModules) {
   gameModule.registerSockets?.(io);
 }
 
@@ -124,7 +136,7 @@ const startServer = async () => {
     httpServer.listen(config.port, '0.0.0.0', () => {
       console.log(`🚀 Backend запущен на http://localhost:${config.port}`);
       console.log(`📚 Swagger UI: http://localhost:${config.port}/api-docs`);
-      console.log(`🧩 Модули: ${modules.map((m) => m.kind).join(', ')}`);
+      console.log(`🧩 Режим: ${config.mode} · модули: ${activeModules.map((m) => m.kind).join(', ')}`);
     });
   } catch (error) {
     console.error('❌ Ошибка запуска сервера:', error);

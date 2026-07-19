@@ -10,10 +10,15 @@ import JoinByCode from './core/pages/JoinByCode';
 import { TeamManager } from './core/pages/TeamManager';
 import PrivateRoute from './core/components/PrivateRoute';
 import ErrorBoundary from './core/components/ErrorBoundary';
+import { usePlatformInfo, kindAvailable } from './core/services/platform';
 import { gameModules } from './games/registry';
 
 function App() {
   const token = useAuthStore((state) => state.token);
+  // Этап 6: на станции backend поднимает только offline-модули —
+  // фронт регистрирует роуты только доступных видов игр.
+  const platform = usePlatformInfo();
+  const activeModules = gameModules.filter((m) => kindAvailable(platform, m.kind));
 
   return (
     <Router>
@@ -48,8 +53,8 @@ function App() {
                 path="/admin"
                 element={<PrivateRoute component={AdminPanel} roles={['admin', 'organizer']} />}
               />
-              {/* Роуты игровых модулей из реестра */}
-              {gameModules.flatMap((m) => m.routes)}
+              {/* Роуты игровых модулей из реестра (доступных в текущем режиме) */}
+              {activeModules.flatMap((m) => m.routes)}
             </Routes>
           </ErrorBoundary>
         </main>
