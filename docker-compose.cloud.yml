@@ -1,0 +1,85 @@
+# Облачный профиль Questix (ROADMAP этап 4): VPS + Caddy reverse-proxy + RS256.
+# Запуск на сервере:  docker compose -f docker-compose.cloud.yml up -d --build
+# Переменные — в .env рядом (см. .env.cloud.example).
+#
+# Два режима, выбирается переменной CADDYFILE:
+#  - deploy/Caddyfile.ip     (по умолчанию): без домена. Фронт на :80, API на :8080.
+#  - deploy/Caddyfile.domain: домен + HTTPS (Let's Encrypt сам). Фронт на https://$DOMAIN,
+#                             API на https://api.$DOMAIN.
+
+services:
+  mongodb:
+    image: mongo:6.0
+    container_name: questix-mongodb
+    restart: unless-stopped
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: ${MONGO_INITDB_ROOT_USERNAME}
+      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_INITDB_ROOT_PASSWORD}
+    # Наружу порт НЕ публикуем: mongo доступна только внутри сети compose.
+    volumes:
+      - mongodb_data:/data/db
+      - ./backups:/backups
+    networks: [questix]
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: questix-backend
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      PORT: 5000
+      MONGODB_URI: mongodb://${MONGO_INITDB_ROOT_USERNAME}:${MONGO_INITDB_ROOT_PASSWORD}@mongodb:27017/quest?authSource=admin
+      # RS256: приватный ключ живёт ТОЛЬКО в облаке (secrets/ не в git).
+      JWT_PRIVATE_KEY_FILE: /app/secrets/jwt.key
+      JWT_PUBLIC_KEY_FILE: /app/secrets/jwt.pub
+      # HS256-фолбэк не используется при заданных ключах, но переменная обязательна в prod.
+      JWT_SECRET: ${JWT_SECRET:-unused_rs256_mode}
+      BCRYPT_ROUNDS: 10
+      TRUST_PROXY: 1
+      CORS_ORIGIN: ${CORS_ORIGIN:-}
+    volumes:
+      - media_data:/app/media
+      - ./secrets:/app/secrets:ro
+    depends_on: [mongodb]
+    networks: [questix]
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        # Адрес API, который запекается в сборку (см. .env.cloud.example)
+        VITE_API_URL: ${VITE_API_URL}
+        VITE_SOCKET_URL: ${VITE_SOCKET_URL}
+    container_name: questix-frontend
+    restart: unless-stopped
+    networks: [questix]
+
+  caddy:
+    image: caddy:2
+    container_name: questix-caddy
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+      - "8080:8080"
+    environment:
+      DOMAIN: ${DOMAIN:-}
+    volumes:
+      - ${CADDYFILE:-./deploy/Caddyfile.ip}:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on: [backend, frontend]
+    networks: [questix]
+
+volumes:
+  mongodb_data:
+  media_data:
+  caddy_data:
+  caddy_config:
+
+networks:
+  questix:
+    driver: bridge

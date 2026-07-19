@@ -26,6 +26,12 @@ const corsOrigin = config.corsOrigin || ((origin: string | undefined, callback: 
   callback(null, false);
 });
 
+// За reverse-proxy (Caddy в облаке) настоящий IP клиента приходит в
+// X-Forwarded-For — без trust proxy rate-limit видел бы IP прокси.
+if (process.env.TRUST_PROXY) {
+  app.set('trust proxy', Number(process.env.TRUST_PROXY) || 1);
+}
+
 // Middleware
 app.use(express.json());
 app.use(cors({ origin: corsOrigin }));

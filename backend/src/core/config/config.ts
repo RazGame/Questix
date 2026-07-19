@@ -18,6 +18,11 @@ export const config = {
   // Дефолт допустим только в dev; в production отсутствие отлавливается выше.
   jwtSecret: jwtSecret || 'dev_only_insecure_secret',
   jwtExpire: process.env.JWT_EXPIRE || '7d',
+  // RS256 (этап 4): пути к PEM-ключам. Облако держит оба, станции достаточно
+  // публичного (проверяет облачные токены, подделать не может). Если файлы
+  // не заданы — работаем на HS256 с jwtSecret, как раньше.
+  jwtPrivateKeyFile: process.env.JWT_PRIVATE_KEY_FILE || '',
+  jwtPublicKeyFile: process.env.JWT_PUBLIC_KEY_FILE || '',
   bcryptRounds: parseInt(process.env.BCRYPT_ROUNDS || '10', 10),
   corsOrigin: process.env.CORS_ORIGIN,
 };

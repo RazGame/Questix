@@ -1,0 +1,15 @@
+# Режим с доменом: HTTPS от Let's Encrypt автоматически.
+# Требует A-записей: DOMAIN → IP сервера, api.DOMAIN → IP сервера.
+# В .env: DOMAIN=questix.example.com, CADDYFILE=./deploy/Caddyfile.domain,
+#          VITE_API_URL=https://api.questix.example.com (и VITE_SOCKET_URL так же).
+
+{$DOMAIN} {
+	encode gzip
+	reverse_proxy frontend:5173
+}
+
+api.{$DOMAIN} {
+	encode gzip
+	# WebSocket (Socket.IO) Caddy проксирует автоматически
+	reverse_proxy backend:5000
+}

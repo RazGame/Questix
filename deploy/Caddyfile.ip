@@ -1,0 +1,15 @@
+# Режим «только IP» (без домена → без HTTPS/Let's Encrypt).
+# Фронт: http://<IP>/        API и Socket.IO: http://<IP>:8080
+# Пути фронта и API пересекаются (/games — и страница, и REST),
+# поэтому на IP они разнесены по портам. С доменом — Caddyfile.domain.
+
+:80 {
+	encode gzip
+	reverse_proxy frontend:5173
+}
+
+:8080 {
+	encode gzip
+	# WebSocket (Socket.IO) Caddy проксирует автоматически
+	reverse_proxy backend:5000
+}
