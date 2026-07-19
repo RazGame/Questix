@@ -9,7 +9,7 @@ import { TeamLog } from '../models/TeamLog';
 import { User } from '../../../core/models/User';
 import { AuthenticatedRequest } from '../../../core/middleware/auth';
 import { hasInvalidDateRange } from '../services/questState';
-import { isGameModerator, canManageOrganizers } from '../../../core/services/gamePermissions';
+import { isGameModerator, canManageOrganizers, canCreateGame } from '../../../core/services/gamePermissions';
 
 const gameSchema = Joi.object({
   title: Joi.string().required().trim(),
@@ -97,9 +97,8 @@ export const createGame = async (
   res: Response
 ): Promise<void> => {
   try {
-    // Только организаторы и администраторы могут создавать игры
-    const roles = req.user?.roles || [];
-    if (!roles.includes('admin') && !roles.includes('organizer')) {
+    // Создавать квесты может админ или организатор с правом на тип 'quest'
+    if (!canCreateGame(req.user, 'quest')) {
       res.status(403).json({ error: 'У вас нет прав для создания квеста' });
       return;
     }

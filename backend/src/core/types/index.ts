@@ -11,6 +11,9 @@ export interface IUser {
   password?: string;
   hashed_pwd: string;
   roles: string[];
+  // Типы игр, которые организатор может создавать: ['quest'], ['guess_song'],
+  // ['*'] — все. Пустой список = без ограничений (легаси/бутстрап).
+  organizerOf?: string[];
   gameAppls: string[]; // IDs квестовых заявок
   createdAt?: Date;
   updatedAt?: Date;
@@ -131,4 +134,5 @@ export interface JWTPayload {
   id: string;
   username: string;
   roles: string[];
+  organizerOf?: string[]; // типы игр для canCreateGame (['*'] — все)
 }

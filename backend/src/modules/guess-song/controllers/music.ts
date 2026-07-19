@@ -5,7 +5,7 @@ import QRCode from 'qrcode';
 import { Game } from '../../../core/models/Game';
 import { Song } from '../models/Song';
 import { AuthenticatedRequest } from '../../../core/middleware/auth';
-import { isGameModerator } from '../../../core/services/gamePermissions';
+import { isGameModerator, canCreateGame } from '../../../core/services/gamePermissions';
 import { generateJoinCode } from '../services/musicStore';
 import { dropSession } from '../services/musicSession';
 import { exportGame, importGame, BundleError } from '../services/musicBundle';
@@ -120,6 +120,12 @@ export const createMusicGame = async (
   req: AuthenticatedRequest,
   res: Response
 ): Promise<void> => {
+  // Создавать угадайки может админ или организатор с правом на тип 'guess_song'
+  if (!canCreateGame(req.user, 'guess_song')) {
+    res.status(403).json({ error: 'У вас нет прав для создания музыкальной игры' });
+    return;
+  }
+
   const baseTitle = normalizeMusicGameTitle(req.body?.title);
   // Угадайка: одиночная или командная. Командная всегда требует авторизации
   // (счёт и баззер привязаны к командам Questix, а команда — к аккаунтам).
@@ -308,6 +314,11 @@ export const importGameBundle = async (
   res: Response
 ): Promise<void> => {
   try {
+    // Импорт создаёт новую игру — те же права, что и на создание.
+    if (!canCreateGame(req.user, 'guess_song')) {
+      res.status(403).json({ error: 'У вас нет прав для создания музыкальной игры' });
+      return;
+    }
     const game = await importGame(req.body as Buffer, req.user.id, MEDIA_DIR);
     res.status(201).json({ game });
   } catch (error: any) {

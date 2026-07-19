@@ -49,6 +49,7 @@ export const signup = async (req: any, res: Response): Promise<void> => {
       id: newUser._id as string,
       username: newUser.username,
       roles: newUser.roles,
+      organizerOf: newUser.organizerOf || [],
     });
 
     res.status(201).json({
@@ -63,6 +64,7 @@ export const signup = async (req: any, res: Response): Promise<void> => {
         city: newUser.city,
         phone: newUser.phone,
         roles: newUser.roles,
+        organizerOf: newUser.organizerOf || [],
       },
     });
   } catch (error) {
@@ -98,6 +100,7 @@ export const login = async (req: any, res: Response): Promise<void> => {
       id: user._id as string,
       username: user.username,
       roles: user.roles,
+      organizerOf: user.organizerOf || [],
     });
 
     res.status(200).json({
@@ -112,6 +115,7 @@ export const login = async (req: any, res: Response): Promise<void> => {
         city: user.city,
         phone: user.phone,
         roles: user.roles,
+        organizerOf: user.organizerOf || [],
       },
     });
   } catch (error) {

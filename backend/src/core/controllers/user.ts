@@ -10,6 +10,9 @@ const updateRolesSchema = Joi.object({
     .items(Joi.string().valid(...ALLOWED_ROLES))
     .min(1)
     .required(),
+  // Типы игр для организатора: kind'ы модулей или '*'. Валидируем формой,
+  // а не списком модулей — ядро не знает kind'ов (реестр может расти).
+  organizerOf: Joi.array().items(Joi.string().trim().min(1)).optional(),
 });
 
 const updateProfileSchema = Joi.object({
@@ -78,9 +81,14 @@ export const updateUserRoles = async (
       return;
     }
 
+    const update: Record<string, unknown> = { roles: value.roles };
+    if (value.organizerOf !== undefined) {
+      update.organizerOf = value.organizerOf;
+    }
+
     const user = await User.findByIdAndUpdate(
       req.params.id,
-      { roles: value.roles },
+      update,
       { new: true }
     ).select('-hashed_pwd');
 

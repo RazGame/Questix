@@ -44,6 +44,13 @@ const userSchema = new mongoose.Schema<IUser>(
       default: ['user'],
       enum: ['user', 'admin', 'organizer', 'team_captain'],
     },
+    // Типы игр, которые организатор может создавать ('*' — все).
+    // Пусто = без ограничений (легаси/бутстрап через mongosh); модерация
+    // конкретной игры от этого не зависит (createdBy/organizers).
+    organizerOf: {
+      type: [String],
+      default: [],
+    },
     gameAppls: [
       {
         type: mongoose.Schema.Types.ObjectId,

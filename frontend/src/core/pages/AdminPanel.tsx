@@ -596,13 +596,52 @@ export default function AdminPanel() {
       newRoles.push('user');
     }
 
+    // Включение роли организатора сразу даёт «все типы» (явно),
+    // снятие роли очищает список типов.
+    let organizerOf: string[] | undefined;
+    if (role === 'organizer') {
+      organizerOf = hasRole ? [] : ['*'];
+    }
+
     try {
-      const updated = await userService.updateRoles(target._id, newRoles);
+      const updated = await userService.updateRoles(target._id, newRoles, organizerOf);
       setUsers((prev) => prev.map((u) => (u._id === updated._id ? updated : u)));
       setError('');
     } catch (err: any) {
       setError(err.response?.data?.error || 'Ошибка обновления ролей');
     }
+  };
+
+  // Типы игр организатора: ['*'] или пусто — «все» (пусто = легаси без ограничений).
+  const organizerAllowsAll = (u: AdminUser) =>
+    !u.organizerOf?.length || u.organizerOf.includes('*');
+
+  const handleSetOrganizerOf = async (target: AdminUser, organizerOf: string[]) => {
+    try {
+      const updated = await userService.updateRoles(target._id, target.roles, organizerOf);
+      setUsers((prev) => prev.map((u) => (u._id === updated._id ? updated : u)));
+      setError('');
+    } catch (err: any) {
+      setError(err.response?.data?.error || 'Ошибка обновления типов игр');
+    }
+  };
+
+  const handleToggleOrganizerAll = (target: AdminUser) => {
+    // «Все игры» выкл → явный список всех kind'ов из реестра, дальше админ снимает лишние.
+    const next = organizerAllowsAll(target) ? gameModules.map((m) => m.kind) : ['*'];
+    handleSetOrganizerOf(target, next);
+  };
+
+  const handleToggleOrganizerKind = (target: AdminUser, kind: string) => {
+    const current = organizerAllowsAll(target)
+      ? gameModules.map((m) => m.kind)
+      : target.organizerOf || [];
+    const next = current.includes(kind)
+      ? current.filter((k) => k !== kind)
+      : [...current, kind];
+    // Минимум один тип: «организатор ничего» = просто снять роль.
+    if (next.length === 0) return;
+    handleSetOrganizerOf(target, next);
   };
 
   if (isLoading) {
@@ -789,17 +828,45 @@ export default function AdminPanel() {
                           </div>
                         </td>
                         <td className="px-4 py-3 whitespace-nowrap">
-                          <div className="flex gap-3">
-                            {ASSIGNABLE_ROLES.map(({ value, label }) => (
-                              <label key={value} className="flex items-center gap-1 cursor-pointer">
-                                <input
-                                  type="checkbox"
-                                  checked={u.roles.includes(value)}
-                                  onChange={() => handleToggleRole(u, value)}
-                                />
-                                <span className="text-xs text-zinc-300">{label}</span>
-                              </label>
-                            ))}
+                          <div className="flex flex-col gap-1.5">
+                            <div className="flex gap-3">
+                              {ASSIGNABLE_ROLES.map(({ value, label }) => (
+                                <label key={value} className="flex items-center gap-1 cursor-pointer">
+                                  <input
+                                    type="checkbox"
+                                    checked={u.roles.includes(value)}
+                                    onChange={() => handleToggleRole(u, value)}
+                                  />
+                                  <span className="text-xs text-zinc-300">{label}</span>
+                                </label>
+                              ))}
+                            </div>
+                            {/* Типы игр организатора — из реестра модулей */}
+                            {u.roles.includes('organizer') && (
+                              <div className="flex flex-wrap gap-2.5 rounded bg-white/[0.03] px-2 py-1">
+                                <label className="flex items-center gap-1 cursor-pointer">
+                                  <input
+                                    type="checkbox"
+                                    checked={organizerAllowsAll(u)}
+                                    onChange={() => handleToggleOrganizerAll(u)}
+                                  />
+                                  <span className="text-[11px] font-semibold text-violet-300">Все игры</span>
+                                </label>
+                                {gameModules.map((m) => (
+                                  <label key={m.kind} className="flex items-center gap-1 cursor-pointer">
+                                    <input
+                                      type="checkbox"
+                                      disabled={organizerAllowsAll(u)}
+                                      checked={
+                                        organizerAllowsAll(u) || (u.organizerOf || []).includes(m.kind)
+                                      }
+                                      onChange={() => handleToggleOrganizerKind(u, m.kind)}
+                                    />
+                                    <span className="text-[11px] text-zinc-400">{m.title}</span>
+                                  </label>
+                                ))}
+                              </div>
+                            )}
                           </div>
                         </td>
                       </tr>

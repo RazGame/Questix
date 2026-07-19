@@ -7,6 +7,7 @@ export interface User {
   city: string;
   phone: string;
   roles: string[];
+  organizerOf?: string[]; // типы игр, которые организатор может создавать ('*' — все)
   gameAppls: string[];
 }
 

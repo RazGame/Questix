@@ -9,6 +9,8 @@ export interface AdminUser {
   city: string;
   phone: string;
   roles: string[];
+  // Типы игр, которые организатор может создавать ('*' — все; пусто — без ограничений)
+  organizerOf?: string[];
 }
 
 export interface UserSearchResult {
@@ -44,9 +46,13 @@ export const userService = {
     return response.data;
   },
 
-  // Назначить роли пользователю (admin)
-  updateRoles: async (userId: string, roles: string[]): Promise<AdminUser> => {
-    const response = await api.patch(`/users/${userId}/roles`, { roles });
+  // Назначить роли пользователю (admin); organizerOf — типы игр организатора
+  updateRoles: async (
+    userId: string,
+    roles: string[],
+    organizerOf?: string[]
+  ): Promise<AdminUser> => {
+    const response = await api.patch(`/users/${userId}/roles`, { roles, organizerOf });
     return response.data.user;
   },
 
