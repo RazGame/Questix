@@ -61,6 +61,11 @@ async function api(method, path, body, token) {
   screen.emit('screen:audio-ready');
   await sleep(150);
 
+  // peek: телефон на экране входа видит уже созданные команды до своего входа
+  const peeker = mkAnon();
+  let peekState = null;
+  peeker.sock.on('state', (st) => { peekState = st; });
+
   const a1 = mkAnon(); const a2 = mkAnon(); const b1 = mkAnon(); const noTeam = mkAnon();
   a1.sock.emit('join', { role: 'player', code: game.code, name: 'Аня', teamName: 'Стол 1' });
   a2.sock.emit('join', { role: 'player', code: game.code, name: 'Боря', teamName: 'стол 1' }); // регистр не важен
@@ -71,6 +76,23 @@ async function api(method, path, body, token) {
   check('anon joined with team', a1.joined && a1.joined.teamName === 'Стол 1');
   check('case-insensitive team merge', adminState && adminState.teams.length === 2);
   check('no team -> rejected', !!noTeam.error && noTeam.joined === null);
+
+  // peek не входит в игру, но видит список команд для выбора
+  peeker.sock.emit('peek', { code: game.code });
+  await sleep(300);
+  check('peek sees existing teams', peekState && peekState.teams.length === 2
+    && peekState.teams.some((t) => t.name === 'Стол 1'));
+  check('peek is not a player', peeker.joined === null
+    && !adminState.players.some((p) => p.name === undefined));
+  const playersBefore = adminState.players.length;
+
+  // и получает обновления живьём, когда кто-то создаёт новую команду
+  const c1 = mkAnon();
+  c1.sock.emit('join', { role: 'player', code: game.code, name: 'Дима', teamName: 'Стол 3' });
+  await sleep(400);
+  check('peek gets live updates', peekState && peekState.teams.length === 3);
+  check('peek did not add a player', adminState.players.length === playersBefore + 1);
+  c1.sock.close();
 
   // 3. игра: баззер и счёт по команде
   a1.sock.emit('player:ready', { ready: true });

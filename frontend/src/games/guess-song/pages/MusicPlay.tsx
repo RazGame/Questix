@@ -56,8 +56,9 @@ export default function MusicPlay() {
   let storedUser: { nickname?: string } | null = null;
   try { storedUser = JSON.parse(localStorage.getItem('user') || 'null'); } catch { storedUser = null; }
   const needsLogin = authMode === 'required' && !token;
-  // team+open: на форме входа появляется поле команды.
+  // team+open: на форме входа выбираем команду (или создаём новую).
   const asksTeamName = authMode === 'open' && participation === 'team';
+  const [creatingTeam, setCreatingTeam] = useState(false);
 
   // Узнаём режим входа по коду (публично, без токена).
   useEffect(() => {
@@ -138,6 +139,9 @@ export default function MusicPlay() {
     socket.on('connect', () => {
       const currentCode = joinedCodeRef.current || codeFromUrl;
       if (!currentCode) return;
+      // Пока стоим на экране входа — подписываемся на лобби, чтобы видеть
+      // уже созданные команды (и как их создают другие) до своего входа.
+      if (!joinedRef.current) socket.emit('peek', { code: currentCode });
       // С авторизацией имя берётся из профиля на сервере — локальное не требуется.
       const authRequired = authMode === 'required';
       const currentName = (joinedNameRef.current || localStorage.getItem('qgs_name') || '').trim();
@@ -321,21 +325,76 @@ export default function MusicPlay() {
             maxLength={24}
             className={`input-dark ${asksTeamName ? 'mb-3' : 'mb-4'}`}
           />
-          {asksTeamName && (
-            <>
-              <input
-                value={teamName}
-                onChange={(e) => setTeamName(e.target.value)}
-                onKeyDown={(e) => e.key === 'Enter' && join()}
-                placeholder="Название команды"
-                maxLength={24}
-                className="input-dark mb-1"
-              />
-              <p className="mb-4 text-xs text-zinc-500">
-                Одинаковое название = одна команда. Договоритесь за столом 🙂
-              </p>
-            </>
-          )}
+          {asksTeamName && (() => {
+            // Команды, уже созданные другими игроками (приходят живьём по сокету).
+            const existing = state?.teams || [];
+            const showInput = creatingTeam || existing.length === 0;
+            return (
+              <div className="mb-4">
+                <p className="mb-2 text-left text-xs font-semibold uppercase tracking-wide text-zinc-500">
+                  {existing.length > 0 ? 'Твоя команда' : 'Название команды'}
+                </p>
+
+                {existing.length > 0 && (
+                  <div className="mb-2 flex flex-wrap gap-2">
+                    {existing.map((t) => {
+                      const active = !creatingTeam && teamName.trim().toLowerCase() === t.name.toLowerCase();
+                      return (
+                        <button
+                          key={t.id}
+                          onClick={() => { setCreatingTeam(false); setTeamName(t.name); setError(''); }}
+                          className={`rounded-full px-3 py-2 text-sm font-semibold transition ${
+                            active
+                              ? 'btn-grad'
+                              : 'border border-white/10 bg-white/5 text-zinc-200 hover:bg-white/10'
+                          }`}
+                        >
+                          👥 {t.name}
+                          <span className={`ml-1.5 text-xs ${active ? 'text-white/70' : 'text-zinc-500'}`}>
+                            {t.online}
+                          </span>
+                        </button>
+                      );
+                    })}
+                    {!creatingTeam && (
+                      <button
+                        onClick={() => { setCreatingTeam(true); setTeamName(''); }}
+                        className="rounded-full border border-dashed border-white/20 px-3 py-2 text-sm font-semibold text-zinc-400 hover:bg-white/5"
+                      >
+                        + новая
+                      </button>
+                    )}
+                  </div>
+                )}
+
+                {showInput && (
+                  <>
+                    <input
+                      value={teamName}
+                      onChange={(e) => setTeamName(e.target.value)}
+                      onKeyDown={(e) => e.key === 'Enter' && join()}
+                      placeholder="Название новой команды"
+                      maxLength={24}
+                      autoFocus={creatingTeam}
+                      className="input-dark"
+                    />
+                    {existing.length > 0 ? (
+                      <button
+                        onClick={() => { setCreatingTeam(false); setTeamName(''); }}
+                        className="mt-1 text-xs text-zinc-500 underline hover:text-zinc-300"
+                      >
+                        выбрать из существующих
+                      </button>
+                    ) : (
+                      <p className="mt-1 text-xs text-zinc-500">
+                        Создай команду — остальные за столом смогут её выбрать.
+                      </p>
+                    )}
+                  </>
+                )}
+              </div>
+            );
+          })()}
           <button onClick={join} className="btn-grad w-full rounded-lg py-3 font-bold text-lg">
             Войти в игру
           </button>

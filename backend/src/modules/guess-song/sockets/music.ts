@@ -4,7 +4,7 @@ import { User } from '../../../core/models/User';
 import { Team } from '../../../core/models/Team';
 import { verifyToken } from '../../../core/utils/jwt';
 import { isGameModerator } from '../../../core/services/gamePermissions';
-import { getSession } from '../services/musicSession';
+import { getSession, sessions } from '../services/musicSession';
 import { newPlayerId } from '../services/musicStore';
 
 // Проверка, что сокет принадлежит модератору игры (для admin-команд).
@@ -123,6 +123,22 @@ export const registerMusicSockets = (io: Server): void => {
         });
       }
       socket.emit('state', session.publicState());
+    });
+
+    // Предпросмотр лобби до входа: телефон на экране «вход в игру» видит,
+    // какие команды уже создали другие, и обновления приходят живьём.
+    // Отдаём то же публичное состояние, что и так висит на экране-проекторе.
+    socket.on('peek', async (data: any) => {
+      const game = await Game.findOne({
+        code: String(data?.code || '').toUpperCase(),
+        kind: 'guess_song',
+      }).lean();
+      if (!game) return;
+      const id = String(game._id);
+      socket.join(`g:${id}`); // подписка на обновления лобби
+      // Сессию НЕ создаём: если ведущий ещё не открывал игру, команд и так нет.
+      const existing = sessions.get(id);
+      if (existing) socket.emit('state', existing.publicState());
     });
 
     socket.on('player:ready', (data: any) => {
