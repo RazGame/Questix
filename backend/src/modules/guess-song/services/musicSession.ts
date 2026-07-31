@@ -53,6 +53,7 @@ class Session {
   paused = false;
   blockNames: string[] = []; // имена блоков в порядке плейлиста (для интро)
   freePlay = false; // «доигрываем дальше»: отрезок закончился, играем без ограничения
+  revealGuessed = true; // reveal после верного ответа (false — ведущий показал сам)
   screenReady = false;
   lastActivityAt = Date.now(); // для отгрузки простаивающих сессий
 
@@ -280,6 +281,7 @@ class Session {
 
   correct() {
     if (this.phase !== 'buzzed') return;
+    this.revealGuessed = true;
     if (this.buzzed) {
       if (this.mode === 'team') {
         const g = this.buzzed.id;
@@ -302,6 +304,29 @@ class Session {
     this.phase = 'playing';
     this.cmd('resume', { fadeMs: RESUME_FADE_IN_MS });
     this.broadcast();
+  }
+
+  // Никто не угадал: показать правильный ответ и перейти к следующей песне.
+  // Очки не начисляются; отличается от correct() только этим и флагом,
+  // чтобы игроки не видели «Правильно!», когда никто не ответил.
+  revealAnswer() {
+    if (!['playing', 'ended', 'buzzed'].includes(this.phase)) return;
+    if (this.paused) return;
+    this.buzzed = null;
+    this.revealGuessed = false;
+    this.phase = 'reveal';
+    this.cmd('fadeAndStop', { playMs: REVEAL_PLAY_MS, fadeMs: REVEAL_FADE_MS });
+    this.broadcast();
+    this.schedule(() => this.advance(), REVEAL_PLAY_MS + REVEAL_FADE_MS + 200);
+  }
+
+  // Может ли хоть кто-то ещё нажать баззер в текущем раунде.
+  // Если нет — ведущему бессмысленно ждать, пульт предлагает показать ответ.
+  anyArmed(): boolean {
+    for (const p of this.players.values()) {
+      if (p.connected && this.isArmed(p.id)) return true;
+    }
+    return false;
   }
 
   skip() {
@@ -517,6 +542,10 @@ class Session {
         ? `/media/${this.playlist[safeCurrentIndex + 1].file}`
         : null,
       screenReady: this.screenReady,
+      revealGuessed: this.revealGuessed,
+      // Есть ли ещё кому нажимать баззер (в 'playing' пульт по этому флагу
+      // предлагает показать ответ вместо бесконечного ожидания).
+      anyArmed: this.anyArmed(),
       mode: this.mode,
       teams: this.mode === 'team' ? this.teamSummary() : [],
       players: Array.from(this.players.values()).map((p) => ({

@@ -134,6 +134,8 @@ export interface MusicState {
   introMs?: number | null; // остаток интро-таймера, мс
   mode?: GameParticipation; // solo | team
   teams?: MusicTeam[];
+  anyArmed?: boolean; // может ли кто-то ещё нажать баззер в этом раунде
+  revealGuessed?: boolean; // reveal после верного ответа (false — показал ведущий)
   players: MusicPlayer[];
   fileUrl?: string | null;
   startSec?: number;

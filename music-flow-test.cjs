@@ -156,6 +156,29 @@ async function api(method, path, body, token) {
   await sleep(300);
   check('wrong locks player + resumes', adminState && adminState.phase === 'playing' && playerState.players[0].locked === true);
 
+  // 10. «Никто не угадал»: единственный игрок заблокирован после неверного
+  // ответа — пульт это видит (anyArmed=false) и раскрывает ответ без очков.
+  admin.emit('admin:reset');
+  await sleep(300);
+  player.emit('player:ready', { ready: true });
+  await sleep(150);
+  admin.emit('admin:start');
+  await sleep(400);
+  admin.emit('admin:continue');
+  await sleep(400);
+  check('anyArmed true пока есть кому нажимать', adminState && adminState.anyArmed === true);
+  player.emit('player:buzz');
+  await sleep(250);
+  admin.emit('admin:wrong');
+  await sleep(350);
+  check('anyArmed false когда все заблокированы', adminState && adminState.anyArmed === false);
+  const scoreBeforeReveal = adminState.players[0].score;
+  admin.emit('admin:reveal');
+  await sleep(300);
+  check('reveal без угадывания', adminState.phase === 'reveal' && adminState.revealGuessed === false);
+  check('очки не начислены', adminState.players[0].score === scoreBeforeReveal);
+  check('ответ показан', !!adminState.reveal && !!adminState.reveal.title);
+
   // очистка
   await api('DELETE', `/music/games/${game._id}`, null, token);
   admin.close(); player.close(); screen.close();

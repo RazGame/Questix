@@ -580,35 +580,60 @@ export default function MusicPlay() {
       )}
 
       {/* Круг стабильно на месте во всех фазах раунда — статусы внутри него */}
-      {phase === 'reveal' && (
-        <>
-          <Buzzer label="Угадано!" btnClass="qgs-mobile-buzzer--success scale-[1.02]" />
-          {state?.reveal && (
-            <div
-              className="pointer-events-none fixed inset-x-4 z-40 mx-auto max-w-sm"
-              style={{ bottom: 'calc(env(safe-area-inset-bottom) + 1rem)' }}
-            >
-              <div className="qgs-answer-toast flex items-center gap-3 rounded-xl border border-emerald-500/20 bg-[#071512]/95 p-3 text-left shadow-2xl shadow-emerald-950/40 backdrop-blur-md">
-                {state.reveal.cover && (
-                  <img
-                    src={musicCoverSrc(state.reveal.cover)}
-                    alt=""
-                    className="h-12 w-12 shrink-0 rounded-lg object-cover"
-                  />
-                )}
-                <div className="min-w-0">
-                  <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-emerald-400/80">
-                    Правильный ответ
-                  </p>
-                  <p className="truncate text-sm font-bold text-emerald-200">
-                    {state.reveal.title} — {state.reveal.artist}
-                  </p>
+      {phase === 'reveal' && (() => {
+        // Ответ мог раскрыть ведущий, когда никто не угадал — тогда без «Угадано!»
+        const guessed = state?.revealGuessed !== false;
+        return (
+          <>
+            <Buzzer
+              label={guessed ? 'Угадано!' : 'Никто не угадал'}
+              btnClass={
+                guessed
+                  ? 'qgs-mobile-buzzer--success scale-[1.02]'
+                  : 'bg-white/5 border border-white/10 text-zinc-300'
+              }
+            />
+            {state?.reveal && (
+              <div
+                className="pointer-events-none fixed inset-x-4 z-40 mx-auto max-w-sm"
+                style={{ bottom: 'calc(env(safe-area-inset-bottom) + 1rem)' }}
+              >
+                <div
+                  className={`qgs-answer-toast flex items-center gap-3 rounded-xl border p-3 text-left shadow-2xl backdrop-blur-md ${
+                    guessed
+                      ? 'border-emerald-500/20 bg-[#071512]/95 shadow-emerald-950/40'
+                      : 'border-violet-500/20 bg-[#0d0a16]/95 shadow-violet-950/40'
+                  }`}
+                >
+                  {state.reveal.cover && (
+                    <img
+                      src={musicCoverSrc(state.reveal.cover)}
+                      alt=""
+                      className="h-12 w-12 shrink-0 rounded-lg object-cover"
+                    />
+                  )}
+                  <div className="min-w-0">
+                    <p
+                      className={`text-[10px] font-bold uppercase tracking-[0.18em] ${
+                        guessed ? 'text-emerald-400/80' : 'text-violet-300/80'
+                      }`}
+                    >
+                      Правильный ответ
+                    </p>
+                    <p
+                      className={`truncate text-sm font-bold ${
+                        guessed ? 'text-emerald-200' : 'text-violet-100'
+                      }`}
+                    >
+                      {state.reveal.title} — {state.reveal.artist}
+                    </p>
+                  </div>
                 </div>
               </div>
-            </div>
-          )}
-        </>
-      )}
+            )}
+          </>
+        );
+      })()}
 
       {phase === 'ended' && (
         <>

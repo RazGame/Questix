@@ -167,6 +167,7 @@ export const registerMusicSockets = (io: Server): void => {
       'admin:replay': (s) => s.replayCurrent(),
       'admin:playon': (s) => s.playOn(),
       'admin:correct': (s) => s.correct(),
+      'admin:reveal': (s) => s.revealAnswer(),
       'admin:wrong': (s) => s.wrong(),
       'admin:skip': (s) => s.skip(),
       'admin:pause': (s) => s.pause(),

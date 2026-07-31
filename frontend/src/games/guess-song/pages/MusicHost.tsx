@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { Play, Pause, Volume2, Users, ListMusic, ArrowLeft, RefreshCw, AlertCircle, Send } from 'lucide-react';
+import { Play, Pause, Volume2, Users, ListMusic, ArrowLeft, RefreshCw, AlertCircle, Send, Eye } from 'lucide-react';
 import { musicCoverSrc, musicService, MusicGameFull } from '../services/music';
 import { createSocket } from '../services/socket';
 import { partyResultsService } from '../../../core/services/results';
@@ -253,17 +253,39 @@ export default function MusicHost() {
                         <p className="truncate text-xs text-zinc-500">{live.blockName || ''}</p>
                       </div>
                     </div>
-                    <p className="mt-2 text-sm text-zinc-400">Музыка звучит на экране проектора. Ожидаем нажатия кнопки игроками...</p>
+                    <p className="mt-2 text-sm text-zinc-400">
+                      {live.anyArmed === false
+                        ? 'Все игроки уже ответили неверно — нажать баззер больше некому.'
+                        : 'Музыка звучит на экране проектора. Ожидаем нажатия кнопки игроками...'}
+                    </p>
                   </div>
-                  <button
-                    onClick={() => emit('admin:skip')}
-                    disabled={live.paused}
-                    className={`rounded-lg px-5 py-2.5 font-bold text-white transition flex items-center gap-2 ${
-                      live.paused ? 'cursor-not-allowed bg-white/10 text-zinc-500' : 'bg-amber-600 hover:bg-amber-500'
-                    }`}
-                  >
-                    Пропустить эту песню ⏭
-                  </button>
+                  <div className="flex flex-wrap gap-3">
+                    {/* Никто не может ответить — предлагаем раскрыть ответ первым делом */}
+                    <button
+                      onClick={() => emit('admin:reveal')}
+                      disabled={live.paused}
+                      className={`rounded-lg px-5 py-2.5 font-bold text-white transition flex items-center gap-2 ${
+                        live.paused
+                          ? 'cursor-not-allowed bg-white/10 text-zinc-500'
+                          : live.anyArmed === false
+                            ? 'btn-grad'
+                            : 'bg-white/10 hover:bg-white/20'
+                      }`}
+                      title="Доиграть отрывок, показать исполнителя на экране и перейти к следующей песне"
+                    >
+                      <Eye size={16} /> Никто не угадал
+                    </button>
+                    <button
+                      onClick={() => emit('admin:skip')}
+                      disabled={live.paused}
+                      className={`rounded-lg px-5 py-2.5 font-bold text-white transition flex items-center gap-2 ${
+                        live.paused ? 'cursor-not-allowed bg-white/10 text-zinc-500' : 'bg-amber-600 hover:bg-amber-500'
+                      }`}
+                      title="Молча перейти к следующей песне — ответ не показывается"
+                    >
+                      Пропустить ⏭
+                    </button>
+                  </div>
                 </div>
               )}
 
@@ -282,9 +304,23 @@ export default function MusicHost() {
                         <p className="truncate text-xs text-zinc-500">{live.blockName || ''}</p>
                       </div>
                     </div>
-                    <p className="mt-2 text-sm text-zinc-400">Можно включить этот же кусок ещё раз или перейти к следующей песне.</p>
+                    <p className="mt-2 text-sm text-zinc-400">
+                      {live.anyArmed === false
+                        ? 'Никто не угадал — покажите ответ или дайте послушать ещё раз.'
+                        : 'Можно включить этот же кусок ещё раз или перейти к следующей песне.'}
+                    </p>
                   </div>
                   <div className="flex flex-wrap gap-3">
+                    <button
+                      onClick={() => emit('admin:reveal')}
+                      disabled={live.paused}
+                      className={`rounded-lg px-5 py-2.5 font-bold text-white transition flex items-center gap-2 ${
+                        live.paused ? 'cursor-not-allowed bg-white/10 text-zinc-500' : 'bg-white/10 hover:bg-white/20'
+                      }`}
+                      title="Доиграть отрывок, показать исполнителя на экране и перейти к следующей песне"
+                    >
+                      <Eye size={16} /> Никто не угадал
+                    </button>
                     <button
                       onClick={() => emit('admin:replay')}
                       className="btn-grad rounded-lg px-5 py-2.5 font-bold text-white transition flex items-center gap-2"

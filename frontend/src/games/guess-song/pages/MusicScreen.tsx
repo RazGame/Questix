@@ -513,11 +513,14 @@ export default function MusicScreen() {
     const prev = prevPhase.current;
     if (phase !== prev) {
       if (phase === 'reveal') {
-        // верный ответ: зелёная вспышка, затем обложка
-        setFlash('green');
+        // Верный ответ — зелёная вспышка. Если ответ раскрыл ведущий
+        // (никто не угадал) — вспышки нет, просто показываем обложку.
+        if (state?.revealGuessed !== false) {
+          setFlash('green');
+          setTimeout(() => setFlash(null), 1100);
+        }
         setShowCover(false);
         setTimeout(() => setShowCover(true), 450);
-        setTimeout(() => setFlash(null), 1100);
       } else if (prev === 'buzzed' && phase === 'playing') {
         // неверный ответ: красная вспышка и возврат
         setFlash('red');
@@ -690,6 +693,11 @@ export default function MusicScreen() {
             {phase === 'ended' && !buzzCard && <p className="text-zinc-400 text-xl">Фрагмент закончился. Ждём ведущего…</p>}
             {phase === 'reveal' && state?.reveal && !buzzCard && (
               <div>
+                {state.revealGuessed === false && (
+                  <div className="mb-1 text-lg font-semibold uppercase tracking-[0.2em] text-violet-300">
+                    Никто не угадал
+                  </div>
+                )}
                 <div className="font-display text-3xl font-bold">{state.reveal.title}</div>
                 <div className="text-zinc-400 text-xl">{state.reveal.artist}</div>
               </div>
