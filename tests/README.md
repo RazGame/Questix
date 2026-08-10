@@ -1,0 +1,56 @@
+# Тесты
+
+Сквозные (e2e) проверки против **запущенного** стека: они ходят по настоящему
+HTTP и Socket.IO, а не мокают их. Поэтому сначала поднимите проект:
+
+```bash
+docker compose up -d --build
+```
+
+Тестам нужен организатор `design_org@t.io` / `password1` — он создаётся
+`seed-demo.ps1` в корне репозитория.
+
+`NODE_PATH` указывает на `frontend/node_modules`, откуда берётся
+`socket.io-client`; отдельных зависимостей у тестов нет.
+
+## Запуск
+
+Из корня репозитория:
+
+```bash
+NODE_PATH=frontend/node_modules node tests/music-flow-test.cjs
+```
+
+В PowerShell:
+
+```powershell
+$env:NODE_PATH="frontend/node_modules"; node tests/music-flow-test.cjs
+```
+
+## Что покрывает каждый
+
+| Файл | О чём |
+| --- | --- |
+| `music-flow-test.cjs` | «Угадай мелодию» целиком: лобби → интро → игра → баззер → верно/неверно → промежуточные итоги → анонс блока → финал. Пауза, подсказки ведущему, досрочное завершение |
+| `team-guess-song-test.cjs` | Командная угадайка с авторизацией: команды Questix, счёт и блокировка на всю команду |
+| `team-open-guess-song-test.cjs` | Командная **без** регистрации (ad-hoc столы): объединение по названию без учёта регистра, выбор команды до входа, смена команды и имени в лобби, отключение игрока и удаление команды ведущим |
+| `bundle-test.cjs` | Экспорт и импорт игры одним zip вместе с музыкой, отрезками и подсказками |
+| `results-flow-test.cjs` | Итоги вечеринки и их отправка в облако |
+| `solo-quest-test.cjs` | Одиночный квест |
+| `organizer-of-test.cjs` | Права организатора по видам игр (`organizerOf`) |
+| `music-load-test.cjs` | Нагрузочная: много игроков разом на баззере |
+| `smoke-test.ps1` | Командный квест целиком: заявки, задания, логи, статистика, соорганизаторы |
+
+## Особенности
+
+**`results-flow-test.cjs`** рассчитан на «облако = сам себе» (`QUESTIX_CLOUD_URL`
+указывает на localhost). Если станция настроена на внешнее облако, локальный
+организатор там не авторизован — тест это распознаёт и пропускает часть
+проверок с пояснением, а не падает.
+
+**`smoke-test.ps1`** принимает параметры подключения к Mongo:
+
+```powershell
+.\tests\smoke-test.ps1 -MongoContainer quest-mongodb -MongoDb quest `
+  -MongoAuthArgs '-u admin -p password --authenticationDatabase admin'
+```

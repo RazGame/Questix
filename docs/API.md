@@ -344,29 +344,39 @@ Admin only. Назначает порядок заданий для команд
 
 ## Music («Угадай мелодию»)
 
-Все `/music/*` REST-маршруты (кроме `GET /music/public/:code`) - для администратора
+Все `/music/*` REST-маршруты (кроме публичных ниже) - для администратора
 или организатора. Игроки и экран взаимодействуют через **Socket.IO** (не REST).
-В одиночной игре с `auth=open` игроки входят без регистрации (по имени/коду); при
-`auth=required` и в командном режиме - по аккаунту (JWT в `handshake.auth.token`).
+Оси независимы: при `auth=open` игроки входят без регистрации (по имени/коду) —
+в том числе в командной игре, где команда задаётся названием прямо с телефона;
+при `auth=required` — по аккаунту (JWT в `handshake.auth.token`).
 
 REST (управление, под auth + organizer):
 
-- `GET /music/games`, `POST /music/games`, `GET|PATCH|DELETE /music/games/:id` - игры (создание ставит `kind=guess_song`, `format=offline`, генерит `code`). `POST`/`PATCH` принимают `participation` (`solo`/`team`) и `auth` (`open`/`required`); командная игра форсит `auth=required`.
+- `GET /music/games`, `POST /music/games`, `GET|PATCH|DELETE /music/games/:id` - игры (создание ставит `kind=guess_song`, `format=offline`, генерит `code`). `POST`/`PATCH` принимают `participation` (`solo`/`team`) и `auth` (`open`/`required`) независимо друг от друга; `PATCH` также принимает `blockOrder` — перестановку блоков.
 - `GET /music/public/:code` - публичная мета по коду (без auth): `{ title, auth, participation }` - страница игрока выбирает вход (логин vs имя).
 - `POST|PATCH|DELETE /music/games/:id/blocks[/:blockId]` - блоки песен.
-- `POST|PATCH|DELETE /music/games/:id/songs[/:songId]` - песни.
+- `POST|PATCH|DELETE /music/games/:id/songs[/:songId]` - песни. `PATCH` принимает `startSec`/`endSec` (отрезок), `title`, `artist` и `note` — подсказку ведущему (до 500 символов): что ещё засчитывать за верный ответ. Подсказка отдаётся только этим авторизованным API и в состояние сокета не попадает.
 - `POST /music/games/:id/songs/:songId/upload` - ручная загрузка аудиофайла (raw body, `?ext=`).
 - `POST /music/games/:id/songs/:songId/download` - повторная авто-загрузка через SpotiFLAC.
 - `GET /music/search?q=` - поиск песен (SpotiFLAC).
+- `GET /music/games/:id/export` - выгрузка игры одним zip (песни, отрезки, подсказки, аудио). Отдаётся с `Content-Length` и без сжатия — по нему браузер считает проценты.
+- `POST /music/games/import` - загрузка такого zip (raw body, `application/zip`).
 - `GET /music/net`, `GET /music/qr?text=` - LAN-IP и QR для входа игроков.
-- `GET /music/spotiflac/version`, `POST /music/spotiflac/update` - версия и обновление SpotiFLAC.
+- `GET /music/spotiflac/version` - версия SpotiFLAC.
+
+Публичные (без auth, как и раздача `/media`):
+
+- `GET /music/public/:code` - мета игры по коду.
+- `GET /music/cover?url=` - прокси внешней обложки (только доверенные хосты).
+- `GET /music/artwork/:songId?size=sm` - обложка, вшитая в сам аудиофайл: достаётся через ffmpeg и кэшируется рядом в `media`. Запасной источник, когда внешней обложки нет или площадка без интернета. `size=sm` даёт 64×64 для списков.
 
 Socket.IO события:
 
-- игрок: `join {role:'player', code, name, playerId}` (в командной/авторизованной игре имя берётся из профиля, токен — в `handshake.auth.token`), `player:ready`, `player:buzz`, `player:rename`;
-- экран: `join {role:'screen', gameId}` (получает команды `cmd`: play/pause/resume/fadeAndStop/stop);
-- ведущий (JWT в `handshake.auth.token`): `join {role:'admin', gameId}`, `admin:start|correct|wrong|skip|reset`;
-- сервер шлёт `state` (публичное состояние; в командном режиме `mode='team'`, `teams[]`, `buzzed.by`), `joined` (с `teamId`/`teamName`), `song-updated`, `error-msg`.
+- игрок: `join {role:'player', code, name, teamName, playerId}` (при `auth=required` имя берётся из профиля, токен — в `handshake.auth.token`), `player:ready`, `player:buzz`, `player:rename`, `player:offline`. Повторный `join` с тем же `playerId` в лобби меняет команду и имя; в игре команда уже не меняется;
+- телефон до входа: `peek {code}` — подписка на лобби, чтобы видеть уже созданные команды. Игроком не делает и сессию не создаёт;
+- экран: `join {role:'screen', gameId}`, `screen:audio-ready`, `screen:ended`. Получает команды `cmd` (play/pause/resume/playOn/fadeAndStop/stop); в `play` приходит и обложка — экран кладёт её в кэш заранее, чтобы к раскрытию она была готова. Это единственный канал, где обложка появляется до ответа, и он идёт только в комнату экрана;
+- ведущий (JWT в `handshake.auth.token`): `join {role:'admin', gameId}`, далее `admin:start|continue|replay|playon|correct|wrong|reveal|skip|pause|resume|reset|finish`, а также `admin:kick {playerId}` и `admin:remove-team {teamId}`. `reveal` — «никто не угадал»: доигрывает отрезок и показывает исполнителя без начисления очков; `finish` — досрочные итоги, как если бы плейлист доиграли; `reset` — возврат в лобби со сбросом счёта;
+- сервер шлёт `state` (публичное состояние: фаза, `mode`, `teams[]`, `players[]`, `buzzed.by`, `anyArmed`, `revealGuessed`), `joined` (с `teamId`/`teamName`), `song-updated`, `song-progress`, `error-msg`.
 
 Аудиофайлы раздаются из `/media/<file>`. Каталог квестов `/games` игры `guess_song` не возвращает.
 
