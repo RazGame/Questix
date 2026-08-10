@@ -92,6 +92,10 @@ select.input-dark optgroup {
   60% { transform: scale(1.1); opacity: 1; }
   100% { transform: scale(1); opacity: 1; }
 }
+@keyframes qgs-pop-out {
+  0% { transform: scale(1); opacity: 1; }
+  100% { transform: scale(0.78); opacity: 0; filter: blur(3px); }
+}
 @keyframes qgs-buzz-card-in {
   0% {
     transform: translate(-50%, -230px) scale(0.22);
@@ -168,6 +172,8 @@ select.input-dark optgroup {
 .qgs-marquee { animation: qgs-marquee 11s linear infinite; }
 .qgs-pulse { animation: qgs-pulse 0.9s ease-in-out infinite; }
 .qgs-pop { animation: qgs-pop 0.6s cubic-bezier(0.22, 1, 0.36, 1); }
+/* Уход обложки: без него она пропадала в один кадр, и «?» возвращался рывком */
+.qgs-pop-out { animation: qgs-pop-out 0.34s cubic-bezier(0.4, 0, 0.2, 1) both; }
 .qgs-fade-in { animation: qgs-fade-in 0.6s ease-out both; }
 /* Длительность подогнана под фазу показа ответа на сервере
    (REVEAL_PLAY_MS 5000 + REVEAL_FADE_MS 1500): раньше всплывашка

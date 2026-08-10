@@ -110,6 +110,20 @@ export default function MusicScreen() {
   // Анимации центра: вспышка верно/неверно и показ обложки.
   const [flash, setFlash] = useState<'green' | 'red' | null>(null);
   const [showCover, setShowCover] = useState(false);
+  const [coverLeaving, setCoverLeaving] = useState(false);
+  // Запоминаем, что показывали: state.reveal обнуляется сразу при смене фазы,
+  // и без этого уезжать было бы уже нечему.
+  const [lastCover, setLastCover] = useState<{ cover?: string; songId?: string | null }>({});
+  // Обложка уезжает с анимацией, а не пропадает в один кадр. Снимаем её
+  // только после проигрыша ухода, иначе «?» возвращается рывком.
+  const hideCover = () => {
+    setShowCover((visible) => {
+      if (!visible) return false;
+      setCoverLeaving(true);
+      setTimeout(() => { setShowCover(false); setCoverLeaving(false); }, 340);
+      return true;
+    });
+  };
   const [buzzCard, setBuzzCard] = useState<{
     id: string;
     name: string;
@@ -591,6 +605,8 @@ export default function MusicScreen() {
           setFlash('green');
           setTimeout(() => setFlash(null), 1100);
         }
+        setCoverLeaving(false);
+        setLastCover({ cover: state?.reveal?.cover, songId: state?.currentSongId });
         setShowCover(false);
         setTimeout(() => setShowCover(true), 450);
       } else if (prev === 'buzzed' && phase === 'playing') {
@@ -598,11 +614,15 @@ export default function MusicScreen() {
         setFlash('red');
         setTimeout(() => setFlash(null), 800);
       } else if (phase === 'playing') {
-        setShowCover(false);
+        hideCover();
         setFlash(null);
       } else if (phase === 'lobby' || phase === 'finished') {
-        setShowCover(false);
+        hideCover();
         setFlash(null);
+      } else if (prev === 'reveal') {
+        // Ушли с раскрытия куда-то ещё (анонс блока, конец игры) — обложка
+        // должна уехать так же плавно, как появилась.
+        hideCover();
       }
       prevPhase.current = phase;
     }
@@ -734,12 +754,12 @@ export default function MusicScreen() {
             >
               {/* Ни ссылки, ни файла — оставляем прежний крупный «?», он на
                   проекторе читается лучше значка */}
-              {showCover && state?.reveal && (state.reveal.cover || state.currentSongId) ? (
+              {showCover && (lastCover.cover || lastCover.songId) ? (
                 <SongCover
-                  cover={state.reveal.cover}
-                  songId={state.currentSongId}
+                  cover={lastCover.cover}
+                  songId={lastCover.songId}
                   size="lg"
-                  className="qgs-pop h-full w-full object-cover"
+                  className={`h-full w-full object-cover ${coverLeaving ? 'qgs-pop-out' : 'qgs-pop'}`}
                 />
               ) : (
                 <span className="font-display text-8xl font-black text-white/90">?</span>
