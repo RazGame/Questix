@@ -4,7 +4,7 @@ import NoSleep from 'nosleep.js';
 import { createSocket } from '../services/socket';
 import SongCover from '../components/SongCover';
 import { musicService } from '../services/music';
-import { vibrate, hapticTap } from '../services/haptics';
+import { vibrate, hapticTap , installHaptics } from '../services/haptics';
 import { MusicState } from '../../../core/types';
 
 // Выбор команды: чипы уже созданных + «новая». Один и тот же виджет на экране
@@ -109,6 +109,9 @@ export default function MusicPlay() {
   // Не даём телефону заснуть во время игры: погасший экран = отвал сокета
   // и проигранная гонка за баззер. Wake Lock API недоступен по http (LAN),
   // поэтому NoSleep (скрытое видео). Включается только из жеста пользователя.
+  // Обход вибрации для iOS подключаем только здесь — на телефоне игрока.
+  useEffect(() => { installHaptics(); }, []);
+
   const noSleepRef = useRef<NoSleep | null>(null);
   const keepAwake = () => {
     try {
@@ -171,29 +174,33 @@ export default function MusicPlay() {
   };
 
   useEffect(() => {
-    const originalBodyOverflow = document.body.style.overflow;
-    const originalBodyHeight = document.body.style.height;
-    const originalBodyPosition = document.body.style.position;
-    const originalBodyWidth = document.body.style.width;
+    // Настоящий <body>, а не то, что вернёт document.body: полифил вибрации
+    // на iOS 18+ подменяет геттер document.body своим <label>, и эти стили
+    // (fixed, 100dvh) уходили бы мимо — телефон терял полноэкранную вёрстку.
+    const body = document.getElementsByTagName('body')[0] || document.body;
+    const originalBodyOverflow = body.style.overflow;
+    const originalBodyHeight = body.style.height;
+    const originalBodyPosition = body.style.position;
+    const originalBodyWidth = body.style.width;
 
     const originalHtmlOverflow = document.documentElement.style.overflow;
     const originalHtmlHeight = document.documentElement.style.height;
     const originalHtmlPosition = document.documentElement.style.position;
 
-    document.body.style.overflow = 'hidden';
-    document.body.style.height = '100dvh';
-    document.body.style.position = 'fixed';
-    document.body.style.width = '100%';
+    body.style.overflow = 'hidden';
+    body.style.height = '100dvh';
+    body.style.position = 'fixed';
+    body.style.width = '100%';
 
     document.documentElement.style.overflow = 'hidden';
     document.documentElement.style.height = '100dvh';
     document.documentElement.style.position = 'fixed';
 
     return () => {
-      document.body.style.overflow = originalBodyOverflow;
-      document.body.style.height = originalBodyHeight;
-      document.body.style.position = originalBodyPosition;
-      document.body.style.width = originalBodyWidth;
+      body.style.overflow = originalBodyOverflow;
+      body.style.height = originalBodyHeight;
+      body.style.position = originalBodyPosition;
+      body.style.width = originalBodyWidth;
 
       document.documentElement.style.overflow = originalHtmlOverflow;
       document.documentElement.style.height = originalHtmlHeight;

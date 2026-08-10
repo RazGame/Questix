@@ -13,6 +13,7 @@ import MusicAdmin from './guess-song/pages/MusicAdmin';
 import MusicHost from './guess-song/pages/MusicHost';
 import MusicScreen from './guess-song/pages/MusicScreen';
 import MusicPlay from './guess-song/pages/MusicPlay';
+import HapticsDebug from './guess-song/pages/HapticsDebug';
 
 // Реестр игровых модулей фронта (ROADMAP этап 2).
 // Новая игра = папка в games/ + запись здесь: роуты попадают в App,
@@ -70,6 +71,8 @@ const guessSongModule: GameModuleFrontend = {
     // Экран-проектор и телефоны — публичные, без регистрации
     <Route key="m-screen" path="/m/screen/:gameId" element={<MusicScreen />} />,
     <Route key="m-play" path="/m/play" element={<MusicPlay />} />,
+    // Диагностика вибрации: iOS проверяется только на живом устройстве
+    <Route key="m-haptics" path="/m/haptics" element={<HapticsDebug />} />,
   ],
   AdminEditor: MusicAdmin,
   adminTabId: 'music',
