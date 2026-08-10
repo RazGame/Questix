@@ -1,0 +1,53 @@
+import path from 'path';
+import { spawn } from 'child_process';
+
+const PY = process.env.PYTHON || 'python3';
+// tools лежат в backend/tools. Отсюда (modules/guess-song/services) до корня
+// backend — четыре уровня; одинаково работает и из src, и из dist.
+const TOOLS = path.join(__dirname, '..', '..', '..', '..', 'tools');
+
+export interface ToolResult {
+  ok: boolean;
+  error?: string;
+  results?: any[];
+  file?: string;
+  [key: string]: unknown;
+}
+
+// Запускает python-скрипт из tools/ и парсит последнюю строку stdout как JSON.
+export const runTool = (scriptName: string, args: string[]): Promise<ToolResult> => {
+  const script = path.join(TOOLS, scriptName);
+  return new Promise((resolve) => {
+    let out = '';
+    let err = '';
+    const child = spawn(PY, [script, ...args], { windowsHide: true });
+    child.stdout.on('data', (d) => { out += d.toString('utf8'); });
+    child.stderr.on('data', (d) => { err += d.toString('utf8'); });
+    child.on('error', (e) => resolve({ ok: false, error: `python: ${e.message}` }));
+    child.on('close', () => {
+      const lines = out.trim().split('\n').filter(Boolean).reverse();
+      for (const line of lines) {
+        try {
+          resolve(JSON.parse(line));
+          return;
+        } catch {
+          // SpotiFLAC может печатать диагностические строки рядом с JSON.
+        }
+      }
+      resolve({ ok: false, error: err.trim() || out.trim() || 'нет вывода от python' });
+    });
+  });
+};
+
+// Текущая установленная версия SpotiFLAC (или null).
+export const spotiflacVersion = (): Promise<string | null> =>
+  new Promise((resolve) => {
+    const child = spawn(PY, ['-c', 'import importlib.metadata as m; print(m.version("SpotiFLAC"))'], {
+      windowsHide: true,
+    });
+    let out = '';
+    child.stdout.on('data', (d) => { out += d.toString('utf8'); });
+    child.on('error', () => resolve(null));
+    child.on('close', () => resolve(out.trim() || null));
+  });
+

@@ -1,0 +1,207 @@
+import api, { API_URL } from '../../../core/services/api';
+import { MusicGame, Song } from '../../../core/types';
+
+export interface MusicGameFull {
+  game: MusicGame;
+  songs: Song[];
+}
+
+export interface SongSearchResult {
+  title: string;
+  artist: string;
+  album?: string;
+  cover?: string;
+  duration?: number;
+  sourceUrl?: string;
+  preview?: string;
+}
+
+export interface PlaylistImportResult {
+  ok: boolean;
+  playlist?: {
+    name?: string;
+    owner?: string;
+    cover_url?: string;
+    track_count?: number;
+  };
+  imported: number;
+  skipped: number;
+}
+
+// Размер обложки в адресе Spotify закодирован префиксом идентификатора.
+// В списке песен картинка показывается 36×36, и тянуть ради неё 300×300
+// незачем: на 200 песен это 69 МБ распакованных картинок против одного.
+const COVER_SIZES = {
+  sm: 'ab67616d00004851', // 64×64  — иконки в списках
+  md: 'ab67616d00001e02', // 300×300 — карточки
+  lg: 'ab67616d0000b273', // 640×640 — экран проектора
+};
+
+export type CoverSize = keyof typeof COVER_SIZES;
+
+// Обложка, вшитая в сам аудиофайл: запасной источник, когда внешней нет
+// или до неё не достучаться (нет интернета на площадке).
+export const songArtworkSrc = (songId?: string | null, size: CoverSize = 'md'): string =>
+  songId ? `${API_URL}/music/artwork/${songId}${size === 'sm' ? '?size=sm' : ''}` : '';
+
+export const musicCoverSrc = (cover?: string, size: keyof typeof COVER_SIZES = 'md'): string => {
+  if (!cover) return '';
+  if (cover.startsWith('/')) return `${API_URL}${cover}`;
+  if (!/^https?:\/\//i.test(cover)) return cover;
+  const sized = cover.replace(
+    /(i\.scdn\.co\/image\/)ab67616d[0-9a-f]{8}/i,
+    `$1${COVER_SIZES[size]}`
+  );
+  return `${API_URL}/music/cover?url=${encodeURIComponent(sized)}`;
+};
+
+// Ссылка на сам аудиофайл песни (раздаётся бэкендом из /media).
+export const musicAudioSrc = (file?: string): string => (file ? `${API_URL}/media/${file}` : '');
+
+export const musicService = {
+  // --- игры ---
+  list: async (): Promise<(MusicGame & { songCount: number })[]> => {
+    const res = await api.get('/music/games');
+    return res.data;
+  },
+  create: async (
+    title?: string,
+    auth?: 'open' | 'required',
+    participation?: 'solo' | 'team'
+  ): Promise<MusicGame> => {
+    const res = await api.post('/music/games', { title, auth, participation });
+    return res.data.game;
+  },
+  get: async (id: string): Promise<MusicGameFull> => {
+    const res = await api.get(`/music/games/${id}`);
+    return res.data;
+  },
+  update: async (
+    id: string,
+    patch: {
+      title?: string;
+      auth?: 'open' | 'required';
+      participation?: 'solo' | 'team';
+      blockOrder?: string[]; // перестановка id всех блоков игры
+    }
+  ): Promise<MusicGame> => {
+    const res = await api.patch(`/music/games/${id}`, patch);
+    return res.data.game;
+  },
+  // Публичная мета по коду (без токена) — для страницы игрока.
+  publicMeta: async (code: string): Promise<{ title: string; auth: 'open' | 'required'; participation: 'solo' | 'team' }> => {
+    const res = await api.get(`/music/public/${code}`);
+    return res.data;
+  },
+  remove: async (id: string): Promise<void> => {
+    await api.delete(`/music/games/${id}`);
+  },
+
+  // --- bundle: экспорт/импорт игры одним zip ---
+  // onProgress(loaded, total) — total=0, пока размер неизвестен (сервер ещё
+  // пакует архив и не прислал Content-Length).
+  exportBundle: async (
+    id: string,
+    code: string,
+    onProgress?: (loaded: number, total: number) => void
+  ): Promise<void> => {
+    const res = await api.get(`/music/games/${id}/export`, {
+      responseType: 'blob',
+      onDownloadProgress: (e) => onProgress?.(e.loaded, e.total || 0),
+    });
+    // Скачивание blob через временную ссылку (токен уже ушёл в заголовке axios).
+    const url = URL.createObjectURL(res.data);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${code || 'game'}.questix.zip`;
+    a.click();
+    URL.revokeObjectURL(url);
+  },
+  importBundle: async (
+    file: File,
+    onProgress?: (loaded: number, total: number) => void
+  ): Promise<MusicGame> => {
+    const res = await api.post('/music/games/import', file, {
+      headers: { 'Content-Type': 'application/zip' },
+      onUploadProgress: (e) => onProgress?.(e.loaded, e.total || file.size),
+    });
+    return res.data.game;
+  },
+
+  // --- блоки ---
+  addBlock: async (id: string, name?: string): Promise<MusicGame> => {
+    const res = await api.post(`/music/games/${id}/blocks`, { name });
+    return res.data.game;
+  },
+  updateBlock: async (
+    id: string,
+    blockId: string,
+    patch: { name?: string; songIds?: string[] } // songIds — перестановка песен блока
+  ): Promise<MusicGame> => {
+    const res = await api.patch(`/music/games/${id}/blocks/${blockId}`, patch);
+    return res.data.game;
+  },
+  removeBlock: async (id: string, blockId: string): Promise<MusicGame> => {
+    const res = await api.delete(`/music/games/${id}/blocks/${blockId}`);
+    return res.data.game;
+  },
+
+  // --- песни ---
+  addSong: async (id: string, blockId: string, song: Partial<Song> | SongSearchResult): Promise<Song> => {
+    const res = await api.post(`/music/games/${id}/songs`, { blockId, song });
+    return res.data.song;
+  },
+  updateSong: async (id: string, songId: string, patch: Partial<Song>): Promise<Song> => {
+    const res = await api.patch(`/music/games/${id}/songs/${songId}`, patch);
+    return res.data.song;
+  },
+  removeSong: async (id: string, songId: string): Promise<void> => {
+    await api.delete(`/music/games/${id}/songs/${songId}`);
+  },
+  uploadSongFile: async (
+    id: string,
+    songId: string,
+    file: File,
+    onProgress?: (loaded: number, total: number) => void
+  ): Promise<Song> => {
+    const ext = file.name.split('.').pop() || 'mp3';
+    const res = await api.post(
+      `/music/games/${id}/songs/${songId}/upload?ext=${encodeURIComponent(ext)}`,
+      file,
+      {
+        headers: { 'Content-Type': 'application/octet-stream' },
+        onUploadProgress: (e) => onProgress?.(e.loaded, e.total || file.size),
+      }
+    );
+    return res.data.song;
+  },
+  importPlaylist: async (id: string, blockId: string, url: string): Promise<PlaylistImportResult> => {
+    const res = await api.post(`/music/games/${id}/playlist-import`, { blockId, url });
+    return res.data;
+  },
+
+  // --- поиск (SpotiFLAC, фаза D) ---
+  search: async (q: string): Promise<SongSearchResult[]> => {
+    const res = await api.get('/music/search', { params: { q } });
+    return res.data.results;
+  },
+  downloadSong: async (id: string, songId: string): Promise<void> => {
+    await api.post(`/music/games/${id}/songs/${songId}/download`);
+  },
+
+  // --- сеть / QR ---
+  net: async (): Promise<{ ip: string; base: string }> => {
+    const res = await api.get('/music/net');
+    return res.data;
+  },
+  qr: async (text: string): Promise<string> => {
+    const res = await api.get('/music/qr', { params: { text } });
+    return res.data.dataUrl;
+  },
+
+  // --- SpotiFLAC (фаза D) ---
+  spotiflacVersion: async (): Promise<{ version: string | null }> => {
+    const res = await api.get('/music/spotiflac/version');
+    return res.data;
+  },
+};

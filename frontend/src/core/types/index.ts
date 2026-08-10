@@ -1,0 +1,266 @@
+export interface User {
+  id: string;
+  firstName: string;
+  lastName: string;
+  nickname: string;
+  username: string;
+  city: string;
+  phone: string;
+  roles: string[];
+  organizerOf?: string[]; // типы игр, которые организатор может создавать ('*' — все)
+  gameAppls: string[];
+}
+
+export interface GameOrganizer {
+  _id: string;
+  nickname: string;
+  firstName?: string;
+  lastName?: string;
+}
+
+// Порядок прохождения заданий:
+// linear - общий порядок (+ индивидуальное время старта команд);
+// random - случайный порядок для каждой команды;
+// manual - порядок задаётся организатором для каждой команды.
+export type TaskOrderMode = 'linear' | 'random' | 'manual';
+
+// Вид игры: квест или «Угадай мелодию».
+export type GameKind = 'quest' | 'guess_song';
+// Формат проведения. Угадайка пока только offline.
+export type GameFormat = 'online' | 'offline';
+// Кто играет: одиночка или команда.
+export type GameParticipation = 'solo' | 'team';
+// Авторизация: required — по аккаунту, open — вход по имени/коду.
+export type GameAuth = 'required' | 'open';
+
+export interface Game {
+  _id: string;
+  kind?: GameKind;
+  format?: GameFormat;
+  participation?: GameParticipation;
+  auth?: GameAuth;
+  title: string;
+  city: string;
+  dateofstart: string;
+  dateofend: string;
+  deposit: string;
+  prize: string;
+  description: string;
+  published?: boolean;
+  taskOrderMode?: TaskOrderMode;
+  createdBy?: GameOrganizer | string; // populated-документ или ID
+  organizers?: GameOrganizer[]; // соорганизаторы
+  gameAppls: GameAppl[];
+}
+
+// --- Игра «Угадай мелодию» ---
+export interface Song {
+  _id: string;
+  gameId: string;
+  title: string;
+  artist: string;
+  album: string;
+  cover: string;
+  duration: number;
+  startSec: number;
+  endSec?: number | null;
+  sourceUrl: string;
+  note?: string; // подсказка ведущему: что ещё засчитывать за верный ответ
+  preview: string;
+  file: string | null;
+  status: 'pending' | 'downloading' | 'ready' | 'error';
+  error: string | null;
+}
+
+export interface MusicBlock {
+  _id: string;
+  name: string;
+  songIds: string[];
+}
+
+export interface MusicGame {
+  _id: string;
+  kind: 'guess_song';
+  format: 'offline';
+  participation?: GameParticipation;
+  auth?: GameAuth;
+  title: string;
+  code: string;
+  blocks: MusicBlock[];
+  createdBy?: GameOrganizer | string;
+  organizers?: GameOrganizer[];
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+// Публичное состояние сессии (зеркало publicState() сервера).
+export interface MusicPlayer {
+  id: string;
+  name: string;
+  ready: boolean;
+  connected: boolean;
+  score: number; // в team-режиме — очки команды игрока
+  teamId?: string | null;
+  teamName?: string | null;
+  armed: boolean;
+  locked: boolean;
+}
+
+// Сводка по команде (team-режим).
+export interface MusicTeam {
+  id: string;
+  name: string;
+  score: number;
+  online: number;
+  ready: number;
+  armed: boolean;
+  locked: boolean;
+}
+
+export interface MusicState {
+  gameId: string;
+  gameName: string;
+  code: string;
+  phase: 'lobby' | 'intro' | 'standings' | 'blockIntro' | 'playing' | 'ended' | 'buzzed' | 'reveal' | 'finished';
+  total: number;
+  currentIndex: number;
+  buzzed: { id: string; name: string; by?: string } | null;
+  reveal: { title: string; artist: string; album: string; cover: string } | null;
+  blockName: string;
+  currentSongId?: string | null; // _id текущей песни плейлиста
+  blockCurrentIndex?: number;
+  blockTotal?: number;
+  blocks?: string[]; // имена всех блоков (для интро-заставок)
+  paused?: boolean; // игра поставлена на паузу ведущим
+  introMs?: number | null; // остаток интро-таймера, мс
+  mode?: GameParticipation; // solo | team
+  teams?: MusicTeam[];
+  anyArmed?: boolean; // может ли кто-то ещё нажать баззер в этом раунде
+  revealGuessed?: boolean; // reveal после верного ответа (false — показал ведущий)
+  players: MusicPlayer[];
+  fileUrl?: string | null;
+  startSec?: number;
+  endSec?: number | null;
+  nextUrl?: string | null;
+  screenReady?: boolean;
+}
+
+export interface GameAppl {
+  _id: string;
+  userId:
+    | string
+    | {
+        _id: string;
+        nickname: string;
+        firstName?: string;
+        lastName?: string;
+        phone?: string;
+      };
+  gameId: string;
+  status: 'pending' | 'approved' | 'rejected' | 'completed';
+  team?: {
+    _id: string;
+    name: string;
+    captain?: {
+      _id: string;
+      nickname: string;
+      firstName?: string;
+      lastName?: string;
+      phone?: string;
+    };
+    members?: Array<{
+      _id: string;
+      nickname: string;
+      firstName?: string;
+      lastName?: string;
+    }>;
+  };
+  teamName?: string;
+  teamMembers?: string[];
+  startAt?: string | null; // Индивидуальное время старта команды (линейный режим)
+  taskOrder?: string[]; // Ручной порядок заданий для команды (режим manual)
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export interface TaskHint {
+  text: string;
+  delayMinutes?: number;
+}
+
+export interface Task {
+  _id: string;
+  gameId: string;
+  title: string;
+  description: string; // HTML контент
+  answers: string[];
+  hints?: Array<string | TaskHint>;
+  orderIndex: number;
+  timeLimit?: number;
+}
+
+export interface GameTeamProgress {
+  _id: string;
+  gameApplId: string;
+  gameId: string;
+  teamId: string;
+  userId: string;
+  taskOrder: string[];
+  currentTaskIndex: number;
+  completedTasks: {
+    taskId: string;
+    answer: string;
+    isCorrect: boolean;
+    timeSpent: number;
+    completedAt: string;
+  }[];
+  gameStartedAt: string;
+  gameFinishedAt?: string;
+  totalTime?: number;
+  // Корректировки времени: amount > 0 - штраф, amount < 0 - бонус (секунды)
+  timeAdjustments?: {
+    amount: number;
+    reason: string;
+    createdBy?: { _id: string; nickname: string } | string;
+    createdAt: string;
+  }[];
+  status: 'not_started' | 'in_progress' | 'completed' | 'abandoned';
+}
+
+export interface CurrentTaskResponse {
+  status: 'in_progress' | 'completed';
+  currentTaskIndex?: number;
+  totalTasks?: number;
+  task?: {
+    _id: string;
+    title: string;
+    description: string;
+    hints?: Array<string | TaskHint>;
+    timeLimit?: number;
+    orderIndex: number;
+    totalTasks: number;
+    taskStartedAt?: string;
+    currentTaskElapsedSeconds?: number;
+  };
+  message?: string;
+  totalTime?: number;
+}
+
+export interface LoginRequest {
+  username: string;
+  hashed_pwd: string;
+}
+
+export interface SignupRequest extends LoginRequest {
+  firstName: string;
+  lastName: string;
+  nickname: string;
+  city: string;
+  phone: string;
+}
+
+export interface AuthResponse {
+  message: string;
+  token: string;
+  user: User;
+}
