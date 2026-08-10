@@ -1,11 +1,11 @@
-import { useEffect, useRef, useState, useCallback } from 'react';
+import { useEffect, useRef, useState, useCallback, useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { Play, Pause, Volume2, Users, ListMusic, ArrowLeft, RefreshCw, AlertCircle, Send, Eye, Trash2, UserMinus, Square } from 'lucide-react';
 import { musicCoverSrc, musicService, MusicGameFull } from '../services/music';
 import { createSocket } from '../services/socket';
 import SongCover from '../components/SongCover';
 import { partyResultsService } from '../../../core/services/results';
-import { MusicState } from '../../../core/types';
+import { MusicState, Song } from '../../../core/types';
 
 export default function MusicHost() {
   const { gameId } = useParams<{ gameId: string }>();
@@ -91,7 +91,15 @@ export default function MusicHost() {
   // id текущей песни приходит с сервера — индекс плейлиста нельзя применять
   // к gameData.songs (порядок в БД может отличаться от порядка блоков).
   const currentSongId = live?.currentSongId;
-  const currentSong = gameData?.songs.find((s) => s._id === currentSongId);
+  // Песни ищем по индексу, а не перебором: пульт перерисовывается на каждое
+  // состояние (нажатие баззера, готовность, смена фазы), а плейлист на 200
+  // песен давал до 40 тысяч сравнений на каждую такую перерисовку.
+  const songsById = useMemo(() => {
+    const map = new Map<string, Song>();
+    gameData?.songs.forEach((s) => map.set(String(s._id), s));
+    return map;
+  }, [gameData]);
+  const currentSong = currentSongId ? songsById.get(String(currentSongId)) : undefined;
   const displayRound =
     live && live.total > 0
       ? Math.min(Math.max(live.currentIndex + 1, 1), live.total)
@@ -609,7 +617,7 @@ export default function MusicHost() {
                 <h4 className="text-xs font-bold text-zinc-500 uppercase tracking-widest">{block.name}</h4>
                 <div className="space-y-1">
                   {block.songIds.map((songId) => {
-                    const song = gameData.songs.find((s) => s._id === songId);
+                    const song = songsById.get(String(songId));
                     if (!song) return null;
 
                     const isPlaying = currentSongId === song._id;

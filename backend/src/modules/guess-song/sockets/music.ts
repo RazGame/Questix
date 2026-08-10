@@ -203,12 +203,12 @@ export const registerMusicSockets = (io: Server): void => {
     });
 
     socket.on('disconnect', () => {
-      if (role === 'screen' && gameId) {
-        getSession(io, gameId).setScreenReady(false);
-      }
-      if (role === 'player' && gameId && playerId) {
-        getSession(io, gameId).setConnected(playerId, false);
-      }
+      // Берём только существующую сессию: getSession её создаёт, и поздний
+      // обрыв связи воскрешал бы сессию, только что убранную свипером.
+      const session = gameId ? sessions.get(gameId) : null;
+      if (!session) return;
+      if (role === 'screen') session.setScreenReady(false);
+      if (role === 'player' && playerId) session.setConnected(playerId, false);
     });
   });
 };

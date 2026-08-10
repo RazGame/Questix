@@ -635,7 +635,10 @@ const sweeper = setInterval(() => {
   for (const [gameId, s] of sessions) {
     const anyConnected = Array.from(s.players.values()).some((p) => p.connected);
     const idle = now - s.lastActivityAt > IDLE_MS;
-    if (!anyConnected && idle && (s.phase === 'lobby' || s.phase === 'finished')) {
+    // Фазу не смотрим: сессия, брошенная посреди игры (ведущий закрыл
+    // вкладку), раньше не подпадала под уборку и висела в памяти вечно.
+    // Полчаса без единого подключения — вечеринка точно закончилась.
+    if (!anyConnected && idle) {
       s.destroy();
       sessions.delete(gameId);
     }

@@ -208,6 +208,23 @@ export default function MusicScreen() {
   const noSleepRef = useRef<NoSleep | null>(null);
   useEffect(() => () => { try { noSleepRef.current?.disable(); } catch { /* ignore */ } }, []);
 
+  // Аудио-движок закрываем при уходе со страницы. Браузер держит лимит
+  // одновременных AudioContext (в Chrome их около шести): без закрытия
+  // повторные открытия окна проектора копили их, и в какой-то момент звук
+  // просто переставал появляться.
+  useEffect(() => () => {
+    const e = engineRef.current;
+    engineRef.current = null;
+    if (!e) return;
+    try {
+      e.audio.pause(); e.audio.src = '';
+      e.next.pause(); e.next.src = '';
+      e.analyser.disconnect();
+      e.gain.disconnect();
+      if (e.ctx.state !== 'closed') void e.ctx.close();
+    } catch { /* страница всё равно уходит */ }
+  }, []);
+
   const unlock = () => {
     try {
       if (!noSleepRef.current) noSleepRef.current = new NoSleep();
