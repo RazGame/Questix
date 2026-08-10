@@ -1,7 +1,7 @@
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Plus, Play, Trash2, Upload, Search, RotateCw, Scissors, Link, ChevronUp, ChevronDown, Download, FolderInput } from 'lucide-react';
-import { musicCoverSrc, musicService, MusicGameFull, SongSearchResult } from '../services/music';
+import { Plus, Play, Pause, Trash2, Upload, Search, RotateCw, Scissors, Link, ChevronUp, ChevronDown, Download, FolderInput } from 'lucide-react';
+import { musicCoverSrc, musicAudioSrc, musicService, MusicGameFull, SongSearchResult } from '../services/music';
 import { createSocket } from '../services/socket';
 import { MusicGame, Song } from '../../../core/types';
 import MusicSegmentModal from './MusicSegmentModal';
@@ -53,6 +53,8 @@ interface BlockItemProps {
   removeSong: (songId: string) => void;
   uploadFile: (songId: string) => void;
   setSegmentSong: (song: Song) => void;
+  previewId: string | null; // песня, отрезок которой сейчас звучит
+  togglePreview: (song: Song) => void;
   refreshCurrent: () => Promise<void>;
   setError: (err: string) => void;
   setNotice: (notice: string) => void;
@@ -73,6 +75,8 @@ function BlockItem({
   removeSong,
   uploadFile,
   setSegmentSong,
+  previewId,
+  togglePreview,
   refreshCurrent,
   setError,
   setNotice,
@@ -307,6 +311,19 @@ function BlockItem({
                 </span>
                 {s.status === 'ready' && s.file && (
                   <button
+                    onClick={() => togglePreview(s)}
+                    className={`rounded-lg p-1.5 transition ${
+                      previewId === s._id
+                        ? 'bg-violet-500/20 text-violet-300'
+                        : 'text-zinc-400 hover:text-white hover:bg-white/5'
+                    }`}
+                    title={previewId === s._id ? 'Остановить' : 'Послушать отрезок'}
+                  >
+                    {previewId === s._id ? <Pause size={15} /> : <Play size={15} />}
+                  </button>
+                )}
+                {s.status === 'ready' && s.file && (
+                  <button
                     onClick={() => setSegmentSong(s)}
                     className="flex items-center gap-1 rounded-lg bg-white/5 border border-white/10 px-2 py-1 text-xs text-zinc-200 hover:bg-white/10 transition"
                     title="Выбрать отрезок песни"
@@ -380,6 +397,8 @@ export default function MusicAdmin({ isTab = false }: { isTab?: boolean }) {
   const [segmentSong, setSegmentSong] = useState<Song | null>(null); // открытая модалка отрезка
   const [dlProgress, setDlProgress] = useState<Record<string, SongProgress>>({});
   const [transfer, setTransfer] = useState<TransferState | null>(null); // скачивание/загрузка игры
+  const [previewId, setPreviewId] = useState<string | null>(null); // какой отрезок сейчас слушаем
+  const previewRef = useRef<HTMLAudioElement | null>(null);
 
   const loadGames = useCallback(async (throwOnError = false) => {
     try {
@@ -479,6 +498,39 @@ export default function MusicAdmin({ isTab = false }: { isTab?: boolean }) {
       setError(apiErrorMessage(e, 'Ошибка удаления музыкальной игры'));
     }
   };
+
+  // Прослушивание отрезка прямо из списка — чтобы проверить выбор, не открывая
+  // редактор. Проигрывается ровно то, что услышат игроки: от startSec до endSec.
+  const stopPreview = useCallback(() => {
+    const a = previewRef.current;
+    if (a) { a.pause(); a.src = ''; }
+    setPreviewId(null);
+  }, []);
+
+  const togglePreview = (song: Song) => {
+    if (previewId === song._id) { stopPreview(); return; }
+    if (!song.file) return;
+
+    let audio = previewRef.current;
+    if (!audio) { audio = new Audio(); previewRef.current = audio; }
+    audio.pause();
+
+    const from = song.startSec ?? 0;
+    const to = song.endSec ?? from + 20;
+    audio.src = musicAudioSrc(song.file);
+    audio.onloadedmetadata = () => { audio!.currentTime = from; };
+    // Останавливаемся на конце отрезка, а не играем песню дальше
+    audio.ontimeupdate = () => { if (audio!.currentTime >= to) stopPreview(); };
+    audio.onended = () => stopPreview();
+    audio.onerror = () => { setError('Не удалось воспроизвести файл песни'); stopPreview(); };
+    audio.play().catch(() => { setError('Браузер не дал воспроизвести звук'); stopPreview(); });
+    setPreviewId(song._id);
+  };
+
+  // Уходим со страницы — звук не должен остаться играть
+  useEffect(() => stopPreview, [stopPreview]);
+  // Переключили игру — прошлый отрезок тоже глушим, иначе играет в пустоту
+  useEffect(() => { stopPreview(); }, [current?.game._id, stopPreview]);
 
   // Общий колбэк отправки файла: сразу показывает окно с процентами, а когда
   // байты ушли — переключается на «сервер обрабатывает» (процентов там нет).
@@ -893,6 +945,8 @@ export default function MusicAdmin({ isTab = false }: { isTab?: boolean }) {
                       removeSong={removeSong}
                       uploadFile={uploadFile}
                       setSegmentSong={setSegmentSong}
+                      previewId={previewId}
+                      togglePreview={togglePreview}
                       refreshCurrent={refreshCurrent}
                       setError={setError}
                       setNotice={setNotice}

@@ -35,6 +35,9 @@ export const musicCoverSrc = (cover?: string): string => {
   return `${API_URL}/music/cover?url=${encodeURIComponent(cover)}`;
 };
 
+// Ссылка на сам аудиофайл песни (раздаётся бэкендом из /media).
+export const musicAudioSrc = (file?: string): string => (file ? `${API_URL}/media/${file}` : '');
+
 export const musicService = {
   // --- игры ---
   list: async (): Promise<(MusicGame & { songCount: number })[]> => {

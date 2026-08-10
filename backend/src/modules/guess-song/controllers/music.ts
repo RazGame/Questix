@@ -637,7 +637,22 @@ export const uploadSongFile = async (
 
 // ----- загрузка через SpotiFLAC -----
 // Фоновая загрузка трека: статусы шлём в админку через сокет.
+// Песни, которые качаются прямо сейчас. Без этого второй запуск для той же
+// песни (например, ручной поверх автоматического) шёл параллельно первому:
+// один писал файл, другой падал и затирал статус на «ошибка».
+const downloading = new Set<string>();
+
 async function downloadSong(gameId: string, songId: string): Promise<void> {
+  if (downloading.has(songId)) return;
+  downloading.add(songId);
+  try {
+    await runDownload(gameId, songId);
+  } finally {
+    downloading.delete(songId);
+  }
+}
+
+async function runDownload(gameId: string, songId: string): Promise<void> {
   const song = await Song.findById(songId);
   if (!song || !song.sourceUrl) return;
 
@@ -689,7 +704,11 @@ async function downloadSong(gameId: string, songId: string): Promise<void> {
     // Повторная загрузка могла не удаться у песни, которая уже играбельна
     // (источник временно недоступен). Рабочий файл в этом случае не теряем:
     // иначе одна неудачная перекачка выбивает песню из готовой игры.
-    const had = song.file && fs.existsSync(path.join(MEDIA_DIR, song.file));
+    // Читаем запись заново: файл мог появиться уже после начала этой попытки.
+    const fresh = await Song.findById(songId);
+    const current = fresh?.file || song.file;
+    const had = current && fs.existsSync(path.join(MEDIA_DIR, current));
+    if (had && fresh?.file) song.file = fresh.file;
     song.status = had ? 'ready' : 'error';
     song.error = had
       ? `не удалось перекачать (${result.error || 'download failed'}), оставлен прежний файл`
