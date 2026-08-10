@@ -24,6 +24,7 @@ interface BundleSong {
   startSec: number;
   endSec: number | null;
   sourceUrl: string;
+  note?: string; // подсказка ведущему
   fileName: string; // имя в media/ внутри zip
 }
 
@@ -84,6 +85,7 @@ export const exportGame = async (gameId: string, mediaDir: string): Promise<Buff
         startSec: song.startSec || 0,
         endSec: song.endSec ?? null,
         sourceUrl: song.sourceUrl || '',
+        note: song.note || '',
         fileName: song.file,
       });
     }
@@ -213,6 +215,7 @@ export const importGame = async (
           startSec: bundleSong.startSec || 0,
           endSec: bundleSong.endSec ?? null,
           sourceUrl: bundleSong.sourceUrl || '',
+          note: bundleSong.note || '',
           status: 'ready',
         });
         const fileName = `${song._id}.${ext}`;

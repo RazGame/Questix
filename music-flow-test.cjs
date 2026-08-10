@@ -179,6 +179,20 @@ async function api(method, path, body, token) {
   check('очки не начислены', adminState.players[0].score === scoreBeforeReveal);
   check('ответ показан', !!adminState.reveal && !!adminState.reveal.title);
 
+  // 11. Подсказка ведущему («засчитывать также оригинал кавера / фильм»).
+  // Она нужна ведущему в момент решения и НЕ должна попасть игрокам:
+  // в состоянии сокета её быть не может, иначе ответ виден на телефонах.
+  const NOTE = 'оригинал: Imagine Dragons — Believer';
+  await api('PATCH', `/music/games/${game._id}/songs/${song._id}`, { note: NOTE }, token);
+  const afterNote = await api('GET', `/music/games/${game._id}`, null, token);
+  check('подсказка сохранилась', afterNote.songs.find((s) => s._id === song._id).note === NOTE);
+
+  await sleep(300);
+  const playerJson = JSON.stringify(playerState || {});
+  check('подсказки нет у игрока', !playerJson.includes('Imagine Dragons') && !playerJson.includes('note'));
+  const adminJson = JSON.stringify(adminState || {});
+  check('подсказки нет и в сокете ведущего (берётся из API)', !adminJson.includes('Imagine Dragons'));
+
   // очистка
   await api('DELETE', `/music/games/${game._id}`, null, token);
   admin.close(); player.close(); screen.close();

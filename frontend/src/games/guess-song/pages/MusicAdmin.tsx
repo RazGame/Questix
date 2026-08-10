@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Plus, Play, Pause, Trash2, Upload, Search, RotateCw, Scissors, Link, ChevronUp, ChevronDown, Download, FolderInput } from 'lucide-react';
+import { Plus, Play, Pause, Trash2, Upload, Search, RotateCw, Scissors, Link, ChevronUp, ChevronDown, Download, FolderInput, StickyNote } from 'lucide-react';
 import { musicCoverSrc, musicAudioSrc, musicService, MusicGameFull, SongSearchResult } from '../services/music';
 import { createSocket } from '../services/socket';
 import { MusicGame, Song } from '../../../core/types';
@@ -87,6 +87,7 @@ function BlockItem({
   const [playlistUrl, setPlaylistUrl] = useState('');
   const [playlistImporting, setPlaylistImporting] = useState(false);
   const [showSearch, setShowSearch] = useState(block.songIds.length === 0);
+  const [noteFor, setNoteFor] = useState<string | null>(null); // у какой песни открыта подсказка
 
   const doSearch = async () => {
     if (!searchQ.trim()) return;
@@ -348,6 +349,17 @@ function BlockItem({
                     <RotateCw size={15} />
                   </button>
                 )}
+                <button
+                  onClick={() => setNoteFor(noteFor === s._id ? null : s._id)}
+                  className={`p-1 rounded transition ${
+                    s.note
+                      ? 'text-amber-300 hover:text-amber-200 hover:bg-amber-500/10'
+                      : 'text-zinc-400 hover:text-white hover:bg-white/5'
+                  }`}
+                  title={s.note ? `Подсказка ведущему: ${s.note}` : 'Добавить подсказку ведущему'}
+                >
+                  <StickyNote size={15} />
+                </button>
                 <button onClick={() => uploadFile(s._id)} className="text-zinc-400 hover:text-white p-1 hover:bg-white/5 rounded transition" title="Загрузить файл">
                   <Upload size={15} />
                 </button>
@@ -355,6 +367,44 @@ function BlockItem({
                   <Trash2 size={15} />
                 </button>
               </div>
+
+              {/* Подсказка ведущему: что ещё считать верным ответом.
+                  Видит только ведущий в пульте — на проектор не уходит. */}
+              {noteFor === s._id && (
+                <div className="mt-2 qgs-fade-in">
+                  <input
+                    autoFocus
+                    defaultValue={s.note || ''}
+                    placeholder="Что ещё засчитывать: оригинал кавера, фильм, автор…"
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') (e.target as HTMLInputElement).blur();
+                      if (e.key === 'Escape') setNoteFor(null);
+                    }}
+                    onBlur={async (e) => {
+                      const note = e.target.value.trim();
+                      setNoteFor(null);
+                      if (note === (s.note || '')) return;
+                      try {
+                        await musicService.updateSong(gameId, s._id, { note });
+                        await refreshCurrent();
+                        setError('');
+                      } catch (err: any) {
+                        setError(apiErrorMessage(err, 'Не удалось сохранить подсказку'));
+                      }
+                    }}
+                    className="input-dark w-full text-xs border-amber-500/30 focus:border-amber-400/60"
+                  />
+                  <p className="mt-1 text-[10px] text-zinc-500">
+                    Enter — сохранить, Esc — отменить. Появится у ведущего в пульте.
+                  </p>
+                </div>
+              )}
+              {s.note && noteFor !== s._id && (
+                <p className="mt-1.5 truncate text-[11px] text-amber-300/70" title={s.note}>
+                  <StickyNote size={11} className="inline mb-0.5 mr-1" />
+                  {s.note}
+                </p>
+              )}
               {s.status === 'downloading' && (() => {
                 const p = dlProgress[s._id];
                 // Есть оценка процента — детерминированная полоса, иначе бегущая.

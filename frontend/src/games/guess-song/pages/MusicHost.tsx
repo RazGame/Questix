@@ -258,6 +258,14 @@ export default function MusicHost() {
                         ? 'Все игроки уже ответили неверно — нажать баззер больше некому.'
                         : 'Музыка звучит на экране проектора. Ожидаем нажатия кнопки игроками...'}
                     </p>
+                    {currentSong?.note && (
+                      <p className="mt-2 text-sm text-amber-200/90">
+                        <span className="font-bold uppercase text-[10px] tracking-wider text-amber-400/80">
+                          засчитывать также:{' '}
+                        </span>
+                        {currentSong.note}
+                      </p>
+                    )}
                   </div>
                   <div className="flex flex-wrap gap-3">
                     {/* Никто не может ответить — предлагаем раскрыть ответ первым делом */}
@@ -309,6 +317,14 @@ export default function MusicHost() {
                         ? 'Никто не угадал — покажите ответ или дайте послушать ещё раз.'
                         : 'Можно включить этот же кусок ещё раз или перейти к следующей песне.'}
                     </p>
+                    {currentSong?.note && (
+                      <p className="mt-2 text-sm text-amber-200/90">
+                        <span className="font-bold uppercase text-[10px] tracking-wider text-amber-400/80">
+                          засчитывать также:{' '}
+                        </span>
+                        {currentSong.note}
+                      </p>
+                    )}
                   </div>
                   <div className="flex flex-wrap gap-3">
                     <button
@@ -369,6 +385,14 @@ export default function MusicHost() {
                           {currentSong.title} — {currentSong.artist}
                         </p>
                       </div>
+                    </div>
+                  )}
+                  {currentSong?.note && (
+                    <div className="mb-4 rounded-lg border border-amber-500/25 bg-amber-500/10 p-3">
+                      <p className="text-[10px] font-bold uppercase tracking-wider text-amber-400/80">
+                        Засчитывать также
+                      </p>
+                      <p className="mt-0.5 text-sm font-semibold text-amber-100">{currentSong.note}</p>
                     </div>
                   )}
                   <p className="text-sm text-zinc-400 mb-6">Музыка приостановлена. Выслушайте ответ игрока и отметьте результат:</p>

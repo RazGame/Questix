@@ -19,6 +19,9 @@ const songSchema = new mongoose.Schema<ISong>(
     startSec: { type: Number, default: 0 }, // таймкод старта воспроизведения
     endSec: { type: Number, default: null }, // таймкод конца отрезка (null = до конца)
     sourceUrl: { type: String, default: '' }, // ссылка-источник для авто-загрузки
+    // Заметка ведущему: что ещё считать верным ответом (оригинал кавера,
+    // название фильма). Видна только ведущему — ни игрокам, ни на проекторе.
+    note: { type: String, default: '' },
     preview: { type: String, default: '' },
     file: { type: String, default: null }, // относительный путь в /media
     status: {

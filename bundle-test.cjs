@@ -53,7 +53,10 @@ async function api(method, path, body, token, opts = {}) {
     songs.push(song);
   }
   // Отрезок задаётся отдельным PATCH (как из модалки выбора отрезка).
-  await api('PATCH', `/music/games/${game._id}/songs/${songs[0]._id}`, { startSec: 10, endSec: 40 }, org.token);
+  // Заодно подсказка ведущему — она должна путешествовать вместе с игрой,
+  // иначе после переноса на другую станцию пометки теряются.
+  await api('PATCH', `/music/games/${game._id}/songs/${songs[0]._id}`,
+    { startSec: 10, endSec: 40, note: 'оригинал: The Beatles' }, org.token);
   const full = await api('GET', `/music/games/${game._id}`, null, org.token);
   check('two ready songs', full.songs.filter((s) => s.status === 'ready').length === 2);
 
@@ -89,6 +92,7 @@ async function api(method, path, body, token, opts = {}) {
   check('imported songs ready', readySongs.length === 2);
   const one = importedFull.songs.find((s) => s.title === 'Song One');
   check('imported segment kept', one && one.startSec === 10 && one.endSec === 40);
+  check('imported note kept', one && one.note === 'оригинал: The Beatles');
 
   // 5. медиа реально раздаётся
   const media = await api('GET', `/media/${readySongs[0].file}`, null, null, { binary: true });

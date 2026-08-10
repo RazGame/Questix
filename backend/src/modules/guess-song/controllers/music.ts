@@ -563,6 +563,7 @@ export const updateSong = async (
     if (req.body?.endSec !== undefined) patch.endSec = req.body.endSec;
     if (req.body?.title !== undefined) patch.title = req.body.title;
     if (req.body?.artist !== undefined) patch.artist = req.body.artist;
+    if (req.body?.note !== undefined) patch.note = String(req.body.note).slice(0, 500);
 
     const song = await Song.findOneAndUpdate(
       { _id: req.params.songId, gameId: game._id },

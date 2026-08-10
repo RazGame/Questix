@@ -78,6 +78,7 @@ export interface ISong {
   startSec: number; // таймкод старта воспроизведения
   endSec?: number | null; // таймкод конца отрезка (null = до конца трека)
   sourceUrl: string; // ссылка-источник для авто-загрузки
+  note: string; // подсказка ведущему, что ещё засчитывать (только для него)
   preview: string;
   file: string | null; // относительный путь в /media, когда скачано
   status: 'pending' | 'downloading' | 'ready' | 'error';

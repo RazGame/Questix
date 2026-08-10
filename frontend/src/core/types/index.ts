@@ -65,6 +65,7 @@ export interface Song {
   startSec: number;
   endSec?: number | null;
   sourceUrl: string;
+  note?: string; // подсказка ведущему: что ещё засчитывать за верный ответ
   preview: string;
   file: string | null;
   status: 'pending' | 'downloading' | 'ready' | 'error';
