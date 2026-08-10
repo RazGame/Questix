@@ -213,6 +213,11 @@ class Session {
       startSec: song.startSec || 0,
       endSec: song.endSec ?? null, // конец отрезка (null = до конца)
       songId: String(song._id),
+      // Обложка уходит ТОЛЬКО экрану (комната screen) и заранее: иначе он
+      // начинает качать её в момент раскрытия, и картинка появляется с
+      // заметным опозданием. В общем состоянии её до раскрытия нет —
+      // телефоны игроков ответ не увидят.
+      cover: song.cover || '',
       // Подсказка экрану для предзагрузки следующего трека.
       nextUrl: this.playlist[this.currentIndex + 1]
         ? `/media/${this.playlist[this.currentIndex + 1].file}`
@@ -235,6 +240,7 @@ class Session {
       startSec: song.startSec || 0,
       endSec: song.endSec ?? null,
       songId: String(song._id),
+      cover: song.cover || '', // предзагрузка обложки, только для экрана
       nextUrl: this.playlist[this.currentIndex + 1]
         ? `/media/${this.playlist[this.currentIndex + 1].file}`
         : null,

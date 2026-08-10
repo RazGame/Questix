@@ -4,6 +4,7 @@ import NoSleep from 'nosleep.js';
 import { createSocket } from '../services/socket';
 import SongCover from '../components/SongCover';
 import { musicService } from '../services/music';
+import { vibrate } from '../services/haptics';
 import { MusicState } from '../../../core/types';
 
 // Выбор команды: чипы уже созданных + «новая». Один и тот же виджет на экране
@@ -90,13 +91,6 @@ function TeamPicker({
     </div>
   );
 }
-
-const vibrate = (pattern: number | number[]) => {
-  if (typeof navigator !== 'undefined' && 'vibrate' in navigator) {
-    navigator.vibrate(0);
-    navigator.vibrate(pattern);
-  }
-};
 
 // Телефон игрока «Угадай мелодию». Без регистрации на платформе: вход по коду/QR.
 // Баззер на onPointerDown ради минимальной задержки.

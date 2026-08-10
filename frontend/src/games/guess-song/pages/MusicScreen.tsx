@@ -3,7 +3,7 @@ import { useParams } from 'react-router-dom';
 import NoSleep from 'nosleep.js';
 import { createSocket } from '../services/socket';
 import SongCover from '../components/SongCover';
-import { musicService } from '../services/music';
+import { musicService, musicCoverSrc, songArtworkSrc } from '../services/music';
 import { MusicState } from '../../../core/types';
 
 // Аудио-движок держим вне React-рендера (в ref), чтобы команды cmd
@@ -120,6 +120,16 @@ export default function MusicScreen() {
       smoothed: new Float32Array(analyser.frequencyBinCount).fill(0)
     };
     return engineRef.current;
+  };
+
+  // Обложку тянем в кэш, как только песня зазвучала: в общем состоянии она
+  // появляется лишь в момент раскрытия, и без этого картинка догружалась уже
+  // после вспышки — зал видел пустой круг. Ссылки те же, что нарисует
+  // SongCover, поэтому браузер отдаст их из кэша мгновенно.
+  const preloadCover = (cover?: string, songId?: string) => {
+    for (const url of [musicCoverSrc(cover, 'lg'), songArtworkSrc(songId)]) {
+      if (url) new Image().src = url;
+    }
   };
 
   // Экран проектора не должен гаснуть посреди игры (ноутбук без питания и т.п.).
@@ -399,7 +409,10 @@ export default function MusicScreen() {
       if (audioReadyRef.current) socket.emit('screen:audio-ready');
     });
     socket.on('cmd', (m: any) => {
-      if (m.action === 'play') playFrom(m.fileUrl, m.startSec, m.endSec ?? null, m.nextUrl);
+      if (m.action === 'play') {
+        playFrom(m.fileUrl, m.startSec, m.endSec ?? null, m.nextUrl);
+        preloadCover(m.cover, m.songId);
+      }
       else if (m.action === 'pause') fadePause(m.fadeMs);
       else if (m.action === 'resume') {
         fadeResume(m.fadeMs);
