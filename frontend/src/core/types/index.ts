@@ -121,7 +121,7 @@ export interface MusicState {
   gameId: string;
   gameName: string;
   code: string;
-  phase: 'lobby' | 'intro' | 'blockIntro' | 'playing' | 'ended' | 'buzzed' | 'reveal' | 'finished';
+  phase: 'lobby' | 'intro' | 'standings' | 'blockIntro' | 'playing' | 'ended' | 'buzzed' | 'reveal' | 'finished';
   total: number;
   currentIndex: number;
   buzzed: { id: string; name: string; by?: string } | null;

@@ -930,6 +930,55 @@ export default function MusicScreen() {
         </div>
       )}
 
+      {phase === 'standings' && (() => {
+        // Перерыв между блоками: показываем, кто как идёт. Считаем по тем же
+        // правилам, что и финал, — в команде очки общие.
+        const rows = state?.mode === 'team'
+          ? [...(state.teams || [])].sort((a, b) => b.score - a.score)
+              .map((t) => ({ id: t.id, name: t.name, score: t.score }))
+          : [...(state?.players || [])].sort((a, b) => b.score - a.score)
+              .map((p) => ({ id: p.id, name: p.name, score: p.score }));
+        const medal = ['🥇', '🥈', '🥉'];
+        return (
+          <div className="qgs-fade-in flex w-full max-w-3xl flex-col items-center">
+            <p className="mb-2 text-sm font-extrabold uppercase tracking-[0.3em] text-violet-300">
+              Промежуточные итоги
+            </p>
+            <h2 className="font-display mb-6 bg-gradient-to-r from-amber-300 via-violet-300 to-fuchsia-300 bg-clip-text text-4xl font-black text-transparent">
+              Как идут дела
+            </h2>
+            {rows.length === 0 ? (
+              <p className="text-lg text-zinc-400">Счёт ещё не открыт.</p>
+            ) : (
+              <div className="w-full space-y-2">
+                {rows.map((r, i) => (
+                  <div
+                    key={r.id}
+                    className={`flex items-center gap-4 rounded-xl border px-5 py-3 ${
+                      i === 0
+                        ? 'border-amber-300/40 bg-amber-400/10'
+                        : 'border-white/5 bg-white/[0.03]'
+                    }`}
+                  >
+                    <span className="w-10 shrink-0 text-center text-2xl">{medal[i] || ''}</span>
+                    <span className="w-8 shrink-0 font-mono text-lg font-bold text-zinc-500">{i + 1}</span>
+                    <span className="min-w-0 flex-1 truncate text-left font-display text-2xl font-bold" title={r.name}>
+                      {r.name}
+                    </span>
+                    <span className="shrink-0 font-display text-3xl font-black text-violet-300">{r.score}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+            {introLeft != null && !state?.paused && (
+              <p className="mt-6 font-mono text-lg text-zinc-400">
+                Следующий блок через <span className="font-bold text-violet-300">{Math.max(1, Math.ceil(introLeft / 1000))}</span>…
+              </p>
+            )}
+          </div>
+        );
+      })()}
+
       {(phase === 'intro' || phase === 'blockIntro') && (() => {
         const blocks = state?.blocks || [];
         // Три ступени плотности: на 20 блоках двух колонок уже не хватало —

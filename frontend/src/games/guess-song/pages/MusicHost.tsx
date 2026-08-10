@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, useCallback, useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { Play, Pause, Volume2, Users, ListMusic, ArrowLeft, RefreshCw, AlertCircle, Send, Eye, Trash2, UserMinus, Square } from 'lucide-react';
+import { Play, Pause, Volume2, Users, ListMusic, ArrowLeft, RefreshCw, AlertCircle, Send, Eye, Trash2, UserMinus, Square, Flag } from 'lucide-react';
 import { musicCoverSrc, musicService, MusicGameFull } from '../services/music';
 import { createSocket } from '../services/socket';
 import SongCover from '../components/SongCover';
@@ -183,6 +183,19 @@ export default function MusicHost() {
                       <Square size={13} /> Остановить
                     </button>
                   )}
+                  {live.phase !== 'lobby' && live.phase !== 'finished' && (
+                    <button
+                      onClick={() => {
+                        if (confirm('Завершить игру и подвести итоги? Оставшиеся песни не прозвучат.')) {
+                          emit('admin:finish');
+                        }
+                      }}
+                      className="flex items-center gap-1.5 rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-1.5 text-sm font-bold text-amber-300 transition hover:bg-amber-500/20"
+                      title="Подвести итоги сейчас, как будто плейлист доигран"
+                    >
+                      <Flag size={13} /> Завершить
+                    </button>
+                  )}
                   {/* Кнопка на месте во всех игровых фазах: она то появлялась,
                       то исчезала, и панель дёргалась под курсором. */}
                   {live.phase !== 'lobby' && live.phase !== 'finished' && (
@@ -212,7 +225,7 @@ export default function MusicHost() {
                 </div>
               )}
 
-              {(live.phase === 'intro' || live.phase === 'blockIntro') && (
+              {(live.phase === 'intro' || live.phase === 'blockIntro' || live.phase === 'standings') && (
                 <div className="py-2">
                   <div className="mb-6 rounded-lg bg-violet-500/5 border border-violet-500/10 p-4">
                     <p className="text-xs uppercase text-zinc-400 font-semibold tracking-wider mb-2">

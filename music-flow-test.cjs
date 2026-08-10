@@ -130,6 +130,11 @@ async function api(method, path, body, token) {
   await sleep(300);
   check('phase reveal + score', adminState && adminState.phase === 'reveal' && adminState.players[0].score === 1);
   await sleep(7200);
+  // Смена блока — естественный перерыв: сперва показываем, кто как идёт.
+  check('промежуточные итоги перед новым блоком', adminState && adminState.phase === 'standings');
+  check('в итогах виден счёт', adminState && adminState.players[0].score === 1);
+  admin.emit('admin:continue'); // ведущий может не ждать
+  await sleep(400);
   check('blockIntro before new block', adminState && adminState.phase === 'blockIntro');
   check('blockIntro names next block', adminState && adminState.blockName === 'Блок Б');
   admin.emit('admin:continue');
@@ -140,6 +145,20 @@ async function api(method, path, body, token) {
   admin.emit('admin:skip');
   await sleep(300);
   check('phase finished after last song', adminState && adminState.phase === 'finished');
+
+  // 10a. досрочное завершение подводит итоги так же, как дошли бы до конца
+  admin.emit('admin:reset');
+  await sleep(300);
+  player.emit('player:ready', { ready: true });
+  await sleep(150);
+  admin.emit('admin:start');
+  await sleep(400);
+  admin.emit('admin:continue');
+  await sleep(400);
+  check('игра идёт до досрочного завершения', adminState && adminState.phase === 'playing');
+  admin.emit('admin:finish');
+  await sleep(400);
+  check('досрочное завершение даёт финал', adminState && adminState.phase === 'finished');
 
   // 11. неверный ответ блокирует игрока (новый прогон)
   admin.emit('admin:reset');

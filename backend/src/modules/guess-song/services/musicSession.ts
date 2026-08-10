@@ -12,6 +12,9 @@ const RESUME_FADE_IN_MS = 450;
 // Анонсы блоков: показ всех блоков на старте и заставка перед новым блоком.
 const GAME_INTRO_MS = 10000;
 const BLOCK_INTRO_MS = 10000;
+// Промежуточные итоги перед анонсом нового блока: пауза, чтобы зал успел
+// разглядеть, кто впереди.
+const STANDINGS_MS = 10000;
 
 interface Player {
   id: string;
@@ -23,7 +26,7 @@ interface Player {
   teamName?: string | null;
 }
 
-type Phase = 'lobby' | 'intro' | 'blockIntro' | 'playing' | 'ended' | 'buzzed' | 'reveal' | 'finished';
+type Phase = 'lobby' | 'intro' | 'standings' | 'blockIntro' | 'playing' | 'ended' | 'buzzed' | 'reveal' | 'finished';
 type Mode = 'solo' | 'team';
 
 // Стейт-машина одной игры «Угадай мелодию». In-memory: счёт эфемерный,
@@ -379,6 +382,28 @@ class Session {
     this.advance();
   }
 
+  // Анонс нового блока — после промежуточных итогов.
+  showBlockIntro() {
+    this.clearSchedule();
+    this.phase = 'blockIntro';
+    this.broadcast();
+    this.schedule(() => this.loadCurrent(), BLOCK_INTRO_MS);
+  }
+
+  // Завершить игру досрочно: итоги подводятся так же, как если бы доиграли
+  // весь плейлист — со снапшотом в базу и таблицей на экране.
+  finishNow() {
+    if (this.phase === 'lobby' || this.phase === 'finished') return;
+    this.clearSchedule();
+    this.paused = false;
+    this.buzzed = null;
+    this.locked.clear();
+    this.phase = 'finished';
+    this.cmd('stop');
+    this.broadcast();
+    this.saveResultSnapshot();
+  }
+
   advance() {
     this.clearSchedule();
     const prev = this.playlist[this.currentIndex];
@@ -394,12 +419,13 @@ class Session {
       this.cmd('stop');
       const next = this.playlist[this.currentIndex];
       if (prev && next.blockName !== prev.blockName) {
-        // Новый блок: заставка с названием и пауза перед первой песней.
-        this.phase = 'blockIntro';
+        // Смена блока — это естественный перерыв: сперва показываем, кто как
+        // идёт, и только потом анонсируем следующий блок.
+        this.phase = 'standings';
         this.buzzed = null;
         this.locked.clear();
         this.broadcast();
-        this.schedule(() => this.loadCurrent(), BLOCK_INTRO_MS);
+        this.schedule(() => this.showBlockIntro(), STANDINGS_MS);
       } else {
         this.schedule(() => this.loadCurrent(), NEXT_TRACK_PAUSE_MS);
       }
@@ -438,6 +464,8 @@ class Session {
   // Ведущий пропускает ожидание интро-заставки и сразу запускает песню.
   continueNow() {
     if (this.paused) return;
+    // С экрана итогов «продолжить» ведёт к анонсу блока, а не сразу к песне.
+    if (this.phase === 'standings') { this.showBlockIntro(); return; }
     if (this.phase !== 'intro' && this.phase !== 'blockIntro') return;
     const fn = this.pendingAction;
     this.clearSchedule();
@@ -569,7 +597,7 @@ class Session {
       paused: this.paused,
       // Остаток интро-таймера (мс) — для обратного отсчёта на экране.
       introMs:
-        this.phase === 'intro' || this.phase === 'blockIntro'
+        this.phase === 'intro' || this.phase === 'blockIntro' || this.phase === 'standings'
           ? (this.paused
               ? this.pendingRemaining
               : this.advanceTimer

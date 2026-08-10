@@ -174,6 +174,7 @@ export const registerMusicSockets = (io: Server): void => {
       'admin:resume': (s) => s.resume(),
       'admin:continue': (s) => s.continueNow(),
       'admin:reset': (s) => s.reset(),
+      'admin:finish': (s) => s.finishNow(), // завершить досрочно с подведением итогов
     };
     for (const [evt, fn] of Object.entries(adminActions)) {
       socket.on(evt, () => {
