@@ -112,6 +112,26 @@ async function api(method, path, body, token) {
   check('peek did not add a player', adminState.players.length === playersBefore + 1);
   c1.sock.close();
 
+  // 2.5. смена команды и имени в лобби: сел не за тот стол — чинится на месте,
+  // повторным join с тем же playerId. В игре смена уже запрещена (см. ниже).
+  const moved = mkAnon();
+  moved.sock.emit('join', { role: 'player', code: game.code, name: 'Женя', teamName: 'Стол 2' });
+  await waitFor(() => moved.joined);
+  const movedId = moved.joined.playerId;
+  check('вошёл в Стол 2', adminState.players.find((p) => p.id === movedId).teamName === 'Стол 2');
+
+  moved.sock.emit('join', { role: 'player', code: game.code, name: 'Евгений', teamName: 'Стол 1', playerId: movedId });
+  await waitFor(() => {
+    const p = adminState.players.find((x) => x.id === movedId);
+    return p && p.teamName === 'Стол 1' && p.name === 'Евгений';
+  });
+  const moved1 = adminState.players.find((p) => p.id === movedId);
+  check('смена команды в лобби', moved1 && moved1.teamName === 'Стол 1');
+  check('смена имени в лобби', moved1 && moved1.name === 'Евгений');
+  check('игрок не задвоился', adminState.players.filter((p) => p.id === movedId).length === 1);
+  moved.sock.close();
+  await waitFor(() => !adminState.players.some((p) => p.id === movedId && p.connected));
+
   // 3. игра: баззер и счёт по команде
   a1.sock.emit('player:ready', { ready: true });
   a2.sock.emit('player:ready', { ready: true });
@@ -139,6 +159,14 @@ async function api(method, path, body, token) {
   await waitFor(() => (adminState.teams.find((t) => t.name === 'Стол 2') || {}).score === 1);
   const t2 = adminState.teams.find((t) => t.name === 'Стол 2');
   check('table 2 scored', t2 && t2.score === 1);
+
+  // А посреди игры команду менять уже нельзя: иначе очки и блокировка
+  // «переезжали» бы в другую команду прямо во время раунда.
+  const veraId = b1.joined.playerId;
+  b1.sock.emit('join', { role: 'player', code: game.code, name: 'Вера', teamName: 'Стол 1', playerId: veraId });
+  await sleep(400);
+  const vera = adminState.players.find((p) => p.id === veraId);
+  check('в игре команда не меняется', vera && vera.teamName === 'Стол 2');
 
   await api('DELETE', `/music/games/${game._id}`, null, org.token);
   admin.close(); screen.close(); a1.sock.close(); a2.sock.close(); b1.sock.close(); noTeam.sock.close();

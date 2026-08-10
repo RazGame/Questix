@@ -6,6 +6,91 @@ import SongCover from '../components/SongCover';
 import { musicService } from '../services/music';
 import { MusicState } from '../../../core/types';
 
+// Выбор команды: чипы уже созданных + «новая». Один и тот же виджет на экране
+// входа и в лобби, когда игрок понял, что сел не за тот стол.
+function TeamPicker({
+  teams,
+  value,
+  onPick,
+  creating,
+  setCreating,
+  onSubmit,
+  label,
+}: {
+  teams: { id: string; name: string; online: number }[];
+  value: string;
+  onPick: (name: string) => void;
+  creating: boolean;
+  setCreating: (b: boolean) => void;
+  onSubmit?: () => void;
+  label?: string;
+}) {
+  const showInput = creating || teams.length === 0;
+  return (
+    <div className="mb-4">
+      <p className="mb-2 text-left text-xs font-semibold uppercase tracking-wide text-zinc-500">
+        {label || (teams.length > 0 ? 'Твоя команда' : 'Название команды')}
+      </p>
+
+      {teams.length > 0 && (
+        <div className="mb-2 flex flex-wrap gap-2">
+          {teams.map((t) => {
+            const active = !creating && value.trim().toLowerCase() === t.name.toLowerCase();
+            return (
+              <button
+                key={t.id}
+                onClick={() => { setCreating(false); onPick(t.name); }}
+                className={`rounded-full px-3 py-2 text-sm font-semibold transition ${
+                  active ? 'btn-grad' : 'border border-white/10 bg-white/5 text-zinc-200 hover:bg-white/10'
+                }`}
+              >
+                👥 {t.name}
+                <span className={`ml-1.5 text-xs ${active ? 'text-white/70' : 'text-zinc-500'}`}>
+                  {t.online}
+                </span>
+              </button>
+            );
+          })}
+          {!creating && (
+            <button
+              onClick={() => { setCreating(true); onPick(''); }}
+              className="rounded-full border border-dashed border-white/20 px-3 py-2 text-sm font-semibold text-zinc-400 hover:bg-white/5"
+            >
+              + новая
+            </button>
+          )}
+        </div>
+      )}
+
+      {showInput && (
+        <>
+          <input
+            value={value}
+            onChange={(e) => onPick(e.target.value)}
+            onKeyDown={(e) => e.key === 'Enter' && onSubmit?.()}
+            placeholder="Название новой команды"
+            maxLength={24}
+            autoFocus={creating}
+            className="input-dark"
+          />
+          {teams.length > 0 ? (
+            <button
+              onClick={() => { setCreating(false); onPick(''); }}
+              className="mt-1 text-xs text-zinc-500 underline hover:text-zinc-300"
+            >
+              выбрать из существующих
+            </button>
+          ) : (
+            <p className="mt-1 text-xs text-zinc-500">
+              Создай команду — остальные за столом смогут её выбрать.
+            </p>
+          )}
+        </>
+      )}
+    </div>
+  );
+}
+
 const vibrate = (pattern: number | number[]) => {
   if (typeof navigator !== 'undefined' && 'vibrate' in navigator) {
     navigator.vibrate(0);
@@ -60,6 +145,9 @@ export default function MusicPlay() {
   // team+open: на форме входа выбираем команду (или создаём новую).
   const asksTeamName = authMode === 'open' && participation === 'team';
   const [creatingTeam, setCreatingTeam] = useState(false);
+  // Правка имени/команды в лобби (до старта игры)
+  const [editing, setEditing] = useState(false);
+  const [draftName, setDraftName] = useState('');
 
   // Узнаём режим входа по коду (публично, без токена).
   useEffect(() => {
@@ -171,6 +259,27 @@ export default function MusicPlay() {
       window.removeEventListener('pagehide', markOffline);
     };
   }, []);
+
+  // Сохранить правки лобби. Команду меняем повторным join с тем же playerId:
+  // сервер разрешает смену только в лобби, чтобы посреди игры очки и блокировки
+  // не уезжали в другую команду.
+  const applyEdits = () => {
+    const nextName = draftName.replace(/\s+/g, ' ').trim();
+    const nextTeam = teamName.replace(/\s+/g, ' ').trim();
+    if (!nextName) { setError('Укажите имя'); return; }
+    if (asksTeamName && !nextTeam) { setError('Укажите название команды'); return; }
+
+    localStorage.setItem('qgs_name', nextName);
+    setName(nextName);
+    if (asksTeamName) {
+      localStorage.setItem('qgs_team', nextTeam);
+      emitJoin(joinedCodeRef.current || code, nextName, nextTeam);
+    } else if (nextName !== (me?.name || '')) {
+      socketRef.current?.emit('player:rename', { name: nextName });
+    }
+    setEditing(false);
+    setError('');
+  };
 
   const join = () => {
     const trimmed = name.trim();
@@ -326,76 +435,16 @@ export default function MusicPlay() {
             maxLength={24}
             className={`input-dark ${asksTeamName ? 'mb-3' : 'mb-4'}`}
           />
-          {asksTeamName && (() => {
-            // Команды, уже созданные другими игроками (приходят живьём по сокету).
-            const existing = state?.teams || [];
-            const showInput = creatingTeam || existing.length === 0;
-            return (
-              <div className="mb-4">
-                <p className="mb-2 text-left text-xs font-semibold uppercase tracking-wide text-zinc-500">
-                  {existing.length > 0 ? 'Твоя команда' : 'Название команды'}
-                </p>
-
-                {existing.length > 0 && (
-                  <div className="mb-2 flex flex-wrap gap-2">
-                    {existing.map((t) => {
-                      const active = !creatingTeam && teamName.trim().toLowerCase() === t.name.toLowerCase();
-                      return (
-                        <button
-                          key={t.id}
-                          onClick={() => { setCreatingTeam(false); setTeamName(t.name); setError(''); }}
-                          className={`rounded-full px-3 py-2 text-sm font-semibold transition ${
-                            active
-                              ? 'btn-grad'
-                              : 'border border-white/10 bg-white/5 text-zinc-200 hover:bg-white/10'
-                          }`}
-                        >
-                          👥 {t.name}
-                          <span className={`ml-1.5 text-xs ${active ? 'text-white/70' : 'text-zinc-500'}`}>
-                            {t.online}
-                          </span>
-                        </button>
-                      );
-                    })}
-                    {!creatingTeam && (
-                      <button
-                        onClick={() => { setCreatingTeam(true); setTeamName(''); }}
-                        className="rounded-full border border-dashed border-white/20 px-3 py-2 text-sm font-semibold text-zinc-400 hover:bg-white/5"
-                      >
-                        + новая
-                      </button>
-                    )}
-                  </div>
-                )}
-
-                {showInput && (
-                  <>
-                    <input
-                      value={teamName}
-                      onChange={(e) => setTeamName(e.target.value)}
-                      onKeyDown={(e) => e.key === 'Enter' && join()}
-                      placeholder="Название новой команды"
-                      maxLength={24}
-                      autoFocus={creatingTeam}
-                      className="input-dark"
-                    />
-                    {existing.length > 0 ? (
-                      <button
-                        onClick={() => { setCreatingTeam(false); setTeamName(''); }}
-                        className="mt-1 text-xs text-zinc-500 underline hover:text-zinc-300"
-                      >
-                        выбрать из существующих
-                      </button>
-                    ) : (
-                      <p className="mt-1 text-xs text-zinc-500">
-                        Создай команду — остальные за столом смогут её выбрать.
-                      </p>
-                    )}
-                  </>
-                )}
-              </div>
-            );
-          })()}
+          {asksTeamName && (
+            <TeamPicker
+              teams={state?.teams || []}
+              value={teamName}
+              onPick={(v) => { setTeamName(v); setError(''); }}
+              creating={creatingTeam}
+              setCreating={setCreatingTeam}
+              onSubmit={join}
+            />
+          )}
           <button onClick={join} className="btn-grad w-full rounded-lg py-3 font-bold text-lg">
             Войти в игру
           </button>
@@ -478,7 +527,65 @@ export default function MusicPlay() {
 
       {phase === 'lobby' && (
         <div className="glass w-full max-w-sm p-8">
-          <p className="text-xl mb-6">Привет, {me?.name || name}!</p>
+          {/* До старта можно исправить и имя, и команду: сел не за тот стол
+              или опечатался — чинится на месте, без перезахода. */}
+          {editing ? (
+            <div className="mb-6 text-left">
+              <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-zinc-500">
+                Как тебя зовут
+              </p>
+              <input
+                value={draftName}
+                onChange={(e) => setDraftName(e.target.value)}
+                onKeyDown={(e) => e.key === 'Enter' && applyEdits()}
+                placeholder="Имя"
+                maxLength={24}
+                className="input-dark mb-4"
+              />
+              {asksTeamName && (
+                <TeamPicker
+                  teams={state?.teams || []}
+                  value={teamName}
+                  onPick={(v) => { setTeamName(v); setError(''); }}
+                  creating={creatingTeam}
+                  setCreating={setCreatingTeam}
+                  onSubmit={applyEdits}
+                  label="Команда"
+                />
+              )}
+              <div className="flex gap-2">
+                <button onClick={applyEdits} className="btn-grad flex-1 rounded-lg py-2.5 font-bold">
+                  Сохранить
+                </button>
+                <button
+                  onClick={() => { setEditing(false); setError(''); }}
+                  className="rounded-lg border border-white/10 bg-white/5 px-4 py-2.5 text-zinc-300 hover:bg-white/10"
+                >
+                  Отмена
+                </button>
+              </div>
+            </div>
+          ) : (
+            <div className="mb-6">
+              <p className="text-xl">Привет, {me?.name || name}!</p>
+              {me?.teamName && (
+                <p className="mt-1 text-sm text-zinc-400">👥 {me.teamName}</p>
+              )}
+              {authMode === 'open' && (
+                <button
+                  onClick={() => {
+                    setDraftName(me?.name || name);
+                    setTeamName(me?.teamName || '');
+                    setCreatingTeam(false);
+                    setEditing(true);
+                  }}
+                  className="mt-2 text-xs text-zinc-500 underline hover:text-zinc-300"
+                >
+                  {asksTeamName ? 'сменить имя или команду' : 'сменить имя'}
+                </button>
+              )}
+            </div>
+          )}
           <button
             onClick={() => {
               vibrate(180);
