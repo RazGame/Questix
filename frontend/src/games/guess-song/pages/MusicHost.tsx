@@ -262,7 +262,7 @@ export default function MusicHost() {
                     {currentSong?.note && (
                       <p className="mt-2 text-sm text-amber-200/90">
                         <span className="font-bold uppercase text-[10px] tracking-wider text-amber-400/80">
-                          засчитывать также:{' '}
+                          подсказка:{' '}
                         </span>
                         {currentSong.note}
                       </p>
@@ -321,7 +321,7 @@ export default function MusicHost() {
                     {currentSong?.note && (
                       <p className="mt-2 text-sm text-amber-200/90">
                         <span className="font-bold uppercase text-[10px] tracking-wider text-amber-400/80">
-                          засчитывать также:{' '}
+                          подсказка:{' '}
                         </span>
                         {currentSong.note}
                       </p>
@@ -391,7 +391,7 @@ export default function MusicHost() {
                   {currentSong?.note && (
                     <div className="mb-4 rounded-lg border border-amber-500/25 bg-amber-500/10 p-3">
                       <p className="text-[10px] font-bold uppercase tracking-wider text-amber-400/80">
-                        Засчитывать также
+                        Подсказка ведущему
                       </p>
                       <p className="mt-0.5 text-sm font-semibold text-amber-100">{currentSong.note}</p>
                     </div>

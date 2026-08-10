@@ -37,6 +37,7 @@ export default function MusicSegmentModal({
 }) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
+  const playheadRef = useRef(-1); // текущая позиция воспроизведения, -1 = стоим
   const peaksRef = useRef<number[]>([]);
   const dragRef = useRef<'start' | 'end' | null>(null);
   const startRef = useRef(song.startSec || 0);
@@ -126,9 +127,43 @@ export default function MusicSegmentModal({
     cctx.fillStyle = '#22d3ee';
     cctx.fillRect(x0 - 2, 0, 4, h);
     cctx.fillRect(x1 - 2, 0, 4, h);
+
+    // бегунок: где играет прямо сейчас (-1 — не играем, не рисуем)
+    const p = playheadRef.current;
+    if (p >= 0 && duration) {
+      const xp = (p / duration) * w;
+      cctx.fillStyle = '#fff';
+      cctx.fillRect(xp - 1, 0, 2, h);
+      // головка сверху, чтобы бегунок читался и поверх яркой волны
+      cctx.beginPath();
+      cctx.moveTo(xp - 5, 0);
+      cctx.lineTo(xp + 5, 0);
+      cctx.lineTo(xp, 8);
+      cctx.closePath();
+      cctx.fill();
+    }
   }, [start, end, duration]);
 
   useEffect(() => { draw(); }, [draw, loading]);
+
+  // Пока звучит — гоним бегунок по волне. Позиция живёт в ref, а не в state:
+  // 60 раз в секунду перерисовывать весь компонент незачем, канвасу хватает.
+  useEffect(() => {
+    if (!playing) {
+      playheadRef.current = -1;
+      draw();
+      return;
+    }
+    let raf = 0;
+    const tick = () => {
+      const a = audioRef.current;
+      if (a) playheadRef.current = a.currentTime;
+      draw();
+      raf = requestAnimationFrame(tick);
+    };
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
+  }, [playing, draw]);
 
   // перетаскивание ручек
   const pickHandle = (clientX: number) => {
