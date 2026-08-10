@@ -377,7 +377,7 @@ export default function MusicHost() {
                   {currentSong && (
                     <div className="mb-4 flex items-center gap-3 rounded-lg border border-emerald-500/15 bg-emerald-500/5 p-3">
                       {currentSong.cover && (
-                        <img src={musicCoverSrc(currentSong.cover)} alt="" className="w-10 h-10 rounded object-cover" />
+                        <img src={musicCoverSrc(currentSong.cover, 'sm')} alt="" className="w-10 h-10 rounded object-cover" />
                       )}
                       <div className="min-w-0">
                         <p className="text-[10px] uppercase tracking-wider text-emerald-400/80 font-semibold">Правильный ответ</p>
@@ -584,7 +584,7 @@ export default function MusicHost() {
                         }`}
                       >
                         {song.cover ? (
-                          <img src={musicCoverSrc(song.cover)} alt="" className="w-8 h-8 rounded object-cover" />
+                          <img src={musicCoverSrc(song.cover, 'sm')} alt="" loading="lazy" decoding="async" className="w-8 h-8 rounded object-cover" />
                         ) : (
                           <div className="w-8 h-8 rounded bg-white/5 flex items-center justify-center font-bold">
                             🎵

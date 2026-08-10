@@ -659,7 +659,7 @@ export default function MusicScreen() {
               style={{ width: 230, height: 230 }}
             >
               {showCover && state?.reveal?.cover ? (
-                <img src={musicCoverSrc(state.reveal.cover)} alt="" className="qgs-pop h-full w-full object-cover" />
+                <img src={musicCoverSrc(state.reveal.cover, 'lg')} alt="" className="qgs-pop h-full w-full object-cover" />
               ) : (
                 <span className="font-display text-8xl font-black text-white/90">?</span>
               )}

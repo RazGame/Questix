@@ -28,11 +28,24 @@ export interface PlaylistImportResult {
   skipped: number;
 }
 
-export const musicCoverSrc = (cover?: string): string => {
+// Размер обложки в адресе Spotify закодирован префиксом идентификатора.
+// В списке песен картинка показывается 36×36, и тянуть ради неё 300×300
+// незачем: на 200 песен это 69 МБ распакованных картинок против одного.
+const COVER_SIZES = {
+  sm: 'ab67616d00004851', // 64×64  — иконки в списках
+  md: 'ab67616d00001e02', // 300×300 — карточки
+  lg: 'ab67616d0000b273', // 640×640 — экран проектора
+};
+
+export const musicCoverSrc = (cover?: string, size: keyof typeof COVER_SIZES = 'md'): string => {
   if (!cover) return '';
   if (cover.startsWith('/')) return `${API_URL}${cover}`;
   if (!/^https?:\/\//i.test(cover)) return cover;
-  return `${API_URL}/music/cover?url=${encodeURIComponent(cover)}`;
+  const sized = cover.replace(
+    /(i\.scdn\.co\/image\/)ab67616d[0-9a-f]{8}/i,
+    `$1${COVER_SIZES[size]}`
+  );
+  return `${API_URL}/music/cover?url=${encodeURIComponent(sized)}`;
 };
 
 // Ссылка на сам аудиофайл песни (раздаётся бэкендом из /media).

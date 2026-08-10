@@ -210,7 +210,7 @@ function BlockItem({
               </div>
               {results.map((r, i) => (
                 <div key={i} className="flex items-center gap-3 rounded bg-white/[0.01] hover:bg-white/[0.04] p-1.5 transition text-left">
-                  {r.cover && <img src={musicCoverSrc(r.cover)} alt="" className="w-8 h-8 rounded" />}
+                  {r.cover && <img src={musicCoverSrc(r.cover, 'sm')} alt="" loading="lazy" decoding="async" className="w-8 h-8 rounded" />}
                   <div className="min-w-0 flex-1">
                     <div className="truncate text-xs font-semibold">{r.title}</div>
                     <div className="truncate text-[10px] text-zinc-400">{r.artist} · {fmtTime(r.duration || 0)}</div>
@@ -302,7 +302,7 @@ function BlockItem({
                     <ChevronDown size={13} />
                   </button>
                 </div>
-                {s.cover && <img src={musicCoverSrc(s.cover)} alt="" className="w-9 h-9 rounded shadow" />}
+                {s.cover && <img src={musicCoverSrc(s.cover, 'sm')} alt="" loading="lazy" decoding="async" className="w-9 h-9 rounded shadow" />}
                 <div className="min-w-0 flex-1 text-left">
                   <div className="truncate text-sm font-semibold">{s.title}</div>
                   <div className="truncate text-xs text-zinc-400">{s.artist}</div>
