@@ -1,6 +1,8 @@
 import { Request, Response } from 'express';
 import fs from 'fs';
 import path from 'path';
+import mongoose from 'mongoose';
+import { spawn } from 'child_process';
 import QRCode from 'qrcode';
 import { Game } from '../../../core/models/Game';
 import { Song } from '../models/Song';
@@ -273,7 +275,9 @@ export const deleteMusicGame = async (
   try {
     const game = await loadModerableGame(req, res);
     if (!game) return;
+    const songIds = (await Song.find({ gameId: game._id }, '_id').lean()).map((s) => String(s._id));
     await Song.deleteMany({ gameId: game._id });
+    dropArtworkCache(songIds);
     await game.deleteOne();
     dropSession(String(game._id)); // снять realtime-сессию из памяти
     res.status(200).json({ ok: true });
@@ -283,7 +287,66 @@ export const deleteMusicGame = async (
   }
 };
 
-// ----- bundle: экспорт/импорт игры одним zip (ROADMAP этап 1) -----
+// Извлечённые из файлов обложки — кэш; вместе с песнями он не нужен.
+const dropArtworkCache = (songIds: string[]): void => {
+  for (const id of songIds) {
+    for (const size of [64, 300]) {
+      const art = path.join(MEDIA_DIR, `${id}-art-${size}.jpg`);
+      if (fs.existsSync(art)) fs.rmSync(art, { force: true });
+    }
+  }
+};
+
+// ----- обложка из самого файла -----
+// Многие треки не находятся во внешнем каталоге (каверы, редкие релизы), но
+// картинка вшита в тег файла. Достаём её через ffmpeg и кладём рядом в media,
+// чтобы не дёргать ffmpeg на каждый показ списка.
+const extractArtwork = (src: string, dest: string, size: number): Promise<boolean> =>
+  new Promise((resolve) => {
+    const child = spawn('ffmpeg', [
+      '-v', 'error', '-y',
+      '-i', src,
+      '-an',                       // звук не нужен
+      '-vframes', '1',             // единственный «кадр» — это и есть обложка
+      '-vf', `scale=${size}:${size}:force_original_aspect_ratio=decrease`,
+      '-f', 'image2', dest,
+    ], { windowsHide: true });
+    child.on('error', () => resolve(false));
+    child.on('close', (code) => resolve(code === 0 && fs.existsSync(dest)));
+  });
+
+export const songArtwork = async (req: Request, res: Response): Promise<void> => {
+  const { songId } = req.params;
+  // Идентификатор уходит в имя файла — пускаем только настоящие ObjectId,
+  // иначе через него можно выйти за пределы media.
+  if (!mongoose.isValidObjectId(songId)) {
+    res.status(404).end();
+    return;
+  }
+  const size = req.query.size === 'sm' ? 64 : 300;
+  const cache = path.join(MEDIA_DIR, `${songId}-art-${size}.jpg`);
+
+  try {
+    if (!fs.existsSync(cache)) {
+      const song = await Song.findById(songId);
+      const src = song?.file ? path.join(MEDIA_DIR, song.file) : '';
+      if (!src || !fs.existsSync(src)) {
+        res.status(404).end();
+        return;
+      }
+      if (!(await extractArtwork(src, cache, size))) {
+        res.status(404).end(); // в файле картинки нет — это нормально
+        return;
+      }
+    }
+    res.setHeader('Cache-Control', 'public, max-age=86400');
+    res.sendFile(cache);
+  } catch (error) {
+    console.error('Ошибка обложки из файла:', error);
+    res.status(404).end();
+  }
+};
+
 export const exportGameBundle = async (
   req: AuthenticatedRequest,
   res: Response
@@ -589,6 +652,7 @@ export const removeSong = async (
     const game = await loadModerableGame(req, res);
     if (!game) return;
     await Song.deleteOne({ _id: req.params.songId, gameId: game._id });
+    dropArtworkCache([req.params.songId]);
     game.blocks?.forEach((b) => {
       if (b.songIds && typeof (b.songIds as any).pull === 'function') {
         (b.songIds as any).pull(req.params.songId);

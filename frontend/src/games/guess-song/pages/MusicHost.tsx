@@ -3,6 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { Play, Pause, Volume2, Users, ListMusic, ArrowLeft, RefreshCw, AlertCircle, Send, Eye } from 'lucide-react';
 import { musicCoverSrc, musicService, MusicGameFull } from '../services/music';
 import { createSocket } from '../services/socket';
+import SongCover from '../components/SongCover';
 import { partyResultsService } from '../../../core/services/results';
 import { MusicState } from '../../../core/types';
 
@@ -244,7 +245,7 @@ export default function MusicHost() {
                     <p className="text-xs uppercase text-zinc-400 font-semibold tracking-wider mb-2">Сейчас играет</p>
                     <div className="flex items-center gap-3">
                       {currentSong?.cover && (
-                        <img src={musicCoverSrc(currentSong.cover)} alt="" className="w-12 h-12 rounded-lg object-cover shadow" />
+                        <SongCover cover={currentSong.cover} songId={currentSong._id} className="w-12 h-12 rounded-lg object-cover shadow" />
                       )}
                       <div className="min-w-0">
                         <p className="truncate text-lg font-bold text-zinc-100">
@@ -303,7 +304,7 @@ export default function MusicHost() {
                     <p className="text-xs uppercase text-zinc-400 font-semibold tracking-wider mb-2">Фрагмент закончился</p>
                     <div className="flex items-center gap-3">
                       {currentSong?.cover && (
-                        <img src={musicCoverSrc(currentSong.cover)} alt="" className="w-12 h-12 rounded-lg object-cover shadow" />
+                        <SongCover cover={currentSong.cover} songId={currentSong._id} className="w-12 h-12 rounded-lg object-cover shadow" />
                       )}
                       <div className="min-w-0">
                         <p className="truncate text-lg font-bold text-zinc-100">
@@ -377,7 +378,7 @@ export default function MusicHost() {
                   {currentSong && (
                     <div className="mb-4 flex items-center gap-3 rounded-lg border border-emerald-500/15 bg-emerald-500/5 p-3">
                       {currentSong.cover && (
-                        <img src={musicCoverSrc(currentSong.cover, 'sm')} alt="" className="w-10 h-10 rounded object-cover" />
+                        <SongCover cover={currentSong.cover} songId={currentSong._id} size="sm" className="w-10 h-10 rounded object-cover" />
                       )}
                       <div className="min-w-0">
                         <p className="text-[10px] uppercase tracking-wider text-emerald-400/80 font-semibold">Правильный ответ</p>
@@ -584,7 +585,7 @@ export default function MusicHost() {
                         }`}
                       >
                         {song.cover ? (
-                          <img src={musicCoverSrc(song.cover, 'sm')} alt="" loading="lazy" decoding="async" className="w-8 h-8 rounded object-cover" />
+                          <SongCover cover={song.cover} songId={song._id} size="sm" className="w-8 h-8 rounded object-cover" />
                         ) : (
                           <div className="w-8 h-8 rounded bg-white/5 flex items-center justify-center font-bold">
                             🎵

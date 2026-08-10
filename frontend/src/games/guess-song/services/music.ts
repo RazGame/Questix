@@ -37,6 +37,13 @@ const COVER_SIZES = {
   lg: 'ab67616d0000b273', // 640×640 — экран проектора
 };
 
+export type CoverSize = keyof typeof COVER_SIZES;
+
+// Обложка, вшитая в сам аудиофайл: запасной источник, когда внешней нет
+// или до неё не достучаться (нет интернета на площадке).
+export const songArtworkSrc = (songId?: string | null, size: CoverSize = 'md'): string =>
+  songId ? `${API_URL}/music/artwork/${songId}${size === 'sm' ? '?size=sm' : ''}` : '';
+
 export const musicCoverSrc = (cover?: string, size: keyof typeof COVER_SIZES = 'md'): string => {
   if (!cover) return '';
   if (cover.startsWith('/')) return `${API_URL}${cover}`;

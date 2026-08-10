@@ -5,6 +5,7 @@ import { musicCoverSrc, musicAudioSrc, musicService, MusicGameFull, SongSearchRe
 import { createSocket } from '../services/socket';
 import { MusicGame, Song } from '../../../core/types';
 import MusicSegmentModal from './MusicSegmentModal';
+import SongCover from '../components/SongCover';
 import TransferProgress, { TransferState } from '../../../core/components/TransferProgress';
 
 const fmtTime = (s: number) => {
@@ -302,7 +303,7 @@ function BlockItem({
                     <ChevronDown size={13} />
                   </button>
                 </div>
-                {s.cover && <img src={musicCoverSrc(s.cover, 'sm')} alt="" loading="lazy" decoding="async" className="w-9 h-9 rounded shadow" />}
+                <SongCover cover={s.cover} songId={s._id} size="sm" className="w-9 h-9 shrink-0 rounded object-cover shadow" />
                 <div className="min-w-0 flex-1 text-left">
                   <div className="truncate text-sm font-semibold">{s.title}</div>
                   <div className="truncate text-xs text-zinc-400">{s.artist}</div>

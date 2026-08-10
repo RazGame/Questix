@@ -2,7 +2,8 @@ import { useEffect, useRef, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import NoSleep from 'nosleep.js';
 import { createSocket } from '../services/socket';
-import { musicCoverSrc, musicService } from '../services/music';
+import SongCover from '../components/SongCover';
+import { musicService } from '../services/music';
 import { MusicState } from '../../../core/types';
 
 // Аудио-движок держим вне React-рендера (в ref), чтобы команды cmd
@@ -658,8 +659,15 @@ export default function MusicScreen() {
               className={`relative z-10 flex items-center justify-center rounded-full border-4 transition-all duration-500 overflow-hidden ${centerCls}`}
               style={{ width: 230, height: 230 }}
             >
-              {showCover && state?.reveal?.cover ? (
-                <img src={musicCoverSrc(state.reveal.cover, 'lg')} alt="" className="qgs-pop h-full w-full object-cover" />
+              {/* Ни ссылки, ни файла — оставляем прежний крупный «?», он на
+                  проекторе читается лучше значка */}
+              {showCover && state?.reveal && (state.reveal.cover || state.currentSongId) ? (
+                <SongCover
+                  cover={state.reveal.cover}
+                  songId={state.currentSongId}
+                  size="lg"
+                  className="qgs-pop h-full w-full object-cover"
+                />
               ) : (
                 <span className="font-display text-8xl font-black text-white/90">?</span>
               )}

@@ -2,7 +2,8 @@ import { useEffect, useRef, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import NoSleep from 'nosleep.js';
 import { createSocket } from '../services/socket';
-import { musicCoverSrc, musicService } from '../services/music';
+import SongCover from '../components/SongCover';
+import { musicService } from '../services/music';
 import { MusicState } from '../../../core/types';
 
 const vibrate = (pattern: number | number[]) => {
@@ -605,13 +606,12 @@ export default function MusicPlay() {
                       : 'border-violet-500/20 bg-[#0d0a16]/95 shadow-violet-950/40'
                   }`}
                 >
-                  {state.reveal.cover && (
-                    <img
-                      src={musicCoverSrc(state.reveal.cover)}
-                      alt=""
-                      className="h-12 w-12 shrink-0 rounded-lg object-cover"
-                    />
-                  )}
+                  <SongCover
+                    cover={state.reveal.cover}
+                    songId={state.currentSongId}
+                    size="sm"
+                    className="h-12 w-12 shrink-0 rounded-lg object-cover"
+                  />
                   <div className="min-w-0">
                     <p
                       className={`text-[10px] font-bold uppercase tracking-[0.18em] ${
