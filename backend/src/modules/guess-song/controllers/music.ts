@@ -686,8 +686,14 @@ async function downloadSong(gameId: string, songId: string): Promise<void> {
   }
 
   if (!result.ok || !result.file) {
-    song.status = 'error';
-    song.error = result.error || 'download failed';
+    // Повторная загрузка могла не удаться у песни, которая уже играбельна
+    // (источник временно недоступен). Рабочий файл в этом случае не теряем:
+    // иначе одна неудачная перекачка выбивает песню из готовой игры.
+    const had = song.file && fs.existsSync(path.join(MEDIA_DIR, song.file));
+    song.status = had ? 'ready' : 'error';
+    song.error = had
+      ? `не удалось перекачать (${result.error || 'download failed'}), оставлен прежний файл`
+      : result.error || 'download failed';
     await song.save();
     notifyAdminSongUpdated(gameId, song);
     fs.rmSync(tmpDir, { recursive: true, force: true });

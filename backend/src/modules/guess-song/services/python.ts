@@ -2,8 +2,9 @@ import path from 'path';
 import { spawn } from 'child_process';
 
 const PY = process.env.PYTHON || 'python3';
-// tools лежат в backend/tools (рядом с dist при сборке — поднимаемся из dist/services)
-const TOOLS = path.join(__dirname, '..', '..', 'tools');
+// tools лежат в backend/tools. Отсюда (modules/guess-song/services) до корня
+// backend — четыре уровня; одинаково работает и из src, и из dist.
+const TOOLS = path.join(__dirname, '..', '..', '..', '..', 'tools');
 
 export interface ToolResult {
   ok: boolean;

@@ -75,8 +75,17 @@ export const musicService = {
   },
 
   // --- bundle: экспорт/импорт игры одним zip ---
-  exportBundle: async (id: string, code: string): Promise<void> => {
-    const res = await api.get(`/music/games/${id}/export`, { responseType: 'blob' });
+  // onProgress(loaded, total) — total=0, пока размер неизвестен (сервер ещё
+  // пакует архив и не прислал Content-Length).
+  exportBundle: async (
+    id: string,
+    code: string,
+    onProgress?: (loaded: number, total: number) => void
+  ): Promise<void> => {
+    const res = await api.get(`/music/games/${id}/export`, {
+      responseType: 'blob',
+      onDownloadProgress: (e) => onProgress?.(e.loaded, e.total || 0),
+    });
     // Скачивание blob через временную ссылку (токен уже ушёл в заголовке axios).
     const url = URL.createObjectURL(res.data);
     const a = document.createElement('a');
@@ -85,9 +94,13 @@ export const musicService = {
     a.click();
     URL.revokeObjectURL(url);
   },
-  importBundle: async (file: File): Promise<MusicGame> => {
+  importBundle: async (
+    file: File,
+    onProgress?: (loaded: number, total: number) => void
+  ): Promise<MusicGame> => {
     const res = await api.post('/music/games/import', file, {
       headers: { 'Content-Type': 'application/zip' },
+      onUploadProgress: (e) => onProgress?.(e.loaded, e.total || file.size),
     });
     return res.data.game;
   },
@@ -122,12 +135,20 @@ export const musicService = {
   removeSong: async (id: string, songId: string): Promise<void> => {
     await api.delete(`/music/games/${id}/songs/${songId}`);
   },
-  uploadSongFile: async (id: string, songId: string, file: File): Promise<Song> => {
+  uploadSongFile: async (
+    id: string,
+    songId: string,
+    file: File,
+    onProgress?: (loaded: number, total: number) => void
+  ): Promise<Song> => {
     const ext = file.name.split('.').pop() || 'mp3';
     const res = await api.post(
       `/music/games/${id}/songs/${songId}/upload?ext=${encodeURIComponent(ext)}`,
       file,
-      { headers: { 'Content-Type': 'application/octet-stream' } }
+      {
+        headers: { 'Content-Type': 'application/octet-stream' },
+        onUploadProgress: (e) => onProgress?.(e.loaded, e.total || file.size),
+      }
     );
     return res.data.song;
   },

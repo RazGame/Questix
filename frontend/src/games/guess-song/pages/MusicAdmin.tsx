@@ -5,6 +5,7 @@ import { musicCoverSrc, musicService, MusicGameFull, SongSearchResult } from '..
 import { createSocket } from '../services/socket';
 import { MusicGame, Song } from '../../../core/types';
 import MusicSegmentModal from './MusicSegmentModal';
+import TransferProgress, { TransferState } from '../../../core/components/TransferProgress';
 
 const fmtTime = (s: number) => {
   s = Math.max(0, Math.round(s || 0));
@@ -378,6 +379,7 @@ export default function MusicAdmin({ isTab = false }: { isTab?: boolean }) {
   const [spotiVersion, setSpotiVersion] = useState<string | null>(null);
   const [segmentSong, setSegmentSong] = useState<Song | null>(null); // открытая модалка отрезка
   const [dlProgress, setDlProgress] = useState<Record<string, SongProgress>>({});
+  const [transfer, setTransfer] = useState<TransferState | null>(null); // скачивание/загрузка игры
 
   const loadGames = useCallback(async (throwOnError = false) => {
     try {
@@ -478,14 +480,38 @@ export default function MusicAdmin({ isTab = false }: { isTab?: boolean }) {
     }
   };
 
+  // Общий колбэк отправки файла: сразу показывает окно с процентами, а когда
+  // байты ушли — переключается на «сервер обрабатывает» (процентов там нет).
+  const trackUpload = (file: File) => {
+    setTransfer({
+      kind: 'upload',
+      phase: 'transfer',
+      loaded: 0,
+      total: file.size,
+      title: file.name,
+    });
+    return (loaded: number, total: number) =>
+      setTransfer((t) =>
+        t ? { ...t, phase: loaded >= total ? 'finalize' : 'transfer', loaded, total } : t
+      );
+  };
+
   // --- bundle: скачать игру zip-файлом / импортировать из zip ---
+  // Игра с музыкой весит сотни мегабайт: без индикатора кажется, что кнопка
+  // не сработала. Показываем фазы — упаковка/передача/распаковка.
   const exportGameBundle = async () => {
     if (!current) return;
+    const title = current.game.title || 'Игра';
+    setTransfer({ kind: 'download', phase: 'prepare', loaded: 0, total: 0, title });
     try {
-      await musicService.exportBundle(current.game._id, current.game.code);
+      await musicService.exportBundle(current.game._id, current.game.code, (loaded, total) => {
+        setTransfer((t) => (t ? { ...t, phase: 'transfer', loaded, total } : t));
+      });
       setError('');
     } catch (e: any) {
       setError(apiErrorMessage(e, 'Ошибка экспорта игры'));
+    } finally {
+      setTransfer(null);
     }
   };
   const importGameBundle = () => {
@@ -494,14 +520,17 @@ export default function MusicAdmin({ isTab = false }: { isTab?: boolean }) {
     inp.accept = '.zip,application/zip';
     inp.onchange = async () => {
       if (!inp.files?.[0]) return;
+      const file = inp.files[0];
       try {
-        setNotice('Импортируем игру…');
-        const game = await musicService.importBundle(inp.files[0]);
+        // Байты ушли — дальше сервер распаковывает музыку, процентов больше нет
+        const game = await musicService.importBundle(file, trackUpload(file));
+        setTransfer(null);
         await loadGames(true);
         await selectGame(game._id, true);
         setError('');
         setNotice(`Игра «${game.title}» импортирована`);
       } catch (e: any) {
+        setTransfer(null);
         setNotice('');
         setError(apiErrorMessage(e, 'Ошибка импорта игры'));
       }
@@ -646,11 +675,14 @@ export default function MusicAdmin({ isTab = false }: { isTab?: boolean }) {
     inp.accept = 'audio/*,.flac,.mp3,.m4a,.ogg,.wav';
     inp.onchange = async () => {
       if (inp.files?.[0] && current) {
+        const file = inp.files[0];
         try {
-          await musicService.uploadSongFile(current.game._id, songId, inp.files[0]);
+          await musicService.uploadSongFile(current.game._id, songId, file, trackUpload(file));
+          setTransfer(null);
           await refreshCurrent();
           setError('');
         } catch (e: any) {
+          setTransfer(null);
           setError(apiErrorMessage(e, 'Ошибка загрузки файла песни'));
         }
       }
@@ -669,10 +701,12 @@ export default function MusicAdmin({ isTab = false }: { isTab?: boolean }) {
             title: f.name.replace(/\.[^.]+$/, ''),
             artist: '',
           });
-          await musicService.uploadSongFile(current.game._id, song._id, f);
+          await musicService.uploadSongFile(current.game._id, song._id, f, trackUpload(f));
+          setTransfer(null);
           await refreshCurrent();
           setError('');
         } catch (e: any) {
+          setTransfer(null);
           setError(apiErrorMessage(e, 'Ошибка добавления файла в блок'));
         }
       }
@@ -879,6 +913,8 @@ export default function MusicAdmin({ isTab = false }: { isTab?: boolean }) {
           onSaved={() => refreshCurrent()}
         />
       )}
+
+      <TransferProgress transfer={transfer} />
     </>
   );
 

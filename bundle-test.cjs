@@ -62,6 +62,16 @@ async function api(method, path, body, token, opts = {}) {
   const zip = await api('GET', `/music/games/${game._id}/export`, null, org.token, { binary: true });
   check('export is zip', zip.length > 500 && zip[0] === 0x50 && zip[1] === 0x4b); // 'PK'
 
+  // Content-Length обязателен: по нему браузер считает проценты в окне скачивания.
+  // Если архив начнут стримить или включат сжатие ответов — прогресс молча
+  // выродится в бегущую полосу, и этот тест об этом скажет.
+  const head = await fetch(`${BASE}/music/games/${game._id}/export`, {
+    headers: { Authorization: `Bearer ${org.token}` },
+  });
+  check('export sends Content-Length (для прогресса)', !!head.headers.get('content-length'));
+  check('export not compressed', !head.headers.get('content-encoding'));
+  await head.arrayBuffer();
+
   // 3. удаляем оригинал
   await api('DELETE', `/music/games/${game._id}`, null, org.token);
   let gone = false;
