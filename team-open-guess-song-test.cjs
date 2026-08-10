@@ -162,6 +162,29 @@ async function api(method, path, body, token) {
 
   // А посреди игры команду менять уже нельзя: иначе очки и блокировка
   // «переезжали» бы в другую команду прямо во время раунда.
+  // Ведущий может отцепить игрока и убрать команду целиком.
+  const kickMe = mkAnon();
+  kickMe.sock.emit('join', { role: 'player', code: game.code, name: 'Лишний', teamName: 'Лишняя' });
+  // Ждём именно подтверждение клиенту: в состоянии ведущего игрок появляется
+  // отдельным сообщением, и оно может обогнать 'joined'.
+  await waitFor(() => kickMe.joined && adminState.players.some((p) => p.name === 'Лишний'));
+  const kickId = kickMe.joined.playerId;
+  admin.emit('admin:kick', { playerId: kickId });
+  await waitFor(() => !adminState.players.some((p) => p.id === kickId));
+  check('ведущий отцепил игрока', !adminState.players.some((p) => p.id === kickId));
+  check('его команда исчезла вместе с ним', !adminState.teams.some((t) => t.name === 'Лишняя'));
+  kickMe.sock.close();
+
+  const drop = mkAnon();
+  drop.sock.emit('join', { role: 'player', code: game.code, name: 'Уходящий', teamName: 'На удаление' });
+  await waitFor(() => drop.joined && adminState.teams.some((t) => t.name === 'На удаление'));
+  const doomed = adminState.teams.find((t) => t.name === 'На удаление');
+  admin.emit('admin:remove-team', { teamId: doomed.id });
+  await waitFor(() => !adminState.teams.some((t) => t.id === doomed.id));
+  check('ведущий убрал команду', !adminState.teams.some((t) => t.id === doomed.id));
+  check('её игроки убраны тоже', !adminState.players.some((p) => p.name === 'Уходящий'));
+  drop.sock.close();
+
   const veraId = b1.joined.playerId;
   b1.sock.emit('join', { role: 'player', code: game.code, name: 'Вера', teamName: 'Стол 1', playerId: veraId });
   await sleep(400);

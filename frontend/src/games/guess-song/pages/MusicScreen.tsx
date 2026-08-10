@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import NoSleep from 'nosleep.js';
 import { createSocket } from '../services/socket';
@@ -18,6 +18,64 @@ interface AudioEngine {
   minFreq?: Float32Array;
   maxFreq?: Float32Array;
   smoothed?: Float32Array;
+}
+
+/**
+ * Проектор не должен прокручиваться никогда: то, что уехало за край, зал
+ * просто не увидит. Содержимое рисуется в натуральную величину, и если оно
+ * не влезло в окно — целиком ужимается трансформацией. Так спасаются и
+ * длинный список блоков, и карточка «нажал первым» на невысоком экране.
+ *
+ * Оверлеи с position:fixed заворачивать сюда нельзя: трансформация у предка
+ * превращает их в absolute. Поэтому они остаются снаружи.
+ */
+function FitScreen({ children }: { children: React.ReactNode }) {
+  const boxRef = useRef<HTMLDivElement | null>(null);
+  const innerRef = useRef<HTMLDivElement | null>(null);
+  const [scale, setScale] = useState(1);
+  // Над экраном ещё шапка сайта, поэтому 100dvh давал бы «экран + шапка»
+  // и страница всё равно прокручивалась. Берём то, что осталось под шапкой.
+  const [boxH, setBoxH] = useState<number | null>(null);
+
+  useLayoutEffect(() => {
+    const fit = () => {
+      const box = boxRef.current;
+      const inner = innerRef.current;
+      if (!box || !inner) return;
+      const avail = Math.max(200, window.innerHeight - box.getBoundingClientRect().top);
+      setBoxH((prev) => (prev === null || Math.abs(prev - avail) > 1 ? avail : prev));
+      // Трансформация не влияет на раскладку, поэтому scrollHeight здесь —
+      // всегда натуральный размер, даже когда масштаб уже применён.
+      const k = Math.min(
+        1,
+        avail / Math.max(1, inner.scrollHeight),
+        box.clientWidth / Math.max(1, inner.scrollWidth)
+      );
+      setScale((prev) => (Math.abs(prev - k) > 0.005 ? k : prev));
+    };
+    fit();
+    const ro = new ResizeObserver(fit);
+    if (innerRef.current) ro.observe(innerRef.current);
+    if (boxRef.current) ro.observe(boxRef.current);
+    window.addEventListener('resize', fit);
+    return () => { ro.disconnect(); window.removeEventListener('resize', fit); };
+  }, []);
+
+  return (
+    <div
+      ref={boxRef}
+      className="flex w-full items-center justify-center overflow-hidden"
+      style={{ height: boxH ? `${boxH}px` : '100dvh' }}
+    >
+      <div
+        ref={innerRef}
+        className="w-full"
+        style={scale < 1 ? { transform: `scale(${scale})`, transformOrigin: 'center center' } : undefined}
+      >
+        {children}
+      </div>
+    </div>
+  );
 }
 
 const apiOrigin =
@@ -594,7 +652,7 @@ export default function MusicScreen() {
 
   if (inRound) {
     return (
-      <div className="min-h-screen px-6 py-4 text-center">
+      <>
         {needGate && (
           <button
             onClick={unlock}
@@ -613,6 +671,8 @@ export default function MusicScreen() {
             </div>
           </div>
         )}
+      <FitScreen>
+      <div className="px-6 py-4 text-center">
 
         <main className="qgs-fade-in mx-auto grid min-h-[calc(100vh-2rem)] max-w-5xl grid-rows-[220px_520px_160px] items-center justify-items-center">
           <section className="flex flex-col items-center justify-center gap-2.5 self-end pb-6">
@@ -698,7 +758,14 @@ export default function MusicScreen() {
                   <p className="mb-2 text-xs font-extrabold uppercase tracking-[0.36em] text-amber-200/80">
                     Нажал первым
                   </p>
-                  <p className="font-display text-5xl font-black leading-none text-amber-100 drop-shadow-[0_0_28px_rgba(251,191,36,0.45)]">
+                  {/* Длинные названия вылезали за карточку: ужимаем шрифт по
+                      длине и переносим по буквам. */}
+                  <p
+                    className={`font-display font-black leading-tight text-amber-100 drop-shadow-[0_0_28px_rgba(251,191,36,0.45)] break-words ${
+                      buzzCard.name.length > 24 ? 'text-3xl'
+                        : buzzCard.name.length > 14 ? 'text-4xl' : 'text-5xl'
+                    }`}
+                  >
                     🔔 {buzzCard.name}
                   </p>
                   {buzzCard.team && buzzCard.by && (
@@ -726,11 +793,13 @@ export default function MusicScreen() {
           </section>
         </main>
       </div>
+      </FitScreen>
+      </>
     );
   }
 
   return (
-    <div className="min-h-screen flex flex-col items-center justify-center px-6 py-10 text-center">
+    <>
       {needGate && (
         <button
           onClick={unlock}
@@ -739,6 +808,8 @@ export default function MusicScreen() {
           🔊 Нажмите, чтобы включить звук
         </button>
       )}
+      <FitScreen>
+      <div className="flex flex-col items-center justify-center px-6 py-6 text-center">
 
       {state?.paused && (
         <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/60 backdrop-blur-sm">
@@ -824,10 +895,17 @@ export default function MusicScreen() {
 
       {(phase === 'intro' || phase === 'blockIntro') && (() => {
         const blocks = state?.blocks || [];
-        // Много блоков — две колонки и компактные карточки, чтобы всё влезло на экран.
+        // Три ступени плотности: на 20 блоках двух колонок уже не хватало —
+        // список уезжал за нижний край проектора.
+        // Мельчить не нужно: FitScreen сам ужмёт заставку, если она не влезет.
+        // Раньше на 20 блоках включались три колонки мелким шрифтом, и список
+        // читался с трудом при половине пустого экрана.
+        const dense = blocks.length > 24;
         const compact = blocks.length > 5;
         return (
-          <div className={`qgs-fade-in flex w-full flex-col items-center ${compact ? 'max-w-5xl' : 'max-w-2xl'}`}>
+          <div className={`qgs-fade-in flex w-full flex-col items-center ${
+            dense ? 'max-w-6xl' : compact ? 'max-w-5xl' : 'max-w-2xl'
+          }`}>
             <p className="mb-3 text-sm font-extrabold uppercase tracking-[0.3em] text-violet-300">
               {phase === 'intro' ? 'Блоки игры' : 'Новый блок'}
             </p>
@@ -838,29 +916,38 @@ export default function MusicScreen() {
                 {state?.blockName}
               </h2>
             )}
-            <div className={`w-full ${compact ? 'grid grid-cols-2 gap-2.5' : 'space-y-3'}`}>
+            <div className={`w-full ${
+              dense ? 'grid grid-cols-3 gap-x-3 gap-y-1.5' : compact ? 'grid grid-cols-2 gap-2.5' : 'space-y-3'
+            }`}>
               {blocks.map((b, i) => {
                 const isCurrent = b === state?.blockName;
                 return (
                   <div
                     key={`${b}-${i}`}
                     className={`flex items-center rounded-xl border text-left transition ${
-                      compact ? 'gap-3 px-4 py-2.5' : 'gap-4 px-6 py-4'
+                      dense ? 'gap-2 px-3 py-1.5' : compact ? 'gap-3 px-5 py-3' : 'gap-4 px-6 py-4'
                     } ${
                       isCurrent
                         ? 'border-violet-400/50 bg-violet-500/15 shadow-lg shadow-violet-950/40'
                         : 'border-white/5 bg-white/[0.03]'
                     }`}
                   >
-                    <span className={`font-mono font-bold ${compact ? 'text-base' : 'text-lg'} ${isCurrent ? 'text-violet-300' : 'text-zinc-500'}`}>
+                    <span className={`shrink-0 font-mono font-bold ${
+                      dense ? 'text-xs' : compact ? 'text-base' : 'text-lg'
+                    } ${isCurrent ? 'text-violet-300' : 'text-zinc-500'}`}>
                       {i + 1}
                     </span>
-                    <span className={`font-display font-bold ${compact ? 'text-lg leading-snug' : 'text-2xl'} ${isCurrent ? 'text-white' : 'text-zinc-300'}`}>
+                    <span
+                      title={b}
+                      className={`min-w-0 flex-1 font-display font-bold ${
+                        dense ? 'truncate text-sm leading-snug' : compact ? 'text-xl leading-snug' : 'text-2xl'
+                      } ${isCurrent ? 'text-white' : 'text-zinc-300'}`}
+                    >
                       {b}
                     </span>
                     {isCurrent && (
                       <span className={`ml-auto shrink-0 rounded-full bg-violet-400/20 font-bold uppercase tracking-wider text-violet-200 ${
-                        compact ? 'px-2 py-0.5 text-[10px]' : 'px-3 py-1 text-xs'
+                        dense ? 'px-1.5 py-0 text-[9px]' : compact ? 'px-2 py-0.5 text-[10px]' : 'px-3 py-1 text-xs'
                       }`}>
                         {phase === 'intro' ? 'первый блок' : 'следующий'}
                       </span>
@@ -870,7 +957,7 @@ export default function MusicScreen() {
               })}
             </div>
             {introLeft != null && !state?.paused && (
-              <p className={`font-mono text-lg text-zinc-400 ${compact ? 'mt-5' : 'mt-8'}`}>
+              <p className={`font-mono text-lg text-zinc-400 ${dense ? 'mt-4' : compact ? 'mt-5' : 'mt-8'}`}>
                 Начинаем через <span className="font-bold text-violet-300">{Math.max(1, Math.ceil(introLeft / 1000))}</span>…
               </p>
             )}
@@ -935,6 +1022,8 @@ export default function MusicScreen() {
           )}
         </div>
       )}
-    </div>
+      </div>
+      </FitScreen>
+    </>
   );
 }

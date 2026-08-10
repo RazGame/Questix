@@ -186,6 +186,7 @@ class Session {
       this.io.to(this.rAdmin()).emit('error-msg', { message: 'Нет ни одной загруженной песни.' });
       return false;
     }
+    this.dropDisconnected(); // чистим лобби от ушедших и их пустых команд
     this.playlist = ready;
     // Уникальные имена блоков в порядке следования — для интро-заставки.
     this.blockNames = Array.from(new Set(ready.map((s) => s.blockName)));
@@ -308,8 +309,40 @@ class Session {
     if (this.buzzed) this.locked.add(this.buzzed.id); // выбывает до конца песни
     this.buzzed = null;
     this.phase = 'playing';
+    // Ошиблись все — снимаем блокировки и даём ещё круг. Иначе песня доигрывает
+    // в тишине: нажать некому, а ведущему остаётся только пропустить.
+    if (!this.anyArmed()) this.locked.clear();
     this.cmd('resume', { fadeMs: RESUME_FADE_IN_MS });
     this.broadcast();
+  }
+
+  // --- ведение списка участников ---
+  // Отцепить игрока (ушёл, дубль, случайный зашедший).
+  kickPlayer(playerId: string) {
+    if (!this.players.delete(playerId)) return;
+    this.broadcast();
+  }
+
+  // Убрать команду целиком вместе с её игроками.
+  removeTeam(teamId: string) {
+    let changed = false;
+    for (const [id, p] of this.players) {
+      if (p.teamId === teamId) { this.players.delete(id); changed = true; }
+    }
+    this.teamScores.delete(teamId);
+    this.teamNames.delete(teamId);
+    this.locked.delete(teamId);
+    if (changed) this.broadcast();
+  }
+
+  // Перед стартом выкидываем тех, кто уже отвалился: иначе в списке висят
+  // пустые команды от людей, закрывших вкладку на этапе сбора.
+  dropDisconnected() {
+    let changed = false;
+    for (const [id, p] of this.players) {
+      if (!p.connected) { this.players.delete(id); changed = true; }
+    }
+    return changed;
   }
 
   // Никто не угадал: показать правильный ответ и перейти к следующей песне.
@@ -376,7 +409,10 @@ class Session {
   // Пауза ведущего: замораживает баззеры, звук и отложенные переходы.
   pause() {
     if (this.paused) return;
-    if (!['playing', 'ended', 'intro', 'blockIntro'].includes(this.phase)) return;
+    // Пауза доступна в любой игровой фазе, включая 'buzzed' и 'reveal':
+    // ведущему бывает нужно остановиться прямо посреди ответа, а прыгающая
+    // кнопка в пульте только мешала. В лобби и финале паузить нечего.
+    if (['lobby', 'finished'].includes(this.phase)) return;
     this.paused = true;
     if (this.advanceTimer) {
       clearTimeout(this.advanceTimer);

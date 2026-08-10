@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { Play, Pause, Volume2, Users, ListMusic, ArrowLeft, RefreshCw, AlertCircle, Send, Eye } from 'lucide-react';
+import { Play, Pause, Volume2, Users, ListMusic, ArrowLeft, RefreshCw, AlertCircle, Send, Eye, Trash2, UserMinus, Square } from 'lucide-react';
 import { musicCoverSrc, musicService, MusicGameFull } from '../services/music';
 import { createSocket } from '../services/socket';
 import SongCover from '../components/SongCover';
@@ -71,7 +71,7 @@ export default function MusicHost() {
     };
   }, [gameId, loadGameData, connectAdmin]);
 
-  const emit = (evt: string) => socketRef.current?.emit(evt);
+  const emit = (evt: string, payload?: unknown) => socketRef.current?.emit(evt, payload);
 
   const openVisualizer = () => {
     if (gameId) {
@@ -163,8 +163,21 @@ export default function MusicHost() {
                       Раунд {displayRound} из {live.total}
                     </span>
                   )}
-                  {/* Пауза доступна во время песни, ожидания и интро-заставок */}
-                  {['playing', 'ended', 'intro', 'blockIntro'].includes(live.phase) && (
+                  {/* Остановка возвращает игру в лобби: счёт сбрасывается,
+                      игроки остаются подключёнными и можно начать заново. */}
+                  {live.phase !== 'lobby' && (
+                    <button
+                      onClick={() => {
+                        if (confirm('Остановить игру и вернуться в лобби? Счёт будет сброшен.')) emit('admin:reset');
+                      }}
+                      className="flex items-center gap-1.5 rounded-lg border border-rose-500/30 bg-rose-500/10 px-3 py-1.5 text-sm font-bold text-rose-300 transition hover:bg-rose-500/20"
+                    >
+                      <Square size={13} /> Остановить
+                    </button>
+                  )}
+                  {/* Кнопка на месте во всех игровых фазах: она то появлялась,
+                      то исчезала, и панель дёргалась под курсором. */}
+                  {live.phase !== 'lobby' && live.phase !== 'finished' && (
                     live.paused ? (
                       <button
                         onClick={() => emit('admin:resume')}
@@ -327,38 +340,44 @@ export default function MusicHost() {
                       </p>
                     )}
                   </div>
-                  <div className="flex flex-wrap gap-3">
-                    <button
-                      onClick={() => emit('admin:reveal')}
-                      disabled={live.paused}
-                      className={`rounded-lg px-5 py-2.5 font-bold text-white transition flex items-center gap-2 ${
-                        live.paused ? 'cursor-not-allowed bg-white/10 text-zinc-500' : 'bg-white/10 hover:bg-white/20'
-                      }`}
-                      title="Доиграть отрывок, показать исполнителя на экране и перейти к следующей песне"
-                    >
-                      <Eye size={16} /> Никто не угадал
-                    </button>
+                  {/* Сетка вместо flex-wrap: четыре кнопки складывались 3+1 и
+                      выглядели неровно на широком экране. */}
+                  {/* Порядок по ходу мысли ведущего: сперва «переиграть»,
+                      потом переходы. «Никто не угадал» — завершающее действие,
+                      поэтому последняя и оранжевая. */}
+                  <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
                     <button
                       onClick={() => emit('admin:replay')}
-                      className="btn-grad rounded-lg px-5 py-2.5 font-bold text-white transition flex items-center gap-2"
+                      className="btn-grad flex items-center justify-center gap-2 rounded-lg px-4 py-2.5 font-bold text-white transition"
                     >
                       <RefreshCw size={16} /> Включить ещё раз
                     </button>
                     <button
                       onClick={() => emit('admin:playon')}
                       disabled={live.paused}
-                      className={`rounded-lg px-5 py-2.5 font-bold text-white transition flex items-center gap-2 ${
+                      className={`flex items-center justify-center gap-2 rounded-lg px-4 py-2.5 font-bold text-white transition ${
                         live.paused ? 'cursor-not-allowed bg-white/10 text-zinc-500' : 'bg-emerald-600 hover:bg-emerald-500'
                       }`}
-                      title="Никто не угадал? Продолжить песню с места остановки, без ограничения отрывка"
+                      title="Продолжить песню с места остановки, без ограничения отрезка"
                     >
                       <Play size={16} /> Доиграть дальше
                     </button>
                     <button
                       onClick={() => emit('admin:skip')}
-                      className="rounded-lg bg-amber-600 hover:bg-amber-500 px-5 py-2.5 font-bold text-white transition flex items-center gap-2"
+                      className="flex items-center justify-center gap-2 rounded-lg bg-white/10 px-4 py-2.5 font-bold text-zinc-200 transition hover:bg-white/20"
+                      title="Молча перейти к следующей песне — ответ не показывается"
                     >
                       Следующая песня ⏭
+                    </button>
+                    <button
+                      onClick={() => emit('admin:reveal')}
+                      disabled={live.paused}
+                      className={`flex items-center justify-center gap-2 rounded-lg px-4 py-2.5 font-bold text-white transition ${
+                        live.paused ? 'cursor-not-allowed bg-white/10 text-zinc-500' : 'bg-amber-600 hover:bg-amber-500'
+                      }`}
+                      title="Доиграть отрывок, показать исполнителя на экране и перейти к следующей песне"
+                    >
+                      <Eye size={16} /> Никто не угадал
                     </button>
                   </div>
                 </div>
@@ -467,95 +486,115 @@ export default function MusicHost() {
             </div>
           )}
 
-          {/* Таблица команд (командный режим) */}
-          {live?.mode === 'team' && (
+          {/* Участники: в командном режиме — команда, а внутри неё игроки.
+              Плоский список рядом с таблицей команд заставлял глазами сшивать
+              одно с другим. Длинные названия обрезаем — они ломали вёрстку. */}
+          {live?.mode === 'team' ? (
             <div className="glass p-6">
-              <h3 className="text-lg font-bold text-zinc-100 flex items-center gap-2 mb-4">
+              <h3 className="mb-4 flex items-center gap-2 text-lg font-bold text-zinc-100">
                 <Users size={18} className="text-violet-400" />
                 Команды ({live.teams?.length || 0})
               </h3>
               {live.teams && live.teams.length > 0 ? (
-                <div className="grid gap-2">
-                  {[...live.teams].sort((a, b) => b.score - a.score).map((t, index) => (
-                    <div
-                      key={t.id}
-                      className={`flex items-center justify-between rounded-lg px-4 py-3 bg-white/[0.02] border border-white/5 ${
-                        t.locked ? 'opacity-60' : ''
-                      } ${t.ready > 0 ? 'ring-1 ring-emerald-400/30 bg-emerald-500/[0.01]' : ''}`}
-                    >
-                      <div className="flex items-center gap-3">
-                        <span className="w-5 text-sm font-bold text-zinc-500">#{index + 1}</span>
-                        <span className="font-semibold text-zinc-100">👥 {t.name}</span>
-                        <span className="text-[11px] text-zinc-500">в сети {t.online}{t.ready > 0 ? ` · готовы ${t.ready}` : ''}</span>
-                        {t.locked && (
-                          <span className="text-[10px] text-rose-300 uppercase tracking-wider bg-rose-500/10 px-1.5 py-0.5 rounded">
-                            заблокирована
+                <div className="grid gap-3">
+                  {[...live.teams].sort((a, b) => b.score - a.score).map((t, index) => {
+                    const members = live.players.filter((p) => p.teamId === t.id);
+                    return (
+                      <div
+                        key={t.id}
+                        className={`rounded-lg border border-white/5 bg-white/[0.02] ${
+                          t.locked ? 'opacity-60' : ''
+                        } ${t.ready > 0 ? 'ring-1 ring-emerald-400/30' : ''}`}
+                      >
+                        <div className="flex items-center gap-3 px-4 py-3">
+                          <span className="w-5 shrink-0 text-sm font-bold text-zinc-500">#{index + 1}</span>
+                          <span className="min-w-0 flex-1 truncate font-semibold text-zinc-100" title={t.name}>
+                            👥 {t.name}
                           </span>
-                        )}
+                          {t.locked && (
+                            <span className="shrink-0 rounded bg-rose-500/10 px-1.5 py-0.5 text-[10px] uppercase tracking-wider text-rose-300">
+                              заблокирована
+                            </span>
+                          )}
+                          <span className="shrink-0 text-lg font-bold text-violet-300">{t.score}</span>
+                          <button
+                            onClick={() => {
+                              if (confirm(`Убрать команду «${t.name}» вместе с участниками?`)) {
+                                emit('admin:remove-team', { teamId: t.id });
+                              }
+                            }}
+                            className="shrink-0 rounded p-1 text-zinc-500 transition hover:bg-rose-500/10 hover:text-rose-300"
+                            title="Убрать команду"
+                          >
+                            <Trash2 size={15} />
+                          </button>
+                        </div>
+                        <div className="border-t border-white/5 px-4 py-2">
+                          {members.length === 0 ? (
+                            <p className="py-1 text-xs text-zinc-600">Никого не осталось</p>
+                          ) : members.map((p) => (
+                            <div key={p.id} className="flex items-center gap-2 py-1">
+                              <span className={`min-w-0 flex-1 truncate text-sm ${p.connected ? 'text-zinc-300' : 'text-zinc-600'}`} title={p.name}>
+                                {p.name}
+                              </span>
+                              {!p.connected && <span className="shrink-0 text-[10px] uppercase text-zinc-600">оффлайн</span>}
+                              {p.ready && <span className="shrink-0 text-[10px] uppercase text-emerald-400">готов</span>}
+                              <button
+                                onClick={() => emit('admin:kick', { playerId: p.id })}
+                                className="shrink-0 rounded p-0.5 text-zinc-600 transition hover:bg-rose-500/10 hover:text-rose-300"
+                                title="Отключить игрока"
+                              >
+                                <UserMinus size={14} />
+                              </button>
+                            </div>
+                          ))}
+                        </div>
                       </div>
-                      <span className="font-bold text-lg text-violet-300">{t.score} очков</span>
+                    );
+                  })}
+                </div>
+              ) : (
+                <p className="py-6 text-center text-sm text-zinc-500">Пока ни одна команда не подключилась.</p>
+              )}
+            </div>
+          ) : (
+            <div className="glass p-6">
+              <h3 className="mb-4 flex items-center gap-2 text-lg font-bold text-zinc-100">
+                <Users size={18} className="text-violet-400" />
+                Участники ({live?.players.length || 0})
+              </h3>
+              {live?.players && live.players.length > 0 ? (
+                <div className="grid gap-2">
+                  {[...live.players].sort((a, b) => b.score - a.score).map((p, index) => (
+                    <div
+                      key={p.id}
+                      className={`flex items-center gap-3 rounded-lg border border-white/5 bg-white/[0.02] px-4 py-3 ${
+                        !p.connected ? 'opacity-40' : ''
+                      } ${p.ready ? 'ring-1 ring-emerald-400/30' : ''}`}
+                    >
+                      <span className="w-5 shrink-0 text-sm font-bold text-zinc-500">#{index + 1}</span>
+                      <span className={`min-w-0 flex-1 truncate font-semibold ${p.connected ? 'text-zinc-100' : 'text-zinc-500'}`} title={p.name}>
+                        {p.name}
+                      </span>
+                      {!p.connected && <span className="shrink-0 text-[10px] uppercase text-zinc-500">оффлайн</span>}
+                      {p.locked && <span className="shrink-0 text-[10px] uppercase text-rose-300">заблокирован</span>}
+                      {p.ready && <span className="shrink-0 text-xs font-semibold text-emerald-400">готов</span>}
+                      <span className="shrink-0 text-lg font-bold text-violet-300">{p.score}</span>
+                      <button
+                        onClick={() => emit('admin:kick', { playerId: p.id })}
+                        className="shrink-0 rounded p-1 text-zinc-600 transition hover:bg-rose-500/10 hover:text-rose-300"
+                        title="Отключить игрока"
+                      >
+                        <UserMinus size={15} />
+                      </button>
                     </div>
                   ))}
                 </div>
               ) : (
-                <p className="text-zinc-500 text-sm text-center py-6">Пока ни одна команда не подключилась.</p>
+                <p className="py-6 text-center text-sm text-zinc-500">Пока никто не подключился.</p>
               )}
             </div>
           )}
-
-          {/* Таблица игроков */}
-          <div className="glass p-6">
-            <h3 className="text-lg font-bold text-zinc-100 flex items-center gap-2 mb-4">
-              <Users size={18} className="text-violet-400" />
-              Участники ({live?.players.length || 0})
-            </h3>
-            {live?.players && live.players.length > 0 ? (
-              <div className="grid gap-2">
-                {[...live.players].sort((a, b) => b.score - a.score).map((p, index) => (
-                  <div
-                    key={p.id}
-                    className={`flex items-center justify-between rounded-lg px-4 py-3 bg-white/[0.02] border border-white/5 transition ${
-                      !p.connected ? 'opacity-40' : ''
-                    } ${p.ready ? 'ring-1 ring-emerald-400/30 bg-emerald-500/[0.01]' : ''}`}
-                  >
-                    <div className="flex items-center gap-3">
-                      <span className="w-5 text-sm font-bold text-zinc-500">#{index + 1}</span>
-                      <span className={`font-semibold ${p.connected ? 'text-zinc-100' : 'text-zinc-500'}`}>
-                        {p.name}
-                      </span>
-                      {live?.mode === 'team' && p.teamName && (
-                        <span className="text-[10px] text-violet-300 uppercase tracking-wider bg-violet-500/10 px-1.5 py-0.5 rounded">
-                          👥 {p.teamName}
-                        </span>
-                      )}
-                      {!p.connected && (
-                        <span className="text-[10px] text-zinc-500 uppercase tracking-wider bg-white/5 px-1.5 py-0.5 rounded">
-                          оффлайн
-                        </span>
-                      )}
-                      {p.locked && (
-                        <span className="text-[10px] text-rose-300 uppercase tracking-wider bg-rose-500/10 px-1.5 py-0.5 rounded">
-                          заблокирован
-                        </span>
-                      )}
-                    </div>
-                    <div className="flex items-center gap-3">
-                      {p.ready && (
-                        <span className="text-xs text-emerald-400 font-semibold bg-emerald-500/10 px-2 py-0.5 rounded-full">
-                          готов
-                        </span>
-                      )}
-                      {live?.mode !== 'team' && (
-                        <span className="font-bold text-lg text-violet-300">{p.score} очков</span>
-                      )}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <p className="text-zinc-500 text-sm text-center py-6">Пока никто не подключился.</p>
-            )}
-          </div>
         </div>
 
         {/* Правая колонка: Плейлист / Песни */}

@@ -4,7 +4,7 @@ import NoSleep from 'nosleep.js';
 import { createSocket } from '../services/socket';
 import SongCover from '../components/SongCover';
 import { musicService } from '../services/music';
-import { vibrate } from '../services/haptics';
+import { vibrate, hapticTap } from '../services/haptics';
 import { MusicState } from '../../../core/types';
 
 // Выбор команды: чипы уже созданных + «новая». Один и тот же виджет на экране
@@ -583,6 +583,7 @@ export default function MusicPlay() {
           <button
             onClick={() => {
               vibrate(180);
+              hapticTap(); // iOS: отклик разрешён только внутри click
               keepAwake();
               socketRef.current?.emit('player:ready', { ready: !(me && me.ready) });
             }}
@@ -759,11 +760,10 @@ export default function MusicPlay() {
         <Buzzer
           label={
             state?.buzzed?.id === myGroupId
-              ? isTeam
-                ? `Отвечает твоя команда${state?.buzzed?.by ? ` · ${state.buzzed.by}` : ''}`
-                : 'Ты первый!'
-              : `Отвечает ${state?.buzzed?.name || '…'}${isTeam && state?.buzzed?.by ? ` · ${state.buzzed.by}` : ''}`
+              ? isTeam ? 'Отвечает твоя команда' : 'Ты первый!'
+              : `Отвечает ${state?.buzzed?.name || '…'}`
           }
+          sub={isTeam && state?.buzzed?.by ? state.buzzed.by : undefined}
           btnClass={
             state?.buzzed?.id === myGroupId
               ? 'qgs-mobile-buzzer--success scale-[1.02]'
@@ -818,25 +818,39 @@ export default function MusicPlay() {
 // Большая кнопка-баззер. onPointerDown — раньше click, меньше задержка.
 function Buzzer({
   label,
+  sub,
   onBuzz,
   btnClass,
 }: {
   label: string;
+  sub?: string; // вторая строка (кто нажал) — вместо точки-разделителя
   onBuzz?: () => void;
   btnClass: string;
 }) {
   const disabled = !onBuzz;
+  // Длинные названия команд («Ааааа…аааа») распирали круг. Ужимаем шрифт по
+  // длине и разрешаем перенос по буквам, чтобы текст остался внутри.
+  const size = label.length > 28 ? 'text-lg' : label.length > 18 ? 'text-xl' : 'text-3xl';
   return (
     <button
-      onPointerDown={(e) => {
+      // Нажатие обрабатываем на pointerdown — это самый ранний момент, и в
+      // гонке за баззер он решает. preventDefault здесь НЕ зовём: он подавлял
+      // последующий click, а на iOS тактильный отклик разрешён только после
+      // клика. Двойного срабатывания нет — onBuzz висит только тут.
+      onPointerDown={() => {
         if (disabled || !onBuzz) return;
-        e.preventDefault();
         onBuzz();
       }}
+      onClick={() => { if (!disabled) hapticTap(); }}
       disabled={disabled}
-      className={`qgs-mobile-buzzer select-none touch-none flex h-64 w-64 items-center justify-center rounded-full text-3xl font-black text-center p-4 transition-all duration-500 transform active:scale-95 ${btnClass}`}
+      className={`qgs-mobile-buzzer select-none touch-none flex h-64 w-64 flex-col items-center justify-center gap-1 rounded-full p-6 text-center font-black transition-all duration-500 transform active:scale-95 ${btnClass}`}
     >
-      <span className="relative z-10">{label}</span>
+      <span className={`relative z-10 w-full break-words leading-tight ${size}`}>{label}</span>
+      {sub && (
+        <span className="relative z-10 w-full truncate text-sm font-semibold opacity-80" title={sub}>
+          {sub}
+        </span>
+      )}
     </button>
   );
 }

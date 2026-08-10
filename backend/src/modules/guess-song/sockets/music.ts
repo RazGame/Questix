@@ -182,6 +182,16 @@ export const registerMusicSockets = (io: Server): void => {
       });
     }
 
+    // Действия с параметром — отдельно от таблицы выше, она без аргументов.
+    socket.on('admin:kick', (data: any) => {
+      if (role !== 'admin' || !gameId || !data?.playerId) return;
+      getSession(io, gameId).kickPlayer(String(data.playerId));
+    });
+    socket.on('admin:remove-team', (data: any) => {
+      if (role !== 'admin' || !gameId || !data?.teamId) return;
+      getSession(io, gameId).removeTeam(String(data.teamId));
+    });
+
     socket.on('screen:ended', () => {
       if (role !== 'screen' || !gameId) return;
       getSession(io, gameId).clipEnded();

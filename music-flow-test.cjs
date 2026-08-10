@@ -154,10 +154,13 @@ async function api(method, path, body, token) {
   await sleep(250);
   admin.emit('admin:wrong');
   await sleep(300);
-  check('wrong locks player + resumes', adminState && adminState.phase === 'playing' && playerState.players[0].locked === true);
+  // Игрок один: после неверного ответа отвечать стало некому, поэтому сервер
+  // сразу снимает блокировку и даёт ещё попытку (иначе песня доигрывает
+  // в тишине). Блокировку при живых соперниках проверяет team-open-тест.
+  check('wrong resumes + снимает блокировку, раз отвечать некому',
+    adminState && adminState.phase === 'playing' && playerState.players[0].locked === false);
 
-  // 10. «Никто не угадал»: единственный игрок заблокирован после неверного
-  // ответа — пульт это видит (anyArmed=false) и раскрывает ответ без очков.
+  // 10. «Никто не угадал»: ведущий раскрывает ответ сам, очки никому.
   admin.emit('admin:reset');
   await sleep(300);
   player.emit('player:ready', { ready: true });
@@ -171,7 +174,7 @@ async function api(method, path, body, token) {
   await sleep(250);
   admin.emit('admin:wrong');
   await sleep(350);
-  check('anyArmed false когда все заблокированы', adminState && adminState.anyArmed === false);
+  check('после снятия блокировки снова можно отвечать', adminState && adminState.anyArmed === true);
   const scoreBeforeReveal = adminState.players[0].score;
   admin.emit('admin:reveal');
   await sleep(300);

@@ -131,7 +131,7 @@ select.input-dark optgroup {
     opacity: 0;
     filter: blur(6px);
   }
-  14%, 78% {
+  9%, 88% {
     transform: translateY(0);
     opacity: 1;
     filter: blur(0);
@@ -169,7 +169,10 @@ select.input-dark optgroup {
 .qgs-pulse { animation: qgs-pulse 0.9s ease-in-out infinite; }
 .qgs-pop { animation: qgs-pop 0.6s cubic-bezier(0.22, 1, 0.36, 1); }
 .qgs-fade-in { animation: qgs-fade-in 0.6s ease-out both; }
-.qgs-answer-toast { animation: qgs-answer-toast 4.2s cubic-bezier(0.2, 1, 0.22, 1) both; }
+/* Длительность подогнана под фазу показа ответа на сервере
+   (REVEAL_PLAY_MS 5000 + REVEAL_FADE_MS 1500): раньше всплывашка
+   уезжала за три секунды до конца раунда. */
+.qgs-answer-toast { animation: qgs-answer-toast 6.4s cubic-bezier(0.2, 1, 0.22, 1) both; }
 .qgs-buzz-card-in { animation: qgs-buzz-card-in 0.52s cubic-bezier(0.2, 1, 0.22, 1) both; }
 .qgs-buzz-card-out { animation: qgs-buzz-card-out 0.34s cubic-bezier(0.4, 0, 0.2, 1) both; }
 
