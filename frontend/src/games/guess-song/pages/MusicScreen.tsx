@@ -4,6 +4,7 @@ import NoSleep from 'nosleep.js';
 import { createSocket } from '../services/socket';
 import SongCover from '../components/SongCover';
 import { FloatingReactions, ReactionFlyItem } from '../components/FloatingReactions';
+import { Leaderboard } from '../components/Leaderboard';
 import { musicService, musicCoverSrc, songArtworkSrc } from '../services/music';
 import { MusicState } from '../../../core/types';
 
@@ -1164,9 +1165,8 @@ export default function MusicScreen() {
               .map((t) => ({ id: t.id, name: t.name, score: t.score }))
           : [...(state?.players || [])].sort((a, b) => b.score - a.score)
               .map((p) => ({ id: p.id, name: p.name, score: p.score }));
-        const medal = ['🥇', '🥈', '🥉'];
         return (
-          <div className="qgs-fade-in flex w-full max-w-3xl flex-col items-center">
+          <div className="qgs-fade-in flex w-full flex-col items-center">
             <p className="mb-2 text-sm font-extrabold uppercase tracking-[0.3em] text-violet-300">
               Промежуточные итоги
             </p>
@@ -1176,25 +1176,7 @@ export default function MusicScreen() {
             {rows.length === 0 ? (
               <p className="text-lg text-zinc-400">Счёт ещё не открыт.</p>
             ) : (
-              <div className="w-full space-y-2">
-                {rows.map((r, i) => (
-                  <div
-                    key={r.id}
-                    className={`flex items-center gap-4 rounded-xl border px-5 py-3 ${
-                      i === 0
-                        ? 'border-amber-300/40 bg-amber-400/10'
-                        : 'border-white/5 bg-white/[0.03]'
-                    }`}
-                  >
-                    <span className="w-10 shrink-0 text-center text-2xl">{medal[i] || ''}</span>
-                    <span className="w-8 shrink-0 font-mono text-lg font-bold text-zinc-500">{i + 1}</span>
-                    <span className="min-w-0 flex-1 truncate text-left font-display text-2xl font-bold" title={r.name}>
-                      {r.name}
-                    </span>
-                    <span className="shrink-0 font-display text-3xl font-black text-violet-300">{r.score}</span>
-                  </div>
-                ))}
-              </div>
+              <Leaderboard rows={rows} />
             )}
             {introLeft != null && !state?.paused && (
               <p className="mt-6 font-mono text-lg text-zinc-400">
@@ -1278,58 +1260,19 @@ export default function MusicScreen() {
       })()}
 
       {phase === 'finished' && (
-        <div className="glass p-10 w-full max-w-2xl rounded-2xl border border-violet-500/20 bg-surface/80 backdrop-blur-xl shadow-2xl">
-          <h2 className="font-display text-4xl font-extrabold mb-8 bg-gradient-to-r from-amber-300 via-violet-300 to-fuchsia-300 bg-clip-text text-transparent">
+        <div className="glass w-full max-w-[94rem] rounded-2xl border border-violet-500/20 bg-surface/80 p-10 shadow-2xl backdrop-blur-xl">
+          <h2 className="font-display mb-8 bg-gradient-to-r from-amber-300 via-violet-300 to-fuchsia-300 bg-clip-text text-4xl font-extrabold text-transparent">
             🏆 Итоговая таблица результатов
           </h2>
-          
+
           {standings.length > 0 ? (
-            <div className="space-y-3">
-              {[...standings]
-                .sort((a, b) => b.score - a.score)
-                .map((p, i) => {
-                  let badge = '';
-                  let rowClass = 'bg-white/5 border border-white/5';
-                  let textClass = 'text-zinc-100';
-                  let scoreClass = 'text-violet-300';
-                  
-                  if (i === 0) {
-                    badge = '🥇';
-                    rowClass = 'bg-amber-400/10 border border-amber-400/30 shadow-lg shadow-amber-950/20';
-                    textClass = 'text-amber-200 text-lg font-bold';
-                    scoreClass = 'text-amber-300 text-xl font-extrabold';
-                  } else if (i === 1) {
-                    badge = '🥈';
-                    rowClass = 'bg-zinc-400/10 border border-zinc-400/30';
-                    textClass = 'text-zinc-200 text-md font-semibold';
-                    scoreClass = 'text-zinc-300 font-bold';
-                  } else if (i === 2) {
-                    badge = '🥉';
-                    rowClass = 'bg-amber-700/10 border border-amber-700/30';
-                    textClass = 'text-amber-600/80 text-md';
-                    scoreClass = 'text-amber-600 font-bold';
-                  }
-                  
-                  return (
-                    <div
-                      key={p.id}
-                      className={`flex items-center justify-between rounded-xl px-6 py-4 transition-all duration-300 ${rowClass}`}
-                    >
-                      <div className="flex items-center gap-3">
-                        <span className="w-8 text-left text-lg font-bold text-zinc-500">
-                          {badge || `#${i + 1}`}
-                        </span>
-                        <span className={textClass}>{p.name}</span>
-                      </div>
-                      <span className={`font-mono ${scoreClass}`}>{p.score} очков</span>
-                    </div>
-                  );
-                })}
+            <div className="flex justify-center">
+              <Leaderboard rows={standings} />
             </div>
           ) : (
-            <div className="py-12 text-center text-zinc-400 text-lg">
+            <div className="py-12 text-center text-lg text-zinc-400">
               <p>Участники не успели подключиться или набрать очки.</p>
-              <p className="text-sm text-zinc-500 mt-2">Запустите новую игру для подключения игроков!</p>
+              <p className="mt-2 text-sm text-zinc-500">Запустите новую игру для подключения игроков!</p>
             </div>
           )}
         </div>

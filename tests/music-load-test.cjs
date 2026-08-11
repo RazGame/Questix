@@ -16,6 +16,11 @@ const PLAYERS = Number(process.env.PLAYERS || 30);
 const SONGS = Number(process.env.SONGS || 8);
 const BURST = Number(process.env.BURST || Math.min(12, PLAYERS));
 const CONNECT_TIMEOUT_MS = 8000;
+// Перед первой песней играет заставка со списком блоков, между блоками —
+// промежуточные итоги и анонс следующего. Ждать фазу playing надо с их учётом,
+// иначе тест падает на ровном месте.
+const INTRO_WAIT_MS = 16000;
+const BLOCK_WAIT_MS = 30000;
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 const jitter = (maxMs) => Math.floor(Math.random() * maxMs);
@@ -225,7 +230,7 @@ async function emitBuzzBurst(playerSockets, state, lockedIds = new Set()) {
     check('all players ready', admin._state.players.every((player) => player.ready));
 
     admin.emit('admin:start');
-    await waitFor('game playing', () => admin._state?.phase === 'playing', 5000);
+    await waitFor('game playing', () => admin._state?.phase === 'playing', INTRO_WAIT_MS);
     check('game starts playing', admin._state.phase === 'playing');
     assertCoreState('state invariant after start', admin._state, PLAYERS);
 
@@ -257,7 +262,7 @@ async function emitBuzzBurst(playerSockets, state, lockedIds = new Set()) {
     check('reconnect restores same player', true, disconnectedVictim.name);
 
     for (let round = 0; round < SONGS; round += 1) {
-      await waitFor(`round ${round + 1} playing`, () => admin._state?.phase === 'playing' || admin._state?.phase === 'finished', 5000);
+      await waitFor(`round ${round + 1} playing`, () => admin._state?.phase === 'playing' || admin._state?.phase === 'finished', BLOCK_WAIT_MS);
       if (admin._state.phase === 'finished') break;
 
       assertCoreState(`round ${round + 1} invariant before buzz`, admin._state, PLAYERS);
@@ -313,7 +318,7 @@ async function emitBuzzBurst(playerSockets, state, lockedIds = new Set()) {
       admin.emit('admin:skip');
       await waitFor(`round ${round + 1} advances`, () => {
         return admin._state?.phase === 'playing' || admin._state?.phase === 'finished';
-      }, 3500);
+      }, BLOCK_WAIT_MS); // следующая песня может оказаться уже в новом блоке
     }
 
     await waitFor('game finished', () => admin._state?.phase === 'finished', 5000);
