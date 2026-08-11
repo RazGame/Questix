@@ -173,6 +173,13 @@ export default function MusicScreen() {
   // Узел обратного воспроизведения: <audio> задом наперёд не умеет, поэтому
   // отрезок декодируется в буфер и разворачивается по сэмплам.
   const reverseNodeRef = useRef<AudioBufferSourceNode | null>(null);
+  // Признак «этот раунд играется задом наперёд». Ставится ДО декодирования:
+  // оно занимает сотни миллисекунд, и без флага синхронизация по состоянию
+  // успевала запустить обычную дорожку — в зале звучали обе разом.
+  const reverseRoundRef = useRef(false);
+  // Параметры текущего отрезка: на показе ответа обратный раунд переигрывается
+  // нормально, и для этого нужно знать, что именно играло.
+  const lastPlayRef = useRef<{ fileUrl: string; startSec: number; endSec: number | null } | null>(null);
   // Частицы, летящие из центра к краям (создают ощущение энергии наружу).
   const particlesRef = useRef<
     { angle: number; r: number; speed: number; life: number; max: number; w: number }[]
@@ -331,6 +338,7 @@ export default function MusicScreen() {
   };
 
   const stopReverse = () => {
+    reverseRoundRef.current = false;
     const node = reverseNodeRef.current;
     reverseNodeRef.current = null;
     if (!node) return;
@@ -345,9 +353,11 @@ export default function MusicScreen() {
    */
   const playReversed = async (fileUrl: string, startSec: number, endSec: number | null) => {
     const e = initAudio();
-    if (e.ctx.state === 'suspended') await e.ctx.resume();
     stopReverse();
+    reverseRoundRef.current = true; // до await: декодирование не мгновенное
+    if (e.ctx.state === 'suspended') await e.ctx.resume();
     e.audio.pause();
+    segmentRef.current = { start: startSec || 0, end: endSec, active: true, ended: false };
 
     const raw = await fetch(apiOrigin + fileUrl).then((r) => r.arrayBuffer());
     const decoded = await e.ctx.decodeAudioData(raw);
@@ -382,6 +392,7 @@ export default function MusicScreen() {
   };
 
   const playFrom = (fileUrl: string, startSec: number, endSec: number | null, nextUrl?: string | null) => {
+    stopReverse(); // заодно снимает признак обратного раунда
     const e = initAudio();
     if (e.ctx.state === 'suspended') e.ctx.resume();
     // Сбросываем калибровку динамического диапазона и сглаживание для нового трека
@@ -419,6 +430,16 @@ export default function MusicScreen() {
   const fadeAndStop = (playMs: number, fadeMs: number) => {
     segmentRef.current.active = false; // во время доигрыша/фейда не считаем конец отрезка
     const e = engineRef.current;
+    if (reverseRoundRef.current && e) {
+      // Ответ раскрыт — загадка кончилась, и слушать задом наперёд больше
+      // незачем. Переигрываем тот же отрезок нормально: зал наконец узнаёт
+      // песню, которую только что мучительно угадывал.
+      void e.ctx.resume();
+      const last = lastPlayRef.current;
+      stopReverse();
+      if (last) playFrom(last.fileUrl, last.startSec, last.endSec);
+      segmentRef.current.active = false;
+    }
     if (e) {
       if (e.ctx.state === 'suspended') e.ctx.resume();
       e.gain.gain.cancelScheduledValues(e.ctx.currentTime);
@@ -439,7 +460,46 @@ export default function MusicScreen() {
     }, playMs);
   };
 
+  /**
+   * Пауза обратного отрезка.
+   *
+   * AudioBufferSourceNode остановить и запустить заново нельзя — узел
+   * одноразовый. Поэтому усыпляем весь контекст: буфер замирает ровно на
+   * месте и просыпается там же. Раньше вместо этого узел убивали, и после
+   * «продолжить» зал слышал обычную дорожку с начала отрезка.
+   */
+  const fadePauseReverse = (fadeMs = ANSWER_FADE_OUT_MS) => {
+    const e = engineRef.current;
+    if (!e) return;
+    const now = e.ctx.currentTime;
+    e.gain.gain.cancelScheduledValues(now);
+    e.gain.gain.setValueAtTime(e.gain.gain.value, now);
+    e.gain.gain.linearRampToValueAtTime(0.0001, now + fadeMs / 1000);
+    window.setTimeout(() => {
+      const current = engineRef.current;
+      if (!current || !reverseRoundRef.current) return;
+      // Конец отрезка сервер тоже шлёт паузой. Узел к этому моменту уже
+      // отыграл — усыплять контекст незачем, иначе он спит между песнями.
+      if (!reverseNodeRef.current) return;
+      void current.ctx.suspend();
+    }, fadeMs + 40);
+  };
+
+  const fadeResumeReverse = (fadeMs = ANSWER_RESUME_FADE_IN_MS) => {
+    const e = engineRef.current;
+    if (!e) return;
+    segmentRef.current.active = true;
+    segmentRef.current.ended = false;
+    void e.ctx.resume().then(() => {
+      const now = e.ctx.currentTime;
+      e.gain.gain.cancelScheduledValues(now);
+      e.gain.gain.setValueAtTime(0.0001, now);
+      e.gain.gain.linearRampToValueAtTime(1, now + fadeMs / 1000);
+    });
+  };
+
   const fadePause = (fadeMs = ANSWER_FADE_OUT_MS) => {
+    if (reverseRoundRef.current) { fadePauseReverse(fadeMs); return; }
     const e = engineRef.current;
     if (!e || e.audio.paused) return;
     const now = e.ctx.currentTime;
@@ -454,6 +514,7 @@ export default function MusicScreen() {
   };
 
   const fadeResume = (fadeMs = ANSWER_RESUME_FADE_IN_MS) => {
+    if (reverseRoundRef.current) { fadeResumeReverse(fadeMs); return; }
     const e = engineRef.current;
     if (!e) return;
     if (e.ctx.state === 'suspended') e.ctx.resume();
@@ -630,6 +691,7 @@ export default function MusicScreen() {
     });
     socket.on('cmd', (m: any) => {
       if (m.action === 'play') {
+        lastPlayRef.current = { fileUrl: m.fileUrl, startSec: m.startSec, endSec: m.endSec ?? null };
         if (m.reverse) {
           void playReversed(m.fileUrl, m.startSec, m.endSec ?? null).catch(() => {
             // не смогли развернуть — играем как обычно, раунд важнее эффекта
@@ -641,16 +703,18 @@ export default function MusicScreen() {
         }
         preloadCover(m.cover, m.songId);
       }
-      else if (m.action === 'pause') { stopReverse(); fadePause(m.fadeMs); }
+      else if (m.action === 'pause') { fadePause(m.fadeMs); }
       else if (m.action === 'resume') {
         fadeResume(m.fadeMs);
       }
       else if (m.action === 'playOn') {
-        // Доигрываем дальше: снимаем ограничение отрезка и продолжаем с места остановки.
-        segmentRef.current.end = null;
+        // Доигрываем дальше: снимаем ограничение отрезка и продолжаем с места
+        // остановки. У обратного раунда буфер уже вырезан по отрезку, дальше
+        // играть нечего — просто продолжаем то, что осталось.
+        if (!reverseRoundRef.current) segmentRef.current.end = null;
         fadeResume(m.fadeMs);
       }
-      else if (m.action === 'fadeAndStop') { stopReverse(); fadeAndStop(m.playMs, m.fadeMs); }
+      else if (m.action === 'fadeAndStop') { fadeAndStop(m.playMs, m.fadeMs); }
       else if (m.action === 'stop') {
         segmentRef.current.active = false;
         stopReverse();
@@ -737,6 +801,19 @@ export default function MusicScreen() {
     const e = initAudio();
     const phase = state.phase;
     const curFile = state.fileUrl;
+
+    // Обратным раундом управляют только команды ведущего. Синхронизация
+    // здесь работает с тегом <audio>, а он в этом режиме молчит: если ей не
+    // запретить, она запускает обычную дорожку поверх развёрнутой — и зал
+    // слышит две песни разом.
+    // Ориентируемся на собственный флаг, а не на reverseMode из состояния:
+    // после раскрытия ответа отрезок намеренно переигрывается прямо, а
+    // reverseMode у песни при этом остаётся выставленным — по нему мы бы
+    // сами же и заглушили дорожку.
+    if (reverseRoundRef.current) {
+      if (!e.audio.paused) e.audio.pause();
+      return;
+    }
 
     if (['playing', 'buzzed', 'reveal'].includes(phase) && curFile) {
       const targetSrc = apiOrigin + curFile;
