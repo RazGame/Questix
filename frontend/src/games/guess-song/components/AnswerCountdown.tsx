@@ -29,7 +29,9 @@ export const AnswerCountdown: React.FC<{
         color={color}
         glow={urgent ? 'rgba(251,113,133,0.55)' : 'rgba(252,211,77,0.45)'}
       />
-      <div className={`relative z-10 flex flex-col items-center ${urgent ? 'qgs-count-urgent' : ''}`}>
+      {/* Отдельного подрагивания у цифры нет: круг и так дышит, вдвоём они
+          начинали мельтешить. Тревогу на последних секундах держит цвет. */}
+      <div className="relative z-10 flex flex-col items-center">
         <span
           key={seconds}
           className={`qgs-count-pop font-display text-8xl font-black leading-none ${

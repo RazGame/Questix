@@ -986,8 +986,10 @@ export default function MusicScreen() {
   if (flash === 'green') centerCls = 'border-emerald-400 bg-emerald-500/25 shadow-[0_0_80px_rgba(52,211,153,0.6)]';
   else if (flash === 'red') centerCls = 'border-rose-400 bg-rose-500/25 shadow-[0_0_80px_rgba(244,63,94,0.6)]';
   else if (phase === 'buzzed') {
+    // Дышит в обоих случаях. Дуга лежит в том же контейнере, что и рамка,
+    // поэтому масштабируется вместе с ней и от неё не отрывается.
     centerCls = countdown.active
-      ? 'border-amber-300/20 bg-surface/70'
+      ? 'border-amber-300/20 bg-surface/70 qgs-pulse'
       : 'border-amber-300 bg-surface/70 qgs-pulse';
   }
   else if (ringOnBorder) centerCls = 'border-violet-400/15 bg-surface/70';
