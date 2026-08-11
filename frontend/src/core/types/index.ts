@@ -70,12 +70,17 @@ export interface Song {
   file: string | null;
   status: 'pending' | 'downloading' | 'ready' | 'error';
   error: string | null;
+  options?: string[]; // варианты блица (сам режим включается на блоке)
 }
 
 export interface MusicBlock {
   _id: string;
   name: string;
   songIds: string[];
+  // Режимы блока: раунд целиком играется по одним правилам.
+  blitzMode?: boolean;   // четыре варианта ответа на телефоне
+  reverseMode?: boolean; // отрезок звучит задом наперёд
+  coverHint?: boolean;   // обложка проявляется из размытия
 }
 
 export interface MusicGame {
@@ -124,7 +129,7 @@ export interface MusicState {
   phase: 'lobby' | 'intro' | 'standings' | 'blockIntro' | 'playing' | 'ended' | 'buzzed' | 'reveal' | 'finished';
   total: number;
   currentIndex: number;
-  buzzed: { id: string; name: string; by?: string } | null;
+  buzzed: { id: string; name: string; by?: string; answer?: string } | null;
   reveal: { title: string; artist: string; album: string; cover: string } | null;
   blockName: string;
   currentSongId?: string | null; // _id текущей песни плейлиста
@@ -141,6 +146,10 @@ export interface MusicState {
   fileUrl?: string | null;
   startSec?: number;
   endSec?: number | null;
+  blitzMode?: boolean;   // раунд с четырьмя вариантами ответа
+  options?: string[];    // сами варианты текущей песни
+  reverseMode?: boolean; // отрезок звучит задом наперёд
+  coverHint?: boolean;   // обложка проявляется по ходу отрезка
   nextUrl?: string | null;
   screenReady?: boolean;
 }

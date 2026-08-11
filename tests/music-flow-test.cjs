@@ -141,6 +141,50 @@ async function api(method, path, body, token) {
   await sleep(300);
   check('playing song of block B', adminState.phase === 'playing' && adminState.currentIndex === 1);
 
+  // 9b. Режимы блока: блиц с вариантами, реверс и подсказка обложкой.
+  // Включаются на БЛОК — раунд целиком идёт по одним правилам.
+  const blocksNow = (await api('GET', `/music/games/${game._id}`, null, token)).game.blocks;
+  await api('PATCH', `/music/games/${game._id}/blocks/${blocksNow[1]._id}`, {
+    blitzMode: true, reverseMode: true, coverHint: true,
+  }, token);
+  await api('PATCH', `/music/games/${game._id}/songs/${blocksNow[1].songIds[0]}`, {
+    options: ['Song B — Tester', 'Другая', 'Третья', 'Четвёртая'],
+  }, token);
+  admin.emit('admin:reset');
+  await sleep(300);
+  player.emit('player:ready', { ready: true });
+  await sleep(150);
+  admin.emit('admin:start');
+  await sleep(400);
+  admin.emit('admin:continue');
+  await sleep(400);
+  check('первый блок без режимов', adminState && adminState.blitzMode === false
+    && adminState.reverseMode === false && adminState.coverHint === false);
+  admin.emit('admin:skip');
+  await sleep(400);
+  admin.emit('admin:continue'); // пропускаем итоги
+  await sleep(300);
+  admin.emit('admin:continue'); // и анонс блока
+  await sleep(500);
+  check('во втором блоке включены все три режима', adminState && adminState.blitzMode === true
+    && adminState.reverseMode === true && adminState.coverHint === true);
+  check('варианты ответа доехали до игроков', playerState
+    && Array.isArray(playerState.options) && playerState.options.length === 4);
+
+  // В блице телефон присылает выбранный вариант, и ведущий его видит
+  player.emit('player:buzz', { answer: 'Другая' });
+  await sleep(300);
+  check('ведущий видит выбранный вариант', adminState.buzzed && adminState.buzzed.answer === 'Другая');
+  admin.emit('admin:wrong');
+  await sleep(300);
+
+  // Произвольный текст вместо варианта сервер игнорирует
+  player.emit('player:buzz', { answer: 'что угодно' });
+  await sleep(300);
+  check('чужой текст не принимается как ответ', adminState.buzzed && !adminState.buzzed.answer);
+  admin.emit('admin:wrong');
+  await sleep(300);
+
   // 10. скип последней песни → финал
   admin.emit('admin:skip');
   await sleep(300);

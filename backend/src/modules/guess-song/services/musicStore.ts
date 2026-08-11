@@ -21,6 +21,9 @@ export const generateJoinCode = async (): Promise<string> => {
 
 export interface PlaylistItem extends ISong {
   blockName: string;
+  blitzMode: boolean;   // режимы блока, к которому принадлежит песня
+  reverseMode: boolean;
+  coverHint: boolean;
 }
 
 // Упорядоченный список песен игры по блокам (для воспроизведения).
@@ -35,7 +38,13 @@ export const buildPlaylist = async (gameId: string): Promise<PlaylistItem[]> => 
   for (const block of game.blocks) {
     for (const sid of block.songIds || []) {
       const song = byId.get(String(sid));
-      if (song) list.push({ ...(song as any), blockName: block.name });
+      if (song) list.push({
+        ...(song as any),
+        blockName: block.name,
+        blitzMode: !!(block as any).blitzMode,
+        reverseMode: !!(block as any).reverseMode,
+        coverHint: !!(block as any).coverHint,
+      });
     }
   }
   return list;

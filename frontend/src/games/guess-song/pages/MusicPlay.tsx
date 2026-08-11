@@ -781,27 +781,59 @@ export default function MusicPlay() {
 
       {phase === 'playing' && (
         <>
-          <Buzzer
-            label={me?.armed ? 'ЖМИ!' : state?.paused ? '⏸ Пауза' : me?.locked ? 'Мимо' : 'Приготовься…'}
-            onBuzz={me?.armed ? () => {
-              vibrate(220);
-              keepAwake();
-              socketRef.current?.emit('player:buzz');
-            } : undefined}
-            btnClass={
-              me?.armed
-                ? 'qgs-mobile-buzzer--armed scale-[1.02] cursor-pointer'
-                : state?.paused
-                  ? 'qgs-mobile-buzzer--paused scale-95'
-                  : me?.locked
-                    ? 'qgs-mobile-buzzer--locked scale-95'
-                    : 'qgs-mobile-buzzer--idle scale-95'
-            }
-          />
+          {state?.blitzMode && state?.options && state.options.length > 0 ? (
+            <div className="w-full max-w-sm px-4 grid grid-cols-2 gap-3 my-auto z-10">
+              {state.options.map((opt, idx) => {
+                const colors = [
+                  'from-rose-600 to-red-500 hover:from-rose-500 hover:to-red-400 border-rose-400/40',
+                  'from-blue-600 to-cyan-500 hover:from-blue-500 hover:to-cyan-400 border-blue-400/40',
+                  'from-amber-600 to-yellow-500 hover:from-amber-500 hover:to-yellow-400 border-amber-400/40',
+                  'from-emerald-600 to-teal-500 hover:from-emerald-500 hover:to-teal-400 border-emerald-400/40',
+                ];
+                return (
+                  <button
+                    key={idx}
+                    disabled={!me?.armed}
+                    onPointerDown={() => {
+                      if (!me?.armed) return;
+                      vibrate(220);
+                      keepAwake();
+                      // Ведущему важно, ЧТО выбрали, а не только кто нажал
+                      socketRef.current?.emit('player:buzz', { answer: opt });
+                    }}
+                    onClick={() => { if (me?.armed) hapticTap(); }}
+                    className={`bg-gradient-to-br ${colors[idx % colors.length]} rounded-2xl p-4 min-h-[96px] flex items-center justify-center text-center font-bold text-white shadow-xl transition transform active:scale-95 text-base sm:text-lg leading-snug border ${
+                      !me?.armed ? 'opacity-50 cursor-not-allowed scale-95' : 'cursor-pointer'
+                    }`}
+                  >
+                    {opt}
+                  </button>
+                );
+              })}
+            </div>
+          ) : (
+            <Buzzer
+              label={me?.armed ? 'ЖМИ!' : state?.paused ? '⏸ Пауза' : me?.locked ? 'Мимо' : 'Приготовься…'}
+              onBuzz={me?.armed ? () => {
+                vibrate(220);
+                keepAwake();
+                socketRef.current?.emit('player:buzz');
+              } : undefined}
+              btnClass={
+                me?.armed
+                  ? 'qgs-mobile-buzzer--armed scale-[1.02] cursor-pointer'
+                  : state?.paused
+                    ? 'qgs-mobile-buzzer--paused scale-95'
+                    : me?.locked
+                      ? 'qgs-mobile-buzzer--locked scale-95'
+                      : 'qgs-mobile-buzzer--idle scale-95'
+              }
+            />
+          )}
           {me?.locked && (
             <div
               className="pointer-events-none fixed inset-x-4 z-40 mx-auto max-w-sm"
-              style={{ bottom: 'calc(env(safe-area-inset-bottom) + 1rem)' }}
+              style={{ bottom: 'calc(env(safe-area-inset-bottom) + 3.5rem)' }}
             >
               <div className="qgs-answer-toast rounded-xl border border-rose-500/20 bg-[#18070c]/95 p-3 text-left shadow-2xl shadow-rose-950/35 backdrop-blur-md">
                 <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-rose-300/80">
@@ -818,6 +850,25 @@ export default function MusicPlay() {
         </>
       )}
       </div>
+
+      {/* Панель эмодзи-реакций игроков */}
+      {joined && (
+        <div className="fixed bottom-3 left-1/2 -translate-x-1/2 z-40 flex items-center gap-1.5 rounded-full bg-black/75 px-3 py-1.5 border border-white/10 backdrop-blur-md shadow-xl">
+          {['❤️', '🔥', '🎉', '🎵', '👏', '💩'].map((emoji) => (
+            <button
+              key={emoji}
+              onClick={() => {
+                hapticTap();
+                socketRef.current?.emit('player:reaction', { emoji });
+              }}
+              className="text-xl transition transform hover:scale-125 active:scale-90 p-1 select-none"
+              title="Отправить реакцию"
+            >
+              {emoji}
+            </button>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

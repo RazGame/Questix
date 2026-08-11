@@ -30,6 +30,8 @@ const songSchema = new mongoose.Schema<ISong>(
       default: 'pending',
     },
     error: { type: String, default: null },
+    // Варианты ответа для блица. Сам режим включается на блоке.
+    options: [{ type: String }],
   },
   { timestamps: true }
 );

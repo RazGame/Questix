@@ -21,6 +21,11 @@ const verifyAdmin = (socket: Socket, game: any): boolean => {
   }
 };
 
+// Что можно отправить в зал. Список закрытый: свободный текст улетал бы на
+// проектор как есть, а это корпоратив.
+const ALLOWED_REACTIONS = new Set(['❤️', '🔥', '🎉', '🎵', '👏', '💩']);
+const REACTION_INTERVAL_MS = 1000;
+
 export const registerMusicSockets = (io: Server): void => {
   io.on('connection', (socket: Socket) => {
     let role: 'screen' | 'admin' | 'player' | null = null;
@@ -151,14 +156,39 @@ export const registerMusicSockets = (io: Server): void => {
       getSession(io, gameId).upsertPlayer(playerId, data && data.name);
     });
 
-    socket.on('player:buzz', () => {
+    socket.on('player:buzz', (data?: any) => {
       if (role !== 'player' || !gameId || !playerId) return;
-      getSession(io, gameId).buzz(playerId);
+      // В блице телефон присылает выбранный вариант; сервер сверяет его со
+      // списком песни и игнорирует произвольный текст.
+      const answer = typeof data?.answer === 'string' ? data.answer.slice(0, 80) : undefined;
+      getSession(io, gameId).buzz(playerId, answer);
     });
 
     socket.on('player:offline', () => {
       if (role !== 'player' || !gameId || !playerId) return;
       getSession(io, gameId).setConnected(playerId, false);
+    });
+
+    // Реакции летят на проектор перед всем залом, поэтому: только игроки,
+    // только заранее оговорённые эмодзи и не чаще раза в секунду.
+    // Иначе достаточно одного шутника, чтобы написать на экране что угодно
+    // или залить зал сотней картинок.
+    let lastReactionAt = 0;
+    socket.on('player:reaction', (data: any) => {
+      if (role !== 'player' || !gameId || !playerId) return;
+      const emoji = String(data?.emoji || '');
+      if (!ALLOWED_REACTIONS.has(emoji)) return;
+      const now = Date.now();
+      if (now - lastReactionAt < REACTION_INTERVAL_MS) return;
+      lastReactionAt = now;
+
+      const session = sessions.get(gameId);
+      if (!session) return;
+      io.to(`g:${gameId}`).emit('reaction:fly', {
+        id: `${now}-${Math.random().toString(36).slice(2, 6)}`,
+        emoji,
+        senderName: session.players.get(playerId)?.name || 'Игрок',
+      });
     });
 
     // команды ведущего (только admin-роль, права уже проверены на join)

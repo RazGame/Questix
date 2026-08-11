@@ -83,6 +83,7 @@ export interface ISong {
   file: string | null; // относительный путь в /media, когда скачано
   status: 'pending' | 'downloading' | 'ready' | 'error';
   error: string | null;
+  options?: string[]; // варианты ответа для блица (режим включается на блоке)
   createdAt?: Date;
   updatedAt?: Date;
 }

@@ -424,6 +424,10 @@ export const updateBlock = async (
       return;
     }
     if (typeof req.body?.name === 'string') block.name = req.body.name.trim();
+    // Режимы блока: раунд целиком играется по одним правилам.
+    for (const mode of ['blitzMode', 'reverseMode', 'coverHint'] as const) {
+      if (req.body?.[mode] !== undefined) (block as any)[mode] = Boolean(req.body[mode]);
+    }
     // Переупорядочивание песен: songIds — перестановка текущего состава блока.
     if (Array.isArray(req.body?.songIds)) {
       const order = req.body.songIds.map(String);
@@ -510,6 +514,7 @@ export const addSong = async (
       preview: song?.preview || '',
       file: song?.file || null,
       status: song?.file ? 'ready' : 'pending',
+      options: Array.isArray(song?.options) ? song.options.map(String).slice(0, 4) : [],
     });
 
     block.songIds.push(created._id as any);
@@ -627,6 +632,10 @@ export const updateSong = async (
     if (req.body?.title !== undefined) patch.title = req.body.title;
     if (req.body?.artist !== undefined) patch.artist = req.body.artist;
     if (req.body?.note !== undefined) patch.note = String(req.body.note).slice(0, 500);
+    // Варианты блица: сам режим включается на блоке, здесь только тексты.
+    if (Array.isArray(req.body?.options)) {
+      patch.options = req.body.options.map((o: unknown) => String(o).slice(0, 80)).slice(0, 4);
+    }
 
     const song = await Song.findOneAndUpdate(
       { _id: req.params.songId, gameId: game._id },

@@ -3,6 +3,7 @@ import { useParams } from 'react-router-dom';
 import NoSleep from 'nosleep.js';
 import { createSocket } from '../services/socket';
 import SongCover from '../components/SongCover';
+import { FloatingReactions, ReactionFlyItem } from '../components/FloatingReactions';
 import { musicService, musicCoverSrc, songArtworkSrc } from '../services/music';
 import { MusicState } from '../../../core/types';
 
@@ -98,6 +99,9 @@ export default function MusicScreen() {
     start: 0, end: null, active: false, ended: false,
   });
   const pendingPlayRef = useRef<{ fileUrl: string; startSec: number; endSec: number | null; nextUrl?: string | null } | null>(null);
+  // Узел обратного воспроизведения: <audio> задом наперёд не умеет, поэтому
+  // отрезок декодируется в буфер и разворачивается по сэмплам.
+  const reverseNodeRef = useRef<AudioBufferSourceNode | null>(null);
   // Частицы, летящие из центра к краям (создают ощущение энергии наружу).
   const particlesRef = useRef<
     { angle: number; r: number; speed: number; life: number; max: number; w: number }[]
@@ -107,6 +111,8 @@ export default function MusicScreen() {
   const [state, setState] = useState<MusicState | null>(null);
   const [qr, setQr] = useState<string | null>(null);
   const [joinUrl, setJoinUrl] = useState('');
+  const [flyReactions, setFlyReactions] = useState<ReactionFlyItem[]>([]);
+  const [screenTheme, setScreenTheme] = useState<'classic' | 'cyberpunk' | 'party' | 'synthwave'>('classic');
   // Анимации центра: вспышка верно/неверно и показ обложки.
   const [flash, setFlash] = useState<'green' | 'red' | null>(null);
   const [showCover, setShowCover] = useState(false);
@@ -128,12 +134,15 @@ export default function MusicScreen() {
     id: string;
     name: string;
     by?: string;
+    answer?: string; // выбранный вариант в блице
     team: boolean;
     leaving: boolean;
   } | null>(null);
   const prevPhase = useRef<string | null>(null);
   // Обратный отсчёт интро-заставок (список блоков / анонс нового блока).
   const [introLeft, setIntroLeft] = useState<number | null>(null);
+  // Подсказка обложкой: 0 — сплошное пятно, 1 — картинка целиком.
+  const [hint, setHint] = useState(0);
 
   // ---------- аудио ----------
   const initAudio = () => {
@@ -213,6 +222,7 @@ export default function MusicScreen() {
   // повторные открытия окна проектора копили их, и в какой-то момент звук
   // просто переставал появляться.
   useEffect(() => () => {
+    stopReverse();
     const e = engineRef.current;
     engineRef.current = null;
     if (!e) return;
@@ -248,6 +258,57 @@ export default function MusicScreen() {
     audioReadyRef.current = true;
     socketRef.current?.emit('screen:audio-ready');
     setNeedGate(false);
+  };
+
+  const stopReverse = () => {
+    const node = reverseNodeRef.current;
+    reverseNodeRef.current = null;
+    if (!node) return;
+    try { node.onended = null; node.stop(); } catch { /* уже остановлен */ }
+  };
+
+  /**
+   * Отрезок задом наперёд. Тег <audio> отрицательную скорость не поддерживает
+   * (и не будет), поэтому единственный путь — decodeAudioData, развернуть
+   * сэмплы и проиграть буфером. Идём в тот же analyser, чтобы эквалайзер на
+   * проекторе продолжал жить.
+   */
+  const playReversed = async (fileUrl: string, startSec: number, endSec: number | null) => {
+    const e = initAudio();
+    if (e.ctx.state === 'suspended') await e.ctx.resume();
+    stopReverse();
+    e.audio.pause();
+
+    const raw = await fetch(apiOrigin + fileUrl).then((r) => r.arrayBuffer());
+    const decoded = await e.ctx.decodeAudioData(raw);
+    const from = Math.max(0, startSec || 0);
+    const to = Math.min(decoded.duration, endSec ?? decoded.duration);
+    const rate = decoded.sampleRate;
+    const length = Math.max(1, Math.floor((to - from) * rate));
+    const offset = Math.floor(from * rate);
+
+    const out = e.ctx.createBuffer(decoded.numberOfChannels, length, rate);
+    for (let ch = 0; ch < decoded.numberOfChannels; ch++) {
+      const src = decoded.getChannelData(ch);
+      const dst = out.getChannelData(ch);
+      for (let i = 0; i < length; i++) dst[i] = src[offset + length - 1 - i] || 0;
+    }
+
+    const node = e.ctx.createBufferSource();
+    node.buffer = out;
+    node.connect(e.analyser);
+    // Отрезок кончился — сообщаем серверу тем же событием, что и обычный путь
+    node.onended = () => {
+      if (reverseNodeRef.current === node) {
+        reverseNodeRef.current = null;
+        socketRef.current?.emit('screen:ended');
+      }
+    };
+    e.gain.gain.cancelScheduledValues(e.ctx.currentTime);
+    e.gain.gain.setValueAtTime(0.0001, e.ctx.currentTime);
+    e.gain.gain.linearRampToValueAtTime(1, e.ctx.currentTime + TRACK_FADE_IN_MS / 1000);
+    reverseNodeRef.current = node;
+    node.start();
   };
 
   const playFrom = (fileUrl: string, startSec: number, endSec: number | null, nextUrl?: string | null) => {
@@ -499,10 +560,18 @@ export default function MusicScreen() {
     });
     socket.on('cmd', (m: any) => {
       if (m.action === 'play') {
-        playFrom(m.fileUrl, m.startSec, m.endSec ?? null, m.nextUrl);
+        if (m.reverse) {
+          void playReversed(m.fileUrl, m.startSec, m.endSec ?? null).catch(() => {
+            // не смогли развернуть — играем как обычно, раунд важнее эффекта
+            playFrom(m.fileUrl, m.startSec, m.endSec ?? null, m.nextUrl);
+          });
+        } else {
+          stopReverse();
+          playFrom(m.fileUrl, m.startSec, m.endSec ?? null, m.nextUrl);
+        }
         preloadCover(m.cover, m.songId);
       }
-      else if (m.action === 'pause') fadePause(m.fadeMs);
+      else if (m.action === 'pause') { stopReverse(); fadePause(m.fadeMs); }
       else if (m.action === 'resume') {
         fadeResume(m.fadeMs);
       }
@@ -511,12 +580,25 @@ export default function MusicScreen() {
         segmentRef.current.end = null;
         fadeResume(m.fadeMs);
       }
-      else if (m.action === 'fadeAndStop') fadeAndStop(m.playMs, m.fadeMs);
+      else if (m.action === 'fadeAndStop') { stopReverse(); fadeAndStop(m.playMs, m.fadeMs); }
       else if (m.action === 'stop') {
         segmentRef.current.active = false;
+        stopReverse();
         const e = engineRef.current;
         if (e) { e.audio.pause(); e.audio.currentTime = 0; }
       }
+    });
+    socket.on('reaction:fly', (data: any) => {
+      const item: ReactionFlyItem = {
+        id: data.id || `${Date.now()}-${Math.random()}`,
+        emoji: data.emoji,
+        senderName: data.senderName,
+        leftPct: Math.floor(10 + Math.random() * 80),
+      };
+      setFlyReactions((prev) => [...prev.slice(-15), item]);
+      setTimeout(() => {
+        setFlyReactions((prev) => prev.filter((r) => r.id !== item.id));
+      }, 2800);
     });
     socket.on('state', (st: MusicState) => setState(st));
     return () => { socket.disconnect(); stopViz(); };
@@ -610,6 +692,25 @@ export default function MusicScreen() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [state?.phase, state?.fileUrl, state?.paused, needGate]);
 
+  // Обложка проявляется по ходу отрезка: к концу её уже почти видно, но
+  // угадать раньше — честнее и приятнее. Считаем от позиции звука, а не от
+  // таймера: тогда пауза и «включить ещё раз» не сбивают подсказку.
+  useEffect(() => {
+    if (!state?.coverHint || state.phase !== 'playing') {
+      setHint(0);
+      return;
+    }
+    const id = window.setInterval(() => {
+      const e = engineRef.current;
+      const from = state.startSec || 0;
+      const to = state.endSec ?? (from + 30);
+      const span = Math.max(1, to - from);
+      const now = e ? e.audio.currentTime : from;
+      setHint(Math.max(0, Math.min(1, (now - from) / span)));
+    }, 200);
+    return () => window.clearInterval(id);
+  }, [state?.coverHint, state?.phase, state?.startSec, state?.endSec]);
+
   // анимации центра по сменам фаз
   useEffect(() => {
     const phase = state?.phase || null;
@@ -651,6 +752,7 @@ export default function MusicScreen() {
         id: state.buzzed.id,
         name: state.buzzed.name,
         by: state.buzzed.by,
+        answer: state.buzzed.answer,
         team: state.mode === 'team',
         leaving: false,
       });
@@ -687,9 +789,16 @@ export default function MusicScreen() {
   else if (flash === 'red') centerCls = 'border-rose-400 bg-rose-500/25 shadow-[0_0_80px_rgba(244,63,94,0.6)]';
   else if (phase === 'buzzed') centerCls = 'border-amber-300 bg-surface/70 qgs-pulse';
 
+  const themeStyles = {
+    classic: '',
+    cyberpunk: 'bg-[#06030e] text-cyan-200 bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-fuchsia-950/40 via-cyan-950/20 to-black min-h-screen',
+    party: 'bg-[#0f0701] text-amber-100 bg-[radial-gradient(circle_at_center,_var(--tw-gradient-stops))] from-amber-600/25 via-purple-950/30 to-black min-h-screen',
+    synthwave: 'bg-[#0f001c] text-pink-200 bg-[linear-gradient(to_bottom,_#1f0036_0%,_#3a003f_40%,_#090014_100%)] min-h-screen',
+  };
+
   if (inRound) {
     return (
-      <>
+      <div className={themeStyles[screenTheme]}>
         {needGate && (
           <button
             onClick={unlock}
@@ -778,6 +887,28 @@ export default function MusicScreen() {
                   size="lg"
                   className={`h-full w-full object-cover ${coverLeaving ? 'qgs-pop-out' : 'qgs-pop'}`}
                 />
+              ) : state?.coverHint && phase === 'playing' && state.currentSongId ? (
+                /* Режим подсказки: обложка уже здесь, но за размытием, которое
+                   тает по ходу отрезка. Знак вопроса тускнеет ей навстречу. */
+                <>
+                  <SongCover
+                    cover={undefined}
+                    songId={state.currentSongId}
+                    size="lg"
+                    className="absolute inset-0 h-full w-full object-cover transition-all duration-500"
+                    style={{
+                      filter: `blur(${Math.max(0, 34 * (1 - hint))}px) saturate(${0.4 + 0.6 * hint})`,
+                      transform: `scale(${1.15 - 0.15 * hint})`,
+                      opacity: 0.35 + 0.65 * hint,
+                    }}
+                  />
+                  <span
+                    className="font-display relative z-10 text-8xl font-black text-white/90 transition-opacity duration-500"
+                    style={{ opacity: Math.max(0, 1 - hint * 1.4) }}
+                  >
+                    ?
+                  </span>
+                </>
               ) : (
                 <span className="font-display text-8xl font-black text-white/90">?</span>
               )}
@@ -810,6 +941,11 @@ export default function MusicScreen() {
                       Кнопку нажал: {buzzCard.by}
                     </p>
                   )}
+                  {buzzCard.answer && (
+                    <p className="mt-3 text-2xl font-black text-amber-50">
+                      «{buzzCard.answer}»
+                    </p>
+                  )}
                 </div>
               </div>
             )}
@@ -831,12 +967,13 @@ export default function MusicScreen() {
         </main>
       </div>
       </FitScreen>
-      </>
+      <FloatingReactions reactions={flyReactions} />
+      </div>
     );
   }
 
   return (
-    <>
+    <div className={themeStyles[screenTheme]}>
       {needGate && (
         <button
           onClick={unlock}
@@ -1110,6 +1247,35 @@ export default function MusicScreen() {
       )}
       </div>
       </FitScreen>
-    </>
+      <FloatingReactions reactions={flyReactions} />
+
+      {/* Переключатель темы на проекторе */}
+      <div className="fixed top-3 right-3 z-50 flex items-center gap-1 bg-black/60 p-1 rounded-full border border-white/10 backdrop-blur-md opacity-40 hover:opacity-100 transition">
+        <button
+          onClick={() => setScreenTheme('classic')}
+          className={`px-2.5 py-1 text-xs rounded-full font-bold transition ${screenTheme === 'classic' ? 'bg-violet-600 text-white' : 'text-zinc-400 hover:text-white'}`}
+        >
+          Classic
+        </button>
+        <button
+          onClick={() => setScreenTheme('cyberpunk')}
+          className={`px-2.5 py-1 text-xs rounded-full font-bold transition ${screenTheme === 'cyberpunk' ? 'bg-cyan-600 text-white' : 'text-zinc-400 hover:text-white'}`}
+        >
+          Cyberpunk
+        </button>
+        <button
+          onClick={() => setScreenTheme('party')}
+          className={`px-2.5 py-1 text-xs rounded-full font-bold transition ${screenTheme === 'party' ? 'bg-amber-600 text-white' : 'text-zinc-400 hover:text-white'}`}
+        >
+          Party
+        </button>
+        <button
+          onClick={() => setScreenTheme('synthwave')}
+          className={`px-2.5 py-1 text-xs rounded-full font-bold transition ${screenTheme === 'synthwave' ? 'bg-pink-600 text-white' : 'text-zinc-400 hover:text-white'}`}
+        >
+          Synthwave
+        </button>
+      </div>
+    </div>
   );
 }

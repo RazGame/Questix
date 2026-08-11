@@ -2,6 +2,7 @@ import { useEffect, useState, useCallback, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Plus, Play, Pause, Trash2, Upload, Search, RotateCw, Scissors, Link, ChevronUp, ChevronDown, Download, FolderInput, StickyNote } from 'lucide-react';
 import { musicCoverSrc, musicAudioSrc, musicService, MusicGameFull, SongSearchResult } from '../services/music';
+import { buildBlitzOptions } from '../services/blitz';
 import { createSocket } from '../services/socket';
 import { MusicGame, Song } from '../../../core/types';
 import MusicSegmentModal from './MusicSegmentModal';
@@ -40,7 +41,7 @@ interface SongProgress {
 const fmtMb = (bytes: number) => `${(bytes / 1048576).toFixed(1)} МБ`;
 
 interface BlockItemProps {
-  block: { _id: string; name: string; songIds: string[] };
+  block: { _id: string; name: string; songIds: string[]; blitzMode?: boolean; reverseMode?: boolean; coverHint?: boolean };
   gameId: string;
   isFirst: boolean;
   isLast: boolean;
@@ -134,6 +135,47 @@ function BlockItem({
     }
   };
 
+  // Режимы блока переключаются одинаково; у блица есть побочный шаг —
+  // раздать песням варианты ответа.
+  const setBlockMode = async (mode: 'reverseMode' | 'coverHint', on: boolean) => {
+    try {
+      await musicService.updateBlock(gameId, block._id, { [mode]: on });
+      await refreshCurrent();
+      setError('');
+      const titles = { reverseMode: 'Задом наперёд', coverHint: 'Обложка-подсказка' };
+      setNotice(`${titles[mode]}: ${on ? 'включено' : 'выключено'} для блока «${block.name}»`);
+    } catch (e: any) {
+      setError(apiErrorMessage(e, 'Не удалось переключить режим блока'));
+    }
+  };
+
+  // Блиц — свойство блока: раунд целиком идёт либо с вариантами, либо без.
+  // Включая режим, сразу раздаём каждой песне её четвёрку: неверные варианты
+  // берём из соседей по блоку — они той же эпохи, и угадать «на глаз» сложнее.
+  const toggleBlockBlitz = async () => {
+    const turningOn = !block.blitzMode;
+    try {
+      if (turningOn) {
+        const songs = block.songIds.map((sid) => songById(sid)).filter(Boolean) as Song[];
+        if (songs.length < 2) {
+          setError('Для блица нужно хотя бы две песни в блоке — иначе неоткуда взять неверные варианты');
+          return;
+        }
+        for (const s of songs) {
+          await musicService.updateSong(gameId, s._id, { options: buildBlitzOptions(s, songs) });
+        }
+      }
+      await musicService.updateBlock(gameId, block._id, { blitzMode: turningOn });
+      await refreshCurrent();
+      setError('');
+      setNotice(turningOn
+        ? `Блок «${block.name}» играется блицем: у каждой песни четыре варианта`
+        : `Блок «${block.name}» вернулся к обычному баззеру`);
+    } catch (e: any) {
+      setError(apiErrorMessage(e, 'Не удалось переключить блиц'));
+    }
+  };
+
   return (
     <div className="rounded-lg border border-white/10 p-3 bg-white/[0.01] hover:border-white/20 transition-all duration-300">
       <div className="flex items-center gap-2 mb-3">
@@ -160,6 +202,41 @@ function BlockItem({
           onBlur={(e) => renameBlock(block._id, e.target.value)}
           className="input-dark flex-1 text-sm font-semibold focus:border-violet-500/50 transition-colors"
         />
+        <button
+          onClick={toggleBlockBlitz}
+          className={`flex items-center gap-1 rounded-lg px-2.5 py-1.5 text-xs font-semibold transition ${
+            block.blitzMode
+              ? 'border border-amber-500/40 bg-amber-500/25 text-amber-200'
+              : 'border border-white/10 bg-white/5 text-zinc-300 hover:bg-white/10'
+          }`}
+          title={block.blitzMode
+            ? 'Выключить блиц: блок вернётся к обычному баззеру'
+            : 'Включить блиц: у каждой песни блока появятся четыре варианта ответа'}
+        >
+          ⚡ Блиц {block.blitzMode ? 'включён' : 'выключен'}
+        </button>
+        <button
+          onClick={() => setBlockMode('reverseMode', !block.reverseMode)}
+          className={`rounded-lg px-2.5 py-1.5 text-xs font-semibold transition ${
+            block.reverseMode
+              ? 'border border-cyan-500/40 bg-cyan-500/25 text-cyan-200'
+              : 'border border-white/10 bg-white/5 text-zinc-300 hover:bg-white/10'
+          }`}
+          title="Отрезок будет звучать задом наперёд"
+        >
+          ⏪ Реверс
+        </button>
+        <button
+          onClick={() => setBlockMode('coverHint', !block.coverHint)}
+          className={`rounded-lg px-2.5 py-1.5 text-xs font-semibold transition ${
+            block.coverHint
+              ? 'border border-fuchsia-500/40 bg-fuchsia-500/25 text-fuchsia-200'
+              : 'border border-white/10 bg-white/5 text-zinc-300 hover:bg-white/10'
+          }`}
+          title="Обложка будет медленно проявляться из размытия по ходу отрезка"
+        >
+          🌫 Обложка
+        </button>
         <button
           onClick={() => setShowSearch(!showSearch)}
           className={`rounded-lg px-2.5 py-1.5 text-xs font-semibold transition-all duration-200 flex items-center gap-1 ${
@@ -303,14 +380,32 @@ function BlockItem({
                     <ChevronDown size={13} />
                   </button>
                 </div>
-                <SongCover cover={s.cover} songId={s._id} size="sm" className="w-9 h-9 shrink-0 rounded object-cover shadow" />
-                <div className="min-w-0 flex-1 text-left">
-                  <div className="truncate text-sm font-semibold">{s.title}</div>
+                <SongCover cover={s.cover} songId={s._id} size="sm" className="w-9 h-9 shrink-0 rounded object-cover shadow cursor-pointer" onClick={() => setSegmentSong(s)} />
+                <button onClick={() => setSegmentSong(s)} className="min-w-0 flex-1 text-left hover:text-violet-300 transition">
+                  <div className="truncate text-sm font-semibold flex items-center gap-1.5">
+                    {s.title}
+                    {block.blitzMode && (
+                      <span className="rounded border border-amber-500/30 bg-amber-500/20 px-1.5 text-[10px] font-bold text-amber-300">
+                        ⚡ {(s.options || []).length === 4 ? '4 варианта' : 'варианты не заданы'}
+                      </span>
+                    )}
+                  </div>
                   <div className="truncate text-xs text-zinc-400">{s.artist}</div>
-                </div>
+                </button>
                 <span className={`rounded-full px-2 py-0.5 text-xs ${statusTone[s.status]}`} title={s.error || ''}>
                   {statusLabels[s.status]}
                 </span>
+                <button
+                  onClick={() => setSegmentSong(s)}
+                  className={`rounded-lg px-2 py-1 text-xs font-bold transition flex items-center gap-1 ${
+                    block.blitzMode
+                      ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40 hover:bg-amber-500/30'
+                      : 'bg-white/5 text-zinc-300 border border-white/10 hover:bg-white/10 hover:text-white'
+                  }`}
+                  title="Отрезок и варианты ответа"
+                >
+                  ⚡ Варианты
+                </button>
                 {s.status === 'ready' && s.file && (
                   <button
                     onClick={() => togglePreview(s)}
@@ -324,15 +419,13 @@ function BlockItem({
                     {previewId === s._id ? <Pause size={15} /> : <Play size={15} />}
                   </button>
                 )}
-                {s.status === 'ready' && s.file && (
-                  <button
-                    onClick={() => setSegmentSong(s)}
-                    className="flex items-center gap-1 rounded-lg bg-white/5 border border-white/10 px-2 py-1 text-xs text-zinc-200 hover:bg-white/10 transition"
-                    title="Выбрать отрезок песни"
-                  >
-                    <Scissors size={14} /> {seg}
-                  </button>
-                )}
+                <button
+                  onClick={() => setSegmentSong(s)}
+                  className="flex items-center gap-1 rounded-lg bg-white/5 border border-white/10 px-2 py-1 text-xs text-zinc-200 hover:bg-white/10 transition"
+                  title="Выбрать отрезок песни и настроить Блиц"
+                >
+                  <Scissors size={14} /> {seg}
+                </button>
                 {s.sourceUrl && (s.status === 'error' || s.status === 'pending') && (
                   <button
                     onClick={async () => {
@@ -1014,6 +1107,7 @@ export default function MusicAdmin({ isTab = false }: { isTab?: boolean }) {
         <MusicSegmentModal
           gameId={current.game._id}
           song={segmentSong}
+          allSongs={current.songs}
           onClose={() => setSegmentSong(null)}
           onSaved={() => refreshCurrent()}
         />

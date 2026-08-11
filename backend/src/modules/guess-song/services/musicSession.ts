@@ -45,7 +45,7 @@ class Session {
   phase: Phase = 'lobby';
   playlist: PlaylistItem[] = []; // снимок песен на момент старта
   currentIndex = -1;
-  buzzed: { id: string; name: string; by?: string } | null = null; // id = ключ группы (игрок/команда)
+  buzzed: { id: string; name: string; by?: string; answer?: string } | null = null; // id = ключ группы (игрок/команда)
   locked = new Set<string>(); // заблокированные в текущем раунде (ключи групп)
   advanceTimer: NodeJS.Timeout | null = null;
   // Отложенный переход (анонс блока/reveal/следующий трек) — храним колбэк и
@@ -222,6 +222,7 @@ class Session {
       // заметным опозданием. В общем состоянии её до раскрытия нет —
       // телефоны игроков ответ не увидят.
       cover: song.cover || '',
+      reverse: !!song.reverseMode, // отрезок играется задом наперёд
       // Подсказка экрану для предзагрузки следующего трека.
       nextUrl: this.playlist[this.currentIndex + 1]
         ? `/media/${this.playlist[this.currentIndex + 1].file}`
@@ -245,6 +246,7 @@ class Session {
       endSec: song.endSec ?? null,
       songId: String(song._id),
       cover: song.cover || '', // предзагрузка обложки, только для экрана
+      reverse: !!song.reverseMode,
       nextUrl: this.playlist[this.currentIndex + 1]
         ? `/media/${this.playlist[this.currentIndex + 1].file}`
         : null,
@@ -273,16 +275,23 @@ class Session {
     this.broadcast();
   }
 
-  buzz(playerId: string) {
+  buzz(playerId: string, answer?: string) {
     if (this.phase !== 'playing') return;
     if (!this.isArmed(playerId)) return;
     const p = this.players.get(playerId)!;
     const g = this.groupId(playerId);
+    // В блице игрок жмёт не «баззер», а конкретный вариант — ведущему важно
+    // видеть, что именно выбрали, иначе четыре кнопки это просто баззер.
+    const song = this.playlist[this.currentIndex];
+    const picked = answer && song?.blitzMode && (song.options || []).includes(answer)
+      ? answer
+      : undefined;
     // id = ключ группы; name = команда (team) или игрок (solo); by = кто нажал.
     this.buzzed = {
       id: g,
       name: this.mode === 'team' ? (p.teamName || 'Команда') : p.name,
       by: p.name,
+      answer: picked,
     };
     this.phase = 'buzzed';
     this.cmd('pause', { fadeMs: BUZZ_FADE_OUT_MS });
@@ -608,6 +617,11 @@ class Session {
       startSec: cur ? (cur.startSec || 0) : 0,
       // В режиме «доигрываем дальше» отрезок не ограничен (для ресинка экрана).
       endSec: cur ? (this.freePlay ? null : (cur.endSec ?? null)) : null,
+      // Режимы приходят с блока; варианты блица берём у самой песни.
+      blitzMode: cur ? !!cur.blitzMode : false,
+      options: cur && cur.blitzMode ? (cur.options || []) : [],
+      reverseMode: cur ? !!cur.reverseMode : false,
+      coverHint: cur ? !!cur.coverHint : false,
       nextUrl: cur && this.playlist[safeCurrentIndex + 1]
         ? `/media/${this.playlist[safeCurrentIndex + 1].file}`
         : null,

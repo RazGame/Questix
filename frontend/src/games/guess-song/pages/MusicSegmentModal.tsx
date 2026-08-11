@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { X, Play, Pause, RotateCcw, Save } from 'lucide-react';
 import { musicService } from '../services/music';
+import { buildBlitzOptions } from '../services/blitz';
 import { Song } from '../../../core/types';
 
 const mediaOrigin =
@@ -27,11 +28,13 @@ const parse = (str: string) => {
 export default function MusicSegmentModal({
   gameId,
   song,
+  allSongs = [],
   onClose,
   onSaved,
 }: {
   gameId: string;
   song: Song;
+  allSongs?: Song[];
   onClose: () => void;
   onSaved: (s: Song) => void;
 }) {
@@ -46,10 +49,15 @@ export default function MusicSegmentModal({
   const [duration, setDuration] = useState(song.duration || 0);
   const [start, setStart] = useState(song.startSec || 0);
   const [end, setEnd] = useState(song.endSec ?? song.duration ?? 0);
+  const [options, setOptions] = useState<string[]>(
+    song.options && song.options.length === 4 ? song.options : ['', '', '', '']
+  );
   const [loading, setLoading] = useState(true);
   const [playing, setPlaying] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
+
+  const generateAutoOptions = () => setOptions(buildBlitzOptions(song, allSongs));
 
   const audioUrl = `${mediaOrigin}/media/${song.file}`;
 
@@ -59,6 +67,10 @@ export default function MusicSegmentModal({
   // декод аудио → пики для волны
   useEffect(() => {
     let cancelled = false;
+    if (!song.file) {
+      setLoading(false);
+      return;
+    }
     (async () => {
       try {
         const buf = await fetch(audioUrl).then((r) => r.arrayBuffer());
@@ -225,6 +237,7 @@ export default function MusicSegmentModal({
       const updated = await musicService.updateSong(gameId, song._id, {
         startSec: Math.round(start),
         endSec: Math.round(end),
+        options: options.map((o) => o.trim()).filter(Boolean).length ? options : [],
       });
       onSaved(updated);
       onClose();
@@ -240,7 +253,7 @@ export default function MusicSegmentModal({
       onPointerUp={onPointerUp}
       onPointerMove={(e) => dragRef.current && onPointerMove(e)}
     >
-      <div className="glass w-full max-w-4xl p-6">
+      <div className="glass w-full max-w-4xl p-6 max-h-[90vh] overflow-y-auto">
         <div className="mb-4 flex items-center justify-between">
           <div className="min-w-0">
             <h2 className="font-display text-xl font-bold truncate">{song.title}</h2>
@@ -274,7 +287,7 @@ export default function MusicSegmentModal({
 
         <audio ref={audioRef} src={audioUrl} preload="auto" className="hidden" />
 
-        <div className="mt-4 flex flex-wrap items-center gap-3">
+        <div className="mt-4 flex flex-wrap items-center gap-3 border-b border-white/10 pb-4">
           <button onClick={togglePreview} className="btn-grad flex items-center gap-2 rounded-lg px-4 py-2 font-bold">
             {playing ? <Pause size={17} /> : <Play size={17} />}
             {playing ? 'Пауза' : 'Превью отрезка'}
@@ -303,11 +316,48 @@ export default function MusicSegmentModal({
             />
           </label>
           <span className="text-sm text-zinc-500">длина {fmt(end - start)}</span>
+        </div>
 
+        {/* Варианты ответа для блица. Сам режим включается на блоке —
+            здесь только тексты, чтобы поправить неудачный вариант. */}
+        <div className="mt-4 pt-2">
+          <div className="mb-3 flex items-center justify-between gap-3">
+            <span className="text-sm font-bold text-zinc-200">
+              ⚡ Варианты ответа для блица
+            </span>
+            <button
+              onClick={generateAutoOptions}
+              type="button"
+              className="rounded-lg border border-violet-500/40 bg-violet-600/30 px-3 py-1.5 text-xs font-semibold text-violet-200 transition hover:bg-violet-600/50"
+            >
+              🎲 Подобрать из блока
+            </button>
+          </div>
+
+          <div className="mb-4 grid grid-cols-1 gap-2.5 rounded-xl border border-white/10 bg-white/[0.03] p-3 sm:grid-cols-2">
+              {options.map((opt, i) => (
+                <div key={i} className="flex items-center gap-2">
+                  <span className="text-xs font-mono font-bold text-zinc-500 w-5 text-right">{i + 1}.</span>
+                  <input
+                    value={opt}
+                    onChange={(e) => {
+                      const next = [...options];
+                      next[i] = e.target.value;
+                      setOptions(next);
+                    }}
+                    placeholder={`Вариант ${i + 1}`}
+                    className="input-dark py-1.5 text-sm"
+                  />
+                </div>
+              ))}
+          </div>
+        </div>
+
+        <div className="mt-2 flex justify-end">
           <button
             onClick={save}
             disabled={saving || loading}
-            className="btn-grad ml-auto flex items-center gap-2 rounded-lg px-5 py-2 font-bold disabled:opacity-50"
+            className="btn-grad flex items-center gap-2 rounded-lg px-6 py-2.5 font-bold disabled:opacity-50"
           >
             <Save size={17} /> {saving ? 'Сохраняю…' : 'Сохранить'}
           </button>

@@ -136,7 +136,7 @@ export const musicService = {
   updateBlock: async (
     id: string,
     blockId: string,
-    patch: { name?: string; songIds?: string[] } // songIds — перестановка песен блока
+    patch: { name?: string; songIds?: string[]; blitzMode?: boolean; reverseMode?: boolean; coverHint?: boolean }
   ): Promise<MusicGame> => {
     const res = await api.patch(`/music/games/${id}/blocks/${blockId}`, patch);
     return res.data.game;

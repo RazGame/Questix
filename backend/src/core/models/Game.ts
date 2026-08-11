@@ -75,6 +75,11 @@ const gameSchema = new mongoose.Schema<IGame>(
       {
         name: { type: String, required: true },
         songIds: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Song' }],
+        // Режимы блока: включаются на весь раунд, а не на отдельную песню —
+        // иначе правила менялись бы от трека к треку прямо посреди игры.
+        blitzMode: { type: Boolean, default: false },   // четыре варианта ответа
+        reverseMode: { type: Boolean, default: false }, // отрезок звучит задом наперёд
+        coverHint: { type: Boolean, default: false },   // обложка проявляется по ходу отрезка
       },
     ],
     taskOrderMode: {

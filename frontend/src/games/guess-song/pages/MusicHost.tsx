@@ -414,6 +414,11 @@ export default function MusicHost() {
                     {live.mode === 'team' && live.buzzed?.by && (
                       <p className="mt-1 text-sm font-semibold text-amber-200/80">отвечает {live.buzzed.by}</p>
                     )}
+                    {live.buzzed?.answer && (
+                      <p className="mx-auto mt-3 max-w-md rounded-lg border border-amber-400/30 bg-amber-400/10 px-3 py-2 text-lg font-bold text-amber-100">
+                        Выбран вариант: {live.buzzed.answer}
+                      </p>
+                    )}
                   </div>
                   {currentSong && (
                     <div className="mb-4 flex items-center gap-3 rounded-lg border border-emerald-500/15 bg-emerald-500/5 p-3">
