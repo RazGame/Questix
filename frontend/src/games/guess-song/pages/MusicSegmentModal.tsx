@@ -3,10 +3,9 @@ import { X, Play, Pause, RotateCcw, Save } from 'lucide-react';
 import { musicService } from '../services/music';
 import { buildBlitzOptions } from '../services/blitz';
 import { Song } from '../../../core/types';
+import { defaultApiOrigin } from '../../../core/services/apiOrigin';
 
-const mediaOrigin =
-  import.meta.env.VITE_SOCKET_URL ||
-  `${window.location.protocol}//${window.location.hostname}:5000`;
+const mediaOrigin = import.meta.env.VITE_SOCKET_URL || defaultApiOrigin();
 
 const fmt = (s: number) => {
   if (!isFinite(s) || s < 0) s = 0;

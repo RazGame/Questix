@@ -6,6 +6,7 @@ import SongCover from '../components/SongCover';
 import { FloatingReactions, ReactionFlyItem } from '../components/FloatingReactions';
 import { Leaderboard } from '../components/Leaderboard';
 import { musicService, musicCoverSrc, songArtworkSrc } from '../services/music';
+import { defaultApiOrigin } from '../../../core/services/apiOrigin';
 import { MusicState } from '../../../core/types';
 
 // Аудио-движок держим вне React-рендера (в ref), чтобы команды cmd
@@ -151,9 +152,7 @@ function FitScreen({ children, watch }: { children: React.ReactNode; watch?: str
   );
 }
 
-const apiOrigin =
-  import.meta.env.VITE_SOCKET_URL ||
-  `${window.location.protocol}//${window.location.hostname}:5000`;
+const apiOrigin = import.meta.env.VITE_SOCKET_URL || defaultApiOrigin();
 const TRACK_FADE_IN_MS = 1200; // мягкий вход трека (после заставок обрыв тишина→звук режет слух)
 const ANSWER_RESUME_FADE_IN_MS = 450;
 const ANSWER_FADE_OUT_MS = 320;

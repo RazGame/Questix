@@ -1,11 +1,7 @@
 import axios from 'axios';
+import { defaultApiOrigin } from './apiOrigin';
 
-const defaultApiUrl =
-  typeof window !== 'undefined'
-    ? `${window.location.protocol}//${window.location.hostname}:5000`
-    : 'http://localhost:5000';
-
-export const API_URL = import.meta.env.VITE_API_URL || defaultApiUrl;
+export const API_URL = import.meta.env.VITE_API_URL || defaultApiOrigin();
 
 const api = axios.create({
   baseURL: API_URL,
