@@ -395,17 +395,23 @@ function BlockItem({
                 <span className={`rounded-full px-2 py-0.5 text-xs ${statusTone[s.status]}`} title={s.error || ''}>
                   {statusLabels[s.status]}
                 </span>
+                {/* Варианты нужны только блиц-блоку. В обычном они лишь
+                    дублировали бы кнопку отрезка — обе открывают одно окно. */}
+                {block.blitzMode && (
                 <button
                   onClick={() => setSegmentSong(s)}
-                  className={`rounded-lg px-2 py-1 text-xs font-bold transition flex items-center gap-1 ${
-                    block.blitzMode
-                      ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40 hover:bg-amber-500/30'
-                      : 'bg-white/5 text-zinc-300 border border-white/10 hover:bg-white/10 hover:text-white'
+                  className={`flex items-center gap-1 rounded-lg border px-2 py-1 text-xs font-bold transition ${
+                    (s.options || []).filter(Boolean).length === 4
+                      ? 'border-amber-500/40 bg-amber-500/20 text-amber-300 hover:bg-amber-500/30'
+                      : 'border-rose-500/40 bg-rose-500/15 text-rose-300 hover:bg-rose-500/25'
                   }`}
-                  title="Отрезок и варианты ответа"
+                  title={(s.options || []).filter(Boolean).length === 4
+                    ? 'Изменить варианты ответа'
+                    : 'Варианты не заданы — в блице эта песня останется без выбора'}
                 >
                   ⚡ Варианты
                 </button>
+                )}
                 {s.status === 'ready' && s.file && (
                   <button
                     onClick={() => togglePreview(s)}
@@ -911,6 +917,9 @@ export default function MusicAdmin({ isTab = false }: { isTab?: boolean }) {
   };
 
   const songById = (id: string) => current?.songs.find((s) => s._id === id);
+  // Блиц включается на блоке — модалка должна знать, показывать ли варианты.
+  const blitzOfSong = (songId: string) =>
+    !!current?.game.blocks.find((b) => b.songIds.some((id) => String(id) === String(songId)))?.blitzMode;
 
   const content = (
     <>
@@ -1108,6 +1117,7 @@ export default function MusicAdmin({ isTab = false }: { isTab?: boolean }) {
           gameId={current.game._id}
           song={segmentSong}
           allSongs={current.songs}
+          blitz={blitzOfSong(segmentSong._id)}
           onClose={() => setSegmentSong(null)}
           onSaved={() => refreshCurrent()}
         />

@@ -29,12 +29,14 @@ export default function MusicSegmentModal({
   gameId,
   song,
   allSongs = [],
+  blitz = false,
   onClose,
   onSaved,
 }: {
   gameId: string;
   song: Song;
   allSongs?: Song[];
+  blitz?: boolean; // блок играется блицем — только тогда нужны варианты
   onClose: () => void;
   onSaved: (s: Song) => void;
 }) {
@@ -318,8 +320,9 @@ export default function MusicSegmentModal({
           <span className="text-sm text-zinc-500">длина {fmt(end - start)}</span>
         </div>
 
-        {/* Варианты ответа для блица. Сам режим включается на блоке —
-            здесь только тексты, чтобы поправить неудачный вариант. */}
+        {/* Варианты ответа показываем только у блиц-блока: в обычном они
+            ни на что не влияют и лишь путают. */}
+        {blitz && (
         <div className="mt-4 pt-2">
           <div className="mb-3 flex items-center justify-between gap-3">
             <span className="text-sm font-bold text-zinc-200">
@@ -352,6 +355,7 @@ export default function MusicSegmentModal({
               ))}
           </div>
         </div>
+        )}
 
         <div className="mt-2 flex justify-end">
           <button
