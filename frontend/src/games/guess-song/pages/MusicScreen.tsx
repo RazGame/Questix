@@ -1078,10 +1078,14 @@ export default function MusicScreen() {
           )}
           <div className="text-zinc-400 mb-1">{joinUrl}</div>
           <div className="text-lg">код игры: <b className="text-violet-300 tracking-widest">{state?.code}</b></div>
-          {/^(localhost|127\.|172\.(1[6-9]|2\d|3[01])\.)/.test(window.location.hostname) && (
+          {/* Предупреждение смотрит на сам адрес входа, а не на то, как открыт
+              проектор: LAN-адрес приходит с сервера, и по localhost QR обычно
+              всё равно рабочий. Плашка остаётся только на тот случай, когда
+              сервер адрес не отдал и в QR действительно уехал localhost. */}
+          {/^https?:\/\/(localhost|127\.)/.test(joinUrl) && (
             <div className="mt-3 max-w-md rounded-lg border border-amber-500/30 bg-amber-400/10 px-4 py-2 text-sm text-amber-200">
-              Откройте этот экран по IP компьютера в вашей сети (напр. http://192.168.x.x:5173),
-              иначе телефоны не смогут подключиться по QR.
+              Не удалось определить адрес компьютера в сети — по этому QR телефоны
+              не подключатся. Откройте экран по IP (напр. http://192.168.x.x:5173).
             </div>
           )}
           {state?.mode === 'team' && !!state?.teams?.length && (
