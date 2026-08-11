@@ -34,6 +34,29 @@ interface AudioEngine {
 // (масштаб применится к нему вместе со всем содержимым).
 const OVERFLOW_GAP = 32;
 
+/**
+ * Сколько сверху занимает шапка сайта.
+ *
+ * Она выведена из потока (`position: absolute`), поэтому в геометрии экрана
+ * её не видно: верх контейнера — ноль, будто места над ним нет. На короткой
+ * игре это не замечалось (содержимое центрировалось и до шапки не доставало),
+ * а на двадцати одном блоке контент растягивался во всю высоту, и название
+ * игры оказывалось ровно под логотипом.
+ */
+function overlayInset() {
+  let inset = 0;
+  document.querySelectorAll('header, nav').forEach((el) => {
+    const pos = getComputedStyle(el).position;
+    if (pos !== 'fixed' && pos !== 'absolute') return;
+    const r = el.getBoundingClientRect();
+    // только то, что реально висит поперёк верхней кромки окна
+    if (r.top <= 1 && r.bottom > 0 && r.width > window.innerWidth * 0.5) {
+      inset = Math.max(inset, r.bottom);
+    }
+  });
+  return inset;
+}
+
 function FitScreen({ children, watch }: { children: React.ReactNode; watch?: string }) {
   const boxRef = useRef<HTMLDivElement | null>(null);
   const innerRef = useRef<HTMLDivElement | null>(null);
@@ -41,6 +64,7 @@ function FitScreen({ children, watch }: { children: React.ReactNode; watch?: str
   // Над экраном ещё шапка сайта, поэтому 100dvh давал бы «экран + шапка»
   // и страница всё равно прокручивалась. Берём то, что осталось под шапкой.
   const [boxH, setBoxH] = useState<number | null>(null);
+  const [inset, setInset] = useState(0);
   const [innerH, setInnerH] = useState<number | null>(null);
 
   useLayoutEffect(() => {
@@ -50,6 +74,13 @@ function FitScreen({ children, watch }: { children: React.ReactNode; watch?: str
       if (!box || !inner) return;
       const avail = Math.max(200, window.innerHeight - box.getBoundingClientRect().top);
       setBoxH((prev) => (prev === null || Math.abs(prev - avail) > 1 ? avail : prev));
+
+      // Полосу под шапкой отдаём ей: она наезжает поверх, а не отодвигает.
+      // Отступ задаётся паддингом внутри контейнера, поэтому его собственный
+      // top не меняется и следующий замер не уедет.
+      const topInset = overlayInset();
+      setInset((prev) => (Math.abs(prev - topInset) > 1 ? topInset : prev));
+      const usable = Math.max(160, avail - topInset);
 
       // scrollHeight не учитывает абсолютно позиционированные элементы —
       // например, карточку «нажал первым», которая лежит в секции
@@ -78,7 +109,7 @@ function FitScreen({ children, watch }: { children: React.ReactNode; watch?: str
 
       const k = Math.min(
         1,
-        avail / Math.max(1, needed),
+        usable / Math.max(1, needed),
         box.clientWidth / Math.max(1, inner.scrollWidth)
       );
       setScale((prev) => (Math.abs(prev - k) > 0.005 ? k : prev));
@@ -103,7 +134,7 @@ function FitScreen({ children, watch }: { children: React.ReactNode; watch?: str
     <div
       ref={boxRef}
       className="flex w-full items-center justify-center overflow-hidden"
-      style={{ height: boxH ? `${boxH}px` : '100dvh' }}
+      style={{ height: boxH ? `${boxH}px` : '100dvh', paddingTop: inset ? `${inset}px` : undefined }}
     >
       <div
         ref={innerRef}
