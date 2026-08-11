@@ -391,37 +391,55 @@ select.input-dark optgroup {
   background: rgba(139, 92, 246, 0.45);
 }
 
-/* Реакции всплывают как пузырьки: мягкий вход, лёгкое покачивание по пути и
-   спокойное растворение к верху. Прежняя версия дёргала масштабом и резко
-   поворачивала на 12 градусов — на большом экране это читалось как рывок.
-   Размах покачивания и высота у каждой свои (--sway/--rise), иначе десяток
-   реакций летит одной шеренгой. */
+/* Реакции всплывают как пузырьки.
+   Подъём, покачивание и проявление разнесены по трём вложенным элементам —
+   и вот почему. Когда всё сидело в одном наборе кадров, браузер применял
+   сглаживание к каждому отрезку между кадрами по отдельности: на каждой
+   смене направления эмодзи притормаживал и дёргался вбок. Здесь подъём
+   монотонный, а качание — отдельная анимация с alternate, у которой
+   скорость в точках разворота честно обнуляется, поэтому переход плавный. */
 @keyframes reaction-rise {
-  0% {
-    transform: translate3d(0, 0, 0) scale(0.7);
-    opacity: 0;
-  }
-  10% {
-    transform: translate3d(calc(var(--sway) * 0.15), -8%, 0) scale(1);
-    opacity: 1;
-  }
-  45% {
-    transform: translate3d(calc(var(--sway) * -0.6), -45%, 0) scale(1.04);
-    opacity: 1;
-  }
-  75% {
-    transform: translate3d(calc(var(--sway) * 0.5), -75%, 0) scale(1);
-    opacity: 0.75;
-  }
-  100% {
-    transform: translate3d(0, calc(var(--rise) * -1), 0) scale(0.92);
-    opacity: 0;
-  }
+  from { transform: translate3d(0, 0, 0); }
+  to   { transform: translate3d(0, calc(var(--rise) * -1), 0); }
+}
+
+@keyframes reaction-sway {
+  from { transform: translate3d(calc(var(--sway) * -1), 0, 0); }
+  to   { transform: translate3d(var(--sway), 0, 0); }
+}
+
+@keyframes reaction-appear {
+  0%   { opacity: 0; transform: scale(0.72); }
+  14%  { opacity: 1; transform: scale(1); }
+  72%  { opacity: 1; transform: scale(1); }
+  100% { opacity: 0; transform: scale(0.94); }
 }
 
 .animate-reaction-fly {
-  --sway: 26px;
+  --sway: 14px;
   --rise: 62vh;
-  animation: reaction-rise var(--dur, 3.4s) cubic-bezier(0.33, 0, 0.2, 1) forwards;
+  --dur: 3.4s;
+  --sway-dur: 1.7s;
+  /* Кривая подобрана по замеру: за половину времени проходится ~2/3 пути.
+     С более резким торможением (0.2, 0.55, 0.35, 1) к середине было уже 87%,
+     и остаток полёта эмодзи фактически висел на месте. */
+  animation: reaction-rise var(--dur) cubic-bezier(0.3, 0.15, 0.5, 1) forwards;
+  will-change: transform;
+}
+
+.animate-reaction-sway {
+  /* Отрицательная задержка сдвигает фазу: без неё все эмодзи качаются
+     синхронно, как метроном. */
+  animation: reaction-sway var(--sway-dur) ease-in-out infinite alternate;
+  animation-delay: var(--sway-delay, 0s);
+  will-change: transform;
+}
+
+.animate-reaction-appear {
+  animation: reaction-appear var(--dur) linear forwards;
   will-change: transform, opacity;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-reaction-sway { animation: none; }
 }

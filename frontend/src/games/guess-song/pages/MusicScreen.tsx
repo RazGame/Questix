@@ -39,10 +39,6 @@ function FitScreen({ children, watch }: { children: React.ReactNode; watch?: str
   const [boxH, setBoxH] = useState<number | null>(null);
   const [innerH, setInnerH] = useState<number | null>(null);
 
-  // Применённый масштаб держим в ref: замеры ниже идут в экранных пикселях,
-  // и чтобы вернуться к натуральным размерам, их надо делить на него.
-  const appliedRef = useRef(1);
-
   useLayoutEffect(() => {
     const fit = () => {
       const box = boxRef.current;
@@ -55,12 +51,19 @@ function FitScreen({ children, watch }: { children: React.ReactNode; watch?: str
       // например, карточку «нажал первым», которая лежит в секции
       // фиксированной высоты и вылезает за неё. Без этого длинное название
       // команды просто обрезалось нижним краем экрана.
-      const applied = appliedRef.current || 1;
-      const top = inner.getBoundingClientRect().top;
+      //
+      // Считаем по offsetTop/offsetHeight, а не по getBoundingClientRect:
+      // карточка появляется анимацией со scale(0.22), и прямоугольник в этот
+      // момент врёт в разы — по нему выходило, что всё помещается, а через
+      // полсекунды карточка вырастала и уезжала за край.
       let needed = inner.scrollHeight;
-      inner.querySelectorAll('[class*="absolute"], [class*="fixed"]').forEach((el) => {
-        const r = (el as HTMLElement).getBoundingClientRect();
-        if (r.height > 0) needed = Math.max(needed, (r.bottom - top) / applied);
+      inner.querySelectorAll<HTMLElement>('[class*="absolute"], [class*="fixed"]').forEach((el) => {
+        if (!el.offsetHeight) return;
+        let bottom = el.offsetHeight;
+        for (let n: HTMLElement | null = el; n && n !== inner; n = n.offsetParent as HTMLElement | null) {
+          bottom += n.offsetTop;
+        }
+        needed = Math.max(needed, bottom);
       });
 
       // Контейнер должен ЗНАТЬ про вылезающую карточку: иначе он центрирует
@@ -72,7 +75,6 @@ function FitScreen({ children, watch }: { children: React.ReactNode; watch?: str
         avail / Math.max(1, needed),
         box.clientWidth / Math.max(1, inner.scrollWidth)
       );
-      appliedRef.current = k;
       setScale((prev) => (Math.abs(prev - k) > 0.005 ? k : prev));
     };
     fit();
@@ -622,7 +624,8 @@ export default function MusicScreen() {
     socket.on('reaction:fly', (data: any) => {
       // Разброс считаем один раз при получении: если делать это на рендере,
       // траектория будет прыгать при каждой перерисовке экрана.
-      const durMs = 3000 + Math.floor(Math.random() * 1400);
+      const durMs = 3200 + Math.floor(Math.random() * 1400);
+      const swayMs = 1500 + Math.floor(Math.random() * 900);
       const item: ReactionFlyItem = {
         id: data.id || `${Date.now()}-${Math.random()}`,
         emoji: data.emoji,
@@ -630,7 +633,11 @@ export default function MusicScreen() {
         // Держим подальше от краёв: элемент растёт вправо от своей точки,
         // и с длинным именем у самого края подпись обрезалась бы.
         leftPct: 8 + Math.floor(Math.random() * 70),
-        swayPx: 16 + Math.floor(Math.random() * 34),
+        // Размах небольшой: качание в стороны — это лёгкий дрейф, а не
+        // маятник, иначе движение читается как рывки.
+        swayPx: 8 + Math.floor(Math.random() * 10),
+        swayMs,
+        swayDelayMs: Math.floor(Math.random() * swayMs),
         risePct: 55 + Math.floor(Math.random() * 22),
         durMs,
       };
