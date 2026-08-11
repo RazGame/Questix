@@ -653,7 +653,18 @@ export default function MusicAdmin({ isTab = false }: { isTab?: boolean }) {
   // редактор. Проигрывается ровно то, что услышат игроки: от startSec до endSec.
   const stopPreview = useCallback(() => {
     const a = previewRef.current;
-    if (a) { a.pause(); a.src = ''; }
+    if (a) {
+      // Обработчики снимаем ДО того, как отпустить источник: очистка src сама
+      // поднимает событие error, и оно показывало «не удалось воспроизвести
+      // файл песни» просто в ответ на паузу — с файлом при этом всё в порядке.
+      a.onerror = null;
+      a.ontimeupdate = null;
+      a.onended = null;
+      a.onloadedmetadata = null;
+      a.pause();
+      a.removeAttribute('src');
+      a.load(); // отпускает загруженные байты, не трогая событие error
+    }
     setPreviewId(null);
   }, []);
 
@@ -673,7 +684,13 @@ export default function MusicAdmin({ isTab = false }: { isTab?: boolean }) {
     audio.ontimeupdate = () => { if (audio!.currentTime >= to) stopPreview(); };
     audio.onended = () => stopPreview();
     audio.onerror = () => { setError('Не удалось воспроизвести файл песни'); stopPreview(); };
-    audio.play().catch(() => { setError('Браузер не дал воспроизвести звук'); stopPreview(); });
+    audio.play().catch((e: any) => {
+      // Прерванный промис — это переключение на другую песню или пауза,
+      // а не отказ браузера. Ругаться тут не на что.
+      if (e?.name === 'AbortError') return;
+      setError('Браузер не дал воспроизвести звук');
+      stopPreview();
+    });
     setPreviewId(song._id);
   };
 
