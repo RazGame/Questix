@@ -12,14 +12,21 @@ router.get('/cover', music.proxyCover);
 // или интернет недоступен. Публичный, как и /media: экран проектора и
 // телефоны игроков авторизации не имеют.
 router.get('/artwork/:songId', music.songArtwork);
+// Адрес входа и QR — тоже публичные, и по той же причине: их запрашивает
+// экран проектора, у которого токена нет. Пока они лежали за гвардом,
+// экран, открытый в чистом браузере (частый случай — проектор подключён к
+// другому ноутбуку), не получал ни QR, ни LAN-адреса и звал телефоны на
+// localhost. Наружу отдаём только адрес входа — внутренний IP остаётся
+// за авторизацией, ниже.
+router.get('/net/public', music.getPublicNet);
+router.get('/qr', music.getQr);
 
 // Все остальные маршруты управления музыкой — для администратора или организатора.
 // (Игроки/экран ходят не сюда, а в Socket.IO и в /media.)
 router.use(authMiddleware, organizerMiddleware);
 
-// сеть / QR
+// сеть (полная, с IP станции — только для пульта)
 router.get('/net', music.getNet);
-router.get('/qr', music.getQr);
 
 // поиск песен (SpotiFLAC)
 router.get('/search', music.searchSongs);

@@ -699,7 +699,7 @@ export default function MusicScreen() {
         try {
           let base = window.location.origin;
           try {
-            const net = await musicService.net();
+            const net = await musicService.publicNet();
             if (net.base) base = net.base;
           } catch { /* нет сети/прав — используем origin */ }
           const url = `${base}/m/play?code=${state.code}`;

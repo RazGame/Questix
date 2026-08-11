@@ -847,6 +847,20 @@ export const getSpotiflacVersion = async (
 };
 
 // ----- сеть / QR -----
+/**
+ * Адрес, по которому телефоны заходят в игру.
+ *
+ * Публичный: спрашивает экран проектора, а токена у него нет. IP станции
+ * сюда не кладём — он нужен только ведущему в пульте, а экран может стоять
+ * где угодно, в том числе смотреть в облако.
+ */
+export const getPublicNet = async (
+  _req: AuthenticatedRequest,
+  res: Response
+): Promise<void> => {
+  res.json({ base: webBase() });
+};
+
 export const getNet = async (
   _req: AuthenticatedRequest,
   res: Response

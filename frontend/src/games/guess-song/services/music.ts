@@ -194,6 +194,12 @@ export const musicService = {
     const res = await api.get('/music/net');
     return res.data;
   },
+  // Для экрана проектора: он ходит без токена, поэтому спрашивает только
+  // адрес входа. IP станции отдаёт /music/net — он для пульта.
+  publicNet: async (): Promise<{ base: string }> => {
+    const res = await api.get('/music/net/public');
+    return res.data;
+  },
   qr: async (text: string): Promise<string> => {
     const res = await api.get('/music/qr', { params: { text } });
     return res.data.dataUrl;
