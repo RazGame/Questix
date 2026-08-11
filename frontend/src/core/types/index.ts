@@ -89,6 +89,7 @@ export interface MusicGame {
   format: 'offline';
   participation?: GameParticipation;
   auth?: GameAuth;
+  answerSeconds?: number; // секунды на ответ после нажатия; 0 — без счётчика
   title: string;
   code: string;
   blocks: MusicBlock[];
@@ -138,6 +139,11 @@ export interface MusicState {
   blocks?: string[]; // имена всех блоков (для интро-заставок)
   paused?: boolean; // игра поставлена на паузу ведущим
   introMs?: number | null; // остаток интро-таймера, мс
+  // Счётчик ответа: полное время, момент истечения (эпоха, мс) и остаток.
+  // Момента нет на паузе — тогда показываем застывший остаток.
+  answerTotalMs?: number | null;
+  answerEndsAt?: number | null;
+  answerLeftMs?: number | null;
   mode?: GameParticipation; // solo | team
   teams?: MusicTeam[];
   anyArmed?: boolean; // может ли кто-то ещё нажать баззер в этом раунде

@@ -781,6 +781,20 @@ export default function MusicAdmin({ isTab = false }: { isTab?: boolean }) {
     }
   };
 
+  // Время на ответ после нажатия кнопки. 0 — счётчика нет.
+  const setAnswerSeconds = async (answerSeconds: number) => {
+    if (!current) return;
+    const prev = current.game.answerSeconds ?? 0;
+    setCurrent({ ...current, game: { ...current.game, answerSeconds } });
+    try {
+      await musicService.update(current.game._id, { answerSeconds });
+      setError('');
+    } catch (e: any) {
+      setCurrent({ ...current, game: { ...current.game, answerSeconds: prev } });
+      setError(apiErrorMessage(e, 'Ошибка смены времени на ответ'));
+    }
+  };
+
   // --- блоки ---
   const addBlock = async () => {
     if (!current) return;
@@ -1034,6 +1048,29 @@ export default function MusicAdmin({ isTab = false }: { isTab?: boolean }) {
                           }`}
                         >
                           {o.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Время на ответ */}
+                  <div>
+                    <p className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-zinc-500">
+                      Время на ответ
+                    </p>
+                    <div className="inline-flex rounded-lg border border-white/10 bg-white/[0.03] p-1">
+                      {([0, 5, 7, 10, 15, 30] as const).map((v) => (
+                        <button
+                          key={v}
+                          onClick={() => setAnswerSeconds(v)}
+                          className={`rounded-md px-3 py-1.5 text-sm font-semibold transition ${
+                            (current.game.answerSeconds ?? 0) === v
+                              ? 'btn-grad'
+                              : 'text-zinc-300 hover:bg-white/10'
+                          }`}
+                          title={v === 0 ? 'Ведущий решает сам, без счётчика' : `${v} секунд на ответ`}
+                        >
+                          {v === 0 ? 'Без счётчика' : `${v} с`}
                         </button>
                       ))}
                     </div>

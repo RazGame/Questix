@@ -82,6 +82,7 @@ export const musicService = {
       title?: string;
       auth?: 'open' | 'required';
       participation?: 'solo' | 'team';
+      answerSeconds?: number; // секунды на ответ после нажатия; 0 — без счётчика
       blockOrder?: string[]; // перестановка id всех блоков игры
     }
   ): Promise<MusicGame> => {

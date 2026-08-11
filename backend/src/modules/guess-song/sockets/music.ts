@@ -58,6 +58,7 @@ export const registerMusicSockets = (io: Server): void => {
 
       const session = getSession(io, gameId);
       session.setMeta(game.title, game.code || ''); // кэш меты для publicState
+      session.setAnswerSeconds((game as any).answerSeconds); // время на ответ, 0 — без счётчика
       const isTeam = game.participation === 'team';
       session.setMode(isTeam ? 'team' : 'solo');
 

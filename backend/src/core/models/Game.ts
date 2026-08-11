@@ -25,6 +25,14 @@ const gameSchema = new mongoose.Schema<IGame>(
       enum: ['solo', 'team'],
       default: 'team',
     },
+    // Сколько секунд даётся на ответ после нажатия кнопки. 0 — без счётчика:
+    // ведущий сам решает, когда засчитать или отклонить, как было всегда.
+    answerSeconds: {
+      type: Number,
+      default: 0,
+      min: 0,
+      max: 120,
+    },
     // Авторизация на сайте: required (по аккаунту) или open (вход по имени/коду).
     // Для квеста на сервере всегда принудительно required.
     auth: {

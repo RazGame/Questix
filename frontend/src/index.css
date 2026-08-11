@@ -443,3 +443,34 @@ select.input-dark optgroup {
 @media (prefers-reduced-motion: reduce) {
   .animate-reaction-sway { animation: none; }
 }
+
+
+/* Смена секунды в счётчике ответа: цифра появляется коротким толчком, без
+   этого она просто мигает и глаз не успевает зацепиться. */
+@keyframes qgs-count-pop {
+  0%   { transform: scale(1.35); opacity: 0.25; }
+  45%  { transform: scale(0.97); opacity: 1; }
+  100% { transform: scale(1); opacity: 1; }
+}
+.qgs-count-pop { animation: qgs-count-pop 320ms cubic-bezier(0.2, 0.8, 0.25, 1); }
+
+/* Появление счётчика на месте знака вопроса — не подменой в один кадр,
+   а коротким наплывом, иначе смена читается как сбой картинки. */
+@keyframes qgs-count-enter {
+  0%   { opacity: 0; transform: scale(0.82); filter: blur(6px); }
+  100% { opacity: 1; transform: scale(1); filter: blur(0); }
+}
+.qgs-count-enter { animation: qgs-count-enter 420ms cubic-bezier(0.2, 0.9, 0.24, 1) both; }
+
+/* Последние секунды: лёгкое биение, заметное краем глаза через весь зал. */
+@keyframes qgs-count-urgent {
+  0%, 100% { transform: scale(1); }
+  50%      { transform: scale(1.07); }
+}
+.qgs-count-urgent { animation: qgs-count-urgent 900ms ease-in-out infinite; }
+
+@media (prefers-reduced-motion: reduce) {
+  .qgs-count-pop,
+  .qgs-count-enter,
+  .qgs-count-urgent { animation: none; }
+}

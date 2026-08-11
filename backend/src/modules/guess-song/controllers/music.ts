@@ -220,6 +220,16 @@ export const updateMusicGame = async (
     if (req.body?.auth === 'open' || req.body?.auth === 'required') {
       game.auth = req.body.auth;
     }
+    // Время на ответ: 0 — счётчика нет. Верхнюю границу держим низкой,
+    // иначе смысл теряется: раунд встаёт, зал ждёт.
+    if (req.body?.answerSeconds !== undefined) {
+      const sec = Math.round(Number(req.body.answerSeconds));
+      if (!Number.isFinite(sec) || sec < 0 || sec > 120) {
+        res.status(400).json({ error: 'Время на ответ — от 0 до 120 секунд' });
+        return;
+      }
+      game.answerSeconds = sec;
+    }
     // Переупорядочивание блоков: blockOrder — перестановка id всех блоков.
     if (Array.isArray(req.body?.blockOrder)) {
       const order = req.body.blockOrder.map(String);

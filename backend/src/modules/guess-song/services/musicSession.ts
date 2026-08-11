@@ -1,6 +1,7 @@
 import crypto from 'crypto';
 import { Server } from 'socket.io';
 import { buildPlaylist, PlaylistItem } from './musicStore';
+import { Game } from '../../../core/models/Game';
 import { SessionResult } from '../../../core/models/SessionResult';
 
 // Тайминги после правильного ответа (мс): доиграть, затем плавно затихнуть.
@@ -42,6 +43,10 @@ class Session {
   // Каноничное написание названия команды: ad-hoc команды матчатся ключом
   // без регистра («стол 1» = «Стол 1»), показываем первое введённое.
   teamNames = new Map<string, string>();
+  // Сколько секунд даётся на ответ после нажатия. 0 — счётчика нет, ждём
+  // ведущего сколько угодно (так игра работала всегда).
+  answerSeconds = 0;
+  answerEndsAt: number | null = null;
   phase: Phase = 'lobby';
   playlist: PlaylistItem[] = []; // снимок песен на момент старта
   currentIndex = -1;
@@ -104,6 +109,11 @@ class Session {
 
   cmd(action: string, payload: Record<string, unknown> = {}) {
     this.io.to(this.rScreen()).emit('cmd', { action, ...payload });
+  }
+
+  setAnswerSeconds(sec?: number) {
+    const v = Math.round(Number(sec) || 0);
+    this.answerSeconds = Number.isFinite(v) && v > 0 ? Math.min(v, 120) : 0;
   }
 
   setMode(mode: Mode) {
@@ -193,6 +203,11 @@ class Session {
       this.io.to(this.rAdmin()).emit('error-msg', { message: 'Сначала нажмите «включить звук» на экране проектора.' });
       return false;
     }
+
+    // Настройки игры перечитываем на старте: ведущий правит их в редакторе
+    // при уже открытой сессии, а значение бралось только при входе в комнату.
+    const meta = await Game.findById(this.gameId).lean();
+    this.setAnswerSeconds((meta as any)?.answerSeconds);
 
     const all = await buildPlaylist(this.gameId);
     const ready = all.filter((s) => s.status === 'ready' && s.file);
@@ -306,11 +321,26 @@ class Session {
     };
     this.phase = 'buzzed';
     this.cmd('pause', { fadeMs: BUZZ_FADE_OUT_MS });
+    // Счётчик ответа. Не успели — засчитываем как неверный ответ: иначе
+    // команда, которая нажала наугад, держит раунд сколько захочет.
+    if (this.answerSeconds > 0) {
+      this.answerEndsAt = Date.now() + this.answerSeconds * 1000;
+      this.schedule(() => this.answerTimeout(), this.answerSeconds * 1000);
+    } else {
+      this.answerEndsAt = null;
+    }
     this.broadcast();
+  }
+
+  /** Время вышло — то же самое, что неверный ответ, но без участия ведущего. */
+  private answerTimeout() {
+    if (this.phase !== 'buzzed') return;
+    this.wrong();
   }
 
   correct() {
     if (this.phase !== 'buzzed') return;
+    this.answerEndsAt = null;
     this.revealGuessed = true;
     if (this.buzzed) {
       if (this.mode === 'team') {
@@ -329,6 +359,8 @@ class Session {
 
   wrong() {
     if (this.phase !== 'buzzed') return;
+    this.clearSchedule(); // снимаем счётчик ответа, если он ещё тикал
+    this.answerEndsAt = null;
     if (this.buzzed) this.locked.add(this.buzzed.id); // выбывает до конца песни
     this.buzzed = null;
     this.phase = 'playing';
@@ -623,6 +655,17 @@ class Session {
               : this.advanceTimer
                 ? Math.max(0, this.pendingDeadline - Date.now())
                 : null)
+          : null,
+      // Счётчик ответа. Пока идёт — отдаём момент истечения, чтобы телефон и
+      // экран считали сами и не зависели от частоты рассылок. На паузе
+      // момента нет, есть застывший остаток.
+      answerTotalMs: this.answerSeconds > 0 ? this.answerSeconds * 1000 : null,
+      answerEndsAt: this.phase === 'buzzed' && !this.paused ? this.answerEndsAt : null,
+      answerLeftMs:
+        this.phase === 'buzzed' && this.answerSeconds > 0
+          ? (this.paused
+              ? this.pendingRemaining
+              : Math.max(0, (this.answerEndsAt || 0) - Date.now()))
           : null,
       fileUrl: cur ? `/media/${cur.file}` : null,
       startSec: cur ? (cur.startSec || 0) : 0,

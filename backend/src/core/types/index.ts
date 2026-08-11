@@ -47,6 +47,7 @@ export interface IGame {
   format: GameFormat;
   participation: GameParticipation;
   auth: GameAuth;
+  answerSeconds?: number; // сколько секунд даётся на ответ после нажатия; 0 — без счётчика
   title: string;
   city: string;
   dateofstart: Date;

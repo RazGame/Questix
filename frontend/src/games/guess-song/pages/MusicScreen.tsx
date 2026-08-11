@@ -5,6 +5,9 @@ import { createSocket } from '../services/socket';
 import SongCover from '../components/SongCover';
 import { FloatingReactions, ReactionFlyItem } from '../components/FloatingReactions';
 import { Leaderboard } from '../components/Leaderboard';
+import { AnswerCountdown } from '../components/AnswerCountdown';
+import { ProgressRing } from '../components/ProgressRing';
+import { useAnswerCountdown } from '../services/useAnswerCountdown';
 import { musicService, musicCoverSrc, songArtworkSrc } from '../services/music';
 import { defaultApiOrigin } from '../../../core/services/apiOrigin';
 import { MusicState } from '../../../core/types';
@@ -177,6 +180,9 @@ export default function MusicScreen() {
   // оно занимает сотни миллисекунд, и без флага синхронизация по состоянию
   // успевала запустить обычную дорожку — в зале звучали обе разом.
   const reverseRoundRef = useRef(false);
+  // Момент запуска развёрнутого буфера по часам контекста: они замирают
+  // вместе с ним на паузе, поэтому прогресс считается сам собой верно.
+  const reverseStartedRef = useRef(0);
   // Параметры текущего отрезка: на показе ответа обратный раунд переигрывается
   // нормально, и для этого нужно знать, что именно играло.
   const lastPlayRef = useRef<{ fileUrl: string; startSec: number; endSec: number | null } | null>(null);
@@ -388,6 +394,7 @@ export default function MusicScreen() {
     e.gain.gain.setValueAtTime(0.0001, e.ctx.currentTime);
     e.gain.gain.linearRampToValueAtTime(1, e.ctx.currentTime + TRACK_FADE_IN_MS / 1000);
     reverseNodeRef.current = node;
+    reverseStartedRef.current = e.ctx.currentTime;
     node.start();
   };
 
@@ -930,6 +937,31 @@ export default function MusicScreen() {
 
   const phase = state?.phase;
   const inRound = phase === 'playing' || phase === 'ended' || phase === 'buzzed' || phase === 'reveal';
+  const countdown = useAnswerCountdown(state);
+  // Сколько осталось от играющего отрезка, 1 → 0. Считаем по самому звуку:
+  // тогда пауза, «включить ещё раз» и «доиграть дальше» учитываются сами —
+  // в последнем случае конец отрезка снят, и кольцо идёт до конца песни.
+  const [segLeft, setSegLeft] = useState<number | null>(null);
+  useEffect(() => {
+    if (phase !== 'playing') { setSegLeft(null); return; }
+    const id = window.setInterval(() => {
+      const e = engineRef.current;
+      const seg = segmentRef.current;
+      if (!e) { setSegLeft(null); return; }
+      let left: number | null = null;
+      if (reverseRoundRef.current) {
+        const total = (seg.end ?? 0) - (seg.start ?? 0);
+        if (total > 0) left = 1 - (e.ctx.currentTime - reverseStartedRef.current) / total;
+      } else {
+        const end = seg.end ?? (Number.isFinite(e.audio.duration) ? e.audio.duration : null);
+        const total = end == null ? 0 : end - (seg.start || 0);
+        if (total > 0) left = 1 - (e.audio.currentTime - (seg.start || 0)) / total;
+      }
+      setSegLeft(left == null ? null : Math.max(0, Math.min(1, left)));
+    }, 120);
+    return () => window.clearInterval(id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [phase, state?.currentSongId]);
   const displayRound =
     state && state.total > 0
       ? Math.min(Math.max(state.currentIndex + 1, 1), state.total)
@@ -945,11 +977,20 @@ export default function MusicScreen() {
       ? (state.teams || []).map((t) => ({ id: t.id, name: `👥 ${t.name}`, score: t.score }))
       : (state?.players || []).map((p) => ({ id: p.id, name: p.name, score: p.score }));
 
-  // классы центрального круга
+  // Классы центрального круга. Порядок важен: вспышка «верно/неверно» бьёт
+  // всё остальное, дальше — кольца. Пока по рамке стекает кольцо (остаток
+  // отрезка или время на ответ), сама рамка приглушена: яркая обводка под
+  // дугой читается как второе, рассогласованное кольцо.
+  const ringOnBorder = (phase === 'playing' && segLeft != null && !showCover) || countdown.active;
   let centerCls = 'border-violet-400/50 bg-surface/70';
   if (flash === 'green') centerCls = 'border-emerald-400 bg-emerald-500/25 shadow-[0_0_80px_rgba(52,211,153,0.6)]';
   else if (flash === 'red') centerCls = 'border-rose-400 bg-rose-500/25 shadow-[0_0_80px_rgba(244,63,94,0.6)]';
-  else if (phase === 'buzzed') centerCls = 'border-amber-300 bg-surface/70 qgs-pulse';
+  else if (phase === 'buzzed') {
+    centerCls = countdown.active
+      ? 'border-amber-300/20 bg-surface/70'
+      : 'border-amber-300 bg-surface/70 qgs-pulse';
+  }
+  else if (ringOnBorder) centerCls = 'border-violet-400/15 bg-surface/70';
 
   const THEME_STYLES = {
     classic: '',
@@ -1042,7 +1083,20 @@ export default function MusicScreen() {
             >
               {/* Ни ссылки, ни файла — оставляем прежний крупный «?», он на
                   проекторе читается лучше значка */}
-              {showCover && (lastCover.cover || lastCover.songId) ? (
+              {phase === 'playing' && segLeft != null && !showCover && (
+                <ProgressRing
+                  fraction={segLeft}
+                  color={segLeft < 0.18 ? '#f472b6' : '#a78bfa'}
+                  glow={segLeft < 0.18 ? 'rgba(244,114,182,0.5)' : 'rgba(167,139,250,0.45)'}
+                />
+              )}
+              {countdown.active ? (
+                <AnswerCountdown
+                  seconds={countdown.seconds}
+                  fraction={countdown.fraction}
+                  urgent={countdown.urgent}
+                />
+              ) : showCover && (lastCover.cover || lastCover.songId) ? (
                 <SongCover
                   cover={lastCover.cover}
                   songId={lastCover.songId}

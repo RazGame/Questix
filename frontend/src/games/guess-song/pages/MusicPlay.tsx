@@ -5,6 +5,7 @@ import { createSocket } from '../services/socket';
 import SongCover from '../components/SongCover';
 import { musicService } from '../services/music';
 import { vibrate, hapticTap , installHaptics } from '../services/haptics';
+import { useAnswerCountdown } from '../services/useAnswerCountdown';
 import { MusicState } from '../../../core/types';
 
 // Выбор команды: чипы уже созданных + «новая». Один и тот же виджет на экране
@@ -309,6 +310,7 @@ export default function MusicPlay() {
   const isTeam = state?.mode === 'team';
   // Ключ группы для определения «мой ли это баззер» (команда в team, иначе сам игрок).
   const myGroupId = isTeam ? (me?.teamId || null) : playerIdRef.current;
+  const countdown = useAnswerCountdown(state);
   const [scoreFlash, setScoreFlash] = useState(false);
   const prevScoreRef = useRef<number | null>(null);
   const scoreFlashTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -772,19 +774,28 @@ export default function MusicPlay() {
       )}
 
       {phase === 'buzzed' && (
-        <Buzzer
-          label={
-            state?.buzzed?.id === myGroupId
-              ? isTeam ? 'Отвечает твоя команда' : 'Ты первый!'
-              : `Отвечает ${state?.buzzed?.name || '…'}`
-          }
-          sub={isTeam && state?.buzzed?.by ? state.buzzed.by : undefined}
-          btnClass={
-            state?.buzzed?.id === myGroupId
-              ? 'qgs-mobile-buzzer--success scale-[1.02]'
-              : 'qgs-mobile-buzzer--waiting scale-95'
-          }
-        />
+        <>
+          <Buzzer
+            label={
+              state?.buzzed?.id === myGroupId
+                ? isTeam ? 'Отвечает твоя команда' : 'Ты первый!'
+                : `Отвечает ${state?.buzzed?.name || '…'}`
+            }
+            sub={isTeam && state?.buzzed?.by ? state.buzzed.by : undefined}
+            countdown={countdown.active && state?.buzzed?.id === myGroupId ? countdown.seconds : null}
+            urgent={countdown.urgent}
+            btnClass={
+              state?.buzzed?.id === myGroupId
+                ? 'qgs-mobile-buzzer--success scale-[1.02]'
+                : 'qgs-mobile-buzzer--waiting scale-95'
+            }
+          />
+          {countdown.active && state?.buzzed?.id !== myGroupId && (
+            <p className="mt-4 font-mono text-sm text-zinc-400">
+              осталось {countdown.seconds} с
+            </p>
+          )}
+        </>
       )}
 
       {phase === 'playing' && (
@@ -890,11 +901,15 @@ function Buzzer({
   sub,
   onBuzz,
   btnClass,
+  countdown,
+  urgent,
 }: {
   label: string;
   sub?: string; // вторая строка (кто нажал) — вместо точки-разделителя
   onBuzz?: () => void;
   btnClass: string;
+  countdown?: number | null; // секунды на ответ; null — счётчика нет
+  urgent?: boolean;
 }) {
   const disabled = !onBuzz;
   // Длинные названия команд («Ааааа…аааа») распирали круг. Ужимаем шрифт по
@@ -914,7 +929,24 @@ function Buzzer({
       disabled={disabled}
       className={`qgs-mobile-buzzer select-none touch-none flex h-64 w-64 flex-col items-center justify-center gap-1 rounded-full p-6 text-center font-black transition-all duration-500 transform active:scale-95 ${btnClass}`}
     >
-      <span className={`relative z-10 w-full break-words leading-tight ${size}`}>{label}</span>
+      {countdown != null ? (
+        <>
+          <span className="relative z-10 w-full truncate text-sm font-bold uppercase tracking-widest opacity-80">
+            {label}
+          </span>
+          <span
+            key={countdown} // новый ключ на каждой секунде — цифра «щёлкает»
+            className={`qgs-count-pop relative z-10 font-display leading-none ${
+              urgent ? 'text-rose-300' : 'text-white'
+            } text-7xl`}
+          >
+            {countdown}
+          </span>
+          <span className="relative z-10 text-xs font-semibold opacity-70">секунд на ответ</span>
+        </>
+      ) : (
+        <span className={`relative z-10 w-full break-words leading-tight ${size}`}>{label}</span>
+      )}
       {sub && (
         <span className="relative z-10 w-full truncate text-sm font-semibold opacity-80" title={sub}>
           {sub}
