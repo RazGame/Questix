@@ -5,28 +5,40 @@ export interface ReactionFlyItem {
   emoji: string;
   senderName?: string;
   leftPct?: number;
+  swayPx?: number;   // размах покачивания по пути вверх
+  risePct?: number;  // до какой высоты долетает
+  durMs?: number;    // длительность полёта
 }
 
-interface Props {
-  reactions: ReactionFlyItem[];
-}
-
-export const FloatingReactions: React.FC<Props> = ({ reactions }) => {
-  if (!reactions || reactions.length === 0) return null;
+/**
+ * Реакции гостей, всплывающие над проектором.
+ *
+ * Разброс намеренный: у каждой свои размах, высота и длительность. Без него
+ * десяток одинаковых эмодзи летит ровной шеренгой — выглядит механически.
+ * Сами значения задаёт экран при получении события, чтобы полёт не менялся
+ * на перерисовках.
+ */
+export const FloatingReactions: React.FC<{ reactions: ReactionFlyItem[] }> = ({ reactions }) => {
+  if (!reactions?.length) return null;
 
   return (
     <div className="pointer-events-none fixed inset-0 z-50 overflow-hidden">
       {reactions.map((item) => (
         <div
           key={item.id}
-          className="animate-reaction-fly absolute bottom-12 flex flex-col items-center select-none"
-          style={{
-            left: `${item.leftPct ?? Math.floor(10 + Math.random() * 80)}%`,
-          }}
+          className="animate-reaction-fly absolute bottom-16 flex flex-col items-center select-none"
+          style={
+            {
+              left: `${item.leftPct ?? 50}%`,
+              '--sway': `${item.swayPx ?? 26}px`,
+              '--rise': `${item.risePct ?? 62}vh`,
+              '--dur': `${item.durMs ?? 3400}ms`,
+            } as React.CSSProperties
+          }
         >
-          <span className="text-5xl filter drop-shadow-lg">{item.emoji}</span>
+          <span className="text-6xl drop-shadow-[0_4px_16px_rgba(0,0,0,0.55)]">{item.emoji}</span>
           {item.senderName && (
-            <span className="mt-1 rounded-full bg-black/70 px-2 py-0.5 text-xs font-semibold text-white border border-white/20 backdrop-blur-md">
+            <span className="mt-1 max-w-[9rem] truncate rounded-full border border-white/15 bg-black/65 px-2 py-0.5 text-xs font-semibold text-white/90 backdrop-blur-md">
               {item.senderName}
             </span>
           )}

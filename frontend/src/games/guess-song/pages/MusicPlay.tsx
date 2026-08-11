@@ -92,6 +92,14 @@ function TeamPicker({
   );
 }
 
+// Панель реакций живёт внизу экрана, поэтому всплывашки поднимаем над ней —
+// иначе правильный ответ оказывался ровно под эмодзи и его не было видно.
+const REACTIONS_BOTTOM = 'calc(env(safe-area-inset-bottom) + 0.5rem)';
+const TOAST_BOTTOM = 'calc(env(safe-area-inset-bottom) + 4.25rem)';
+
+// Тот же набор, что разрешён на сервере (ALLOWED_REACTIONS).
+const REACTIONS = ['❤️', '🔥', '🎉', '🎵', '👏', '💩'];
+
 // Телефон игрока «Угадай мелодию». Без регистрации на платформе: вход по коду/QR.
 // Баззер на onPointerDown ради минимальной задержки.
 export default function MusicPlay() {
@@ -706,7 +714,7 @@ export default function MusicPlay() {
             {state?.reveal && (
               <div
                 className="pointer-events-none fixed inset-x-4 z-40 mx-auto max-w-sm"
-                style={{ bottom: 'calc(env(safe-area-inset-bottom) + 1rem)' }}
+                style={{ bottom: TOAST_BOTTOM }}
               >
                 <div
                   className={`qgs-answer-toast flex items-center gap-3 rounded-xl border p-3 text-left shadow-2xl backdrop-blur-md ${
@@ -749,7 +757,7 @@ export default function MusicPlay() {
           <Buzzer label="Фрагмент закончился" btnClass="qgs-mobile-buzzer--idle scale-95" />
           <div
             className="pointer-events-none fixed inset-x-4 z-40 mx-auto max-w-sm"
-            style={{ bottom: 'calc(env(safe-area-inset-bottom) + 1rem)' }}
+            style={{ bottom: TOAST_BOTTOM }}
           >
             <div className="qgs-answer-toast rounded-xl border border-amber-500/20 bg-[#171107]/95 p-3 text-left shadow-2xl shadow-amber-950/30 backdrop-blur-md">
               <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-amber-300/80">
@@ -833,7 +841,7 @@ export default function MusicPlay() {
           {me?.locked && (
             <div
               className="pointer-events-none fixed inset-x-4 z-40 mx-auto max-w-sm"
-              style={{ bottom: 'calc(env(safe-area-inset-bottom) + 3.5rem)' }}
+              style={{ bottom: TOAST_BOTTOM }}
             >
               <div className="qgs-answer-toast rounded-xl border border-rose-500/20 bg-[#18070c]/95 p-3 text-left shadow-2xl shadow-rose-950/35 backdrop-blur-md">
                 <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-rose-300/80">
@@ -853,15 +861,18 @@ export default function MusicPlay() {
 
       {/* Панель эмодзи-реакций игроков */}
       {joined && (
-        <div className="fixed bottom-3 left-1/2 -translate-x-1/2 z-40 flex items-center gap-1.5 rounded-full bg-black/75 px-3 py-1.5 border border-white/10 backdrop-blur-md shadow-xl">
-          {['❤️', '🔥', '🎉', '🎵', '👏', '💩'].map((emoji) => (
+        <div
+          className="fixed left-1/2 z-40 flex max-w-[92vw] -translate-x-1/2 items-center gap-0.5 rounded-full border border-white/10 bg-black/75 px-2 py-1 shadow-xl backdrop-blur-md"
+          style={{ bottom: REACTIONS_BOTTOM }}
+        >
+          {REACTIONS.map((emoji) => (
             <button
               key={emoji}
               onClick={() => {
                 hapticTap();
                 socketRef.current?.emit('player:reaction', { emoji });
               }}
-              className="text-xl transition transform hover:scale-125 active:scale-90 p-1 select-none"
+              className="select-none p-1.5 text-lg leading-none transition active:scale-90"
               title="Отправить реакцию"
             >
               {emoji}

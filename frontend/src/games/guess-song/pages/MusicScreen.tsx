@@ -620,16 +620,26 @@ export default function MusicScreen() {
       }
     });
     socket.on('reaction:fly', (data: any) => {
+      // Разброс считаем один раз при получении: если делать это на рендере,
+      // траектория будет прыгать при каждой перерисовке экрана.
+      const durMs = 3000 + Math.floor(Math.random() * 1400);
       const item: ReactionFlyItem = {
         id: data.id || `${Date.now()}-${Math.random()}`,
         emoji: data.emoji,
         senderName: data.senderName,
-        leftPct: Math.floor(10 + Math.random() * 80),
+        // Держим подальше от краёв: элемент растёт вправо от своей точки,
+        // и с длинным именем у самого края подпись обрезалась бы.
+        leftPct: 8 + Math.floor(Math.random() * 70),
+        swayPx: 16 + Math.floor(Math.random() * 34),
+        risePct: 55 + Math.floor(Math.random() * 22),
+        durMs,
       };
-      setFlyReactions((prev) => [...prev.slice(-15), item]);
-      setTimeout(() => {
+      // Больше дюжины разом — уже каша: держим последние и снимаем каждую
+      // ровно по окончании её собственной анимации.
+      setFlyReactions((prev) => [...prev.slice(-11), item]);
+      window.setTimeout(() => {
         setFlyReactions((prev) => prev.filter((r) => r.id !== item.id));
-      }, 2800);
+      }, durMs + 120);
     });
     socket.on('state', (st: MusicState) => setState(st));
     return () => { socket.disconnect(); stopViz(); };
