@@ -58,6 +58,10 @@ class Session {
   freePlay = false; // «доигрываем дальше»: отрезок закончился, играем без ограничения
   revealGuessed = true; // reveal после верного ответа (false — ведущий показал сам)
   screenReady = false;
+  // Оформление проектора выбирает ведущий из пульта. Хранится в сессии, а не
+  // в самом экране: тогда тема переживает перезагрузку окна проектора и не
+  // требует, чтобы кто-то шёл к ноутбуку у экрана.
+  screenTheme: 'classic' | 'cyberpunk' | 'party' | 'synthwave' = 'classic';
   lastActivityAt = Date.now(); // для отгрузки простаивающих сессий
 
   constructor(io: Server, gameId: string) {
@@ -174,6 +178,13 @@ class Session {
   // --- управление игрой ---
   setScreenReady(ready: boolean) {
     this.screenReady = ready;
+    this.broadcast();
+  }
+
+  setScreenTheme(theme: string) {
+    const allowed = ['classic', 'cyberpunk', 'party', 'synthwave'] as const;
+    if (!(allowed as readonly string[]).includes(theme)) return;
+    this.screenTheme = theme as typeof this.screenTheme;
     this.broadcast();
   }
 
@@ -626,6 +637,7 @@ class Session {
         ? `/media/${this.playlist[safeCurrentIndex + 1].file}`
         : null,
       screenReady: this.screenReady,
+      screenTheme: this.screenTheme,
       revealGuessed: this.revealGuessed,
       // Есть ли ещё кому нажимать баззер (в 'playing' пульт по этому флагу
       // предлагает показать ответ вместо бесконечного ожидания).

@@ -218,6 +218,10 @@ export const registerMusicSockets = (io: Server): void => {
       if (role !== 'admin' || !gameId || !data?.playerId) return;
       getSession(io, gameId).kickPlayer(String(data.playerId));
     });
+    socket.on('admin:theme', (data: any) => {
+      if (role !== 'admin' || !gameId || typeof data?.theme !== 'string') return;
+      getSession(io, gameId).setScreenTheme(data.theme);
+    });
     socket.on('admin:remove-team', (data: any) => {
       if (role !== 'admin' || !gameId || !data?.teamId) return;
       getSession(io, gameId).removeTeam(String(data.teamId));

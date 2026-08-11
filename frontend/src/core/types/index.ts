@@ -152,6 +152,7 @@ export interface MusicState {
   coverHint?: boolean;   // обложка проявляется по ходу отрезка
   nextUrl?: string | null;
   screenReady?: boolean;
+  screenTheme?: 'classic' | 'cyberpunk' | 'party' | 'synthwave'; // оформление проектора, выбирает ведущий
 }
 
 export interface GameAppl {

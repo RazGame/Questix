@@ -161,6 +161,35 @@ export default function MusicHost() {
             </div>
           </div>
 
+          {/* Оформление проектора выбирает ведущий: гостям этот переключатель
+              на экране был ни к чему, а идти к ноутбуку у проектора неудобно.
+              Тема живёт в сессии и переживает перезагрузку окна. */}
+          {live && (
+            <div className="glass flex flex-wrap items-center gap-2 p-4">
+              <span className="mr-1 text-xs font-semibold uppercase tracking-wider text-zinc-500">
+                Оформление экрана
+              </span>
+              {([
+                ['classic', 'Классика', 'bg-violet-600'],
+                ['cyberpunk', 'Киберпанк', 'bg-cyan-600'],
+                ['party', 'Вечеринка', 'bg-amber-600'],
+                ['synthwave', 'Синтвейв', 'bg-pink-600'],
+              ] as const).map(([id, title, active]) => (
+                <button
+                  key={id}
+                  onClick={() => emit('admin:theme', { theme: id })}
+                  className={`rounded-full px-3 py-1.5 text-xs font-bold transition ${
+                    (live.screenTheme || 'classic') === id
+                      ? `${active} text-white`
+                      : 'bg-white/5 text-zinc-400 hover:bg-white/10 hover:text-white'
+                  }`}
+                >
+                  {title}
+                </button>
+              ))}
+            </div>
+          )}
+
           {/* Пульт управления */}
           {live && (
             <div className="glass p-6 border-violet-500/20 bg-[#17111f]/60">

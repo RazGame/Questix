@@ -30,13 +30,18 @@ interface AudioEngine {
  * Оверлеи с position:fixed заворачивать сюда нельзя: трансформация у предка
  * превращает их в absolute. Поэтому они остаются снаружи.
  */
-function FitScreen({ children }: { children: React.ReactNode }) {
+function FitScreen({ children, watch }: { children: React.ReactNode; watch?: string }) {
   const boxRef = useRef<HTMLDivElement | null>(null);
   const innerRef = useRef<HTMLDivElement | null>(null);
   const [scale, setScale] = useState(1);
   // Над экраном ещё шапка сайта, поэтому 100dvh давал бы «экран + шапка»
   // и страница всё равно прокручивалась. Берём то, что осталось под шапкой.
   const [boxH, setBoxH] = useState<number | null>(null);
+  const [innerH, setInnerH] = useState<number | null>(null);
+
+  // Применённый масштаб держим в ref: замеры ниже идут в экранных пикселях,
+  // и чтобы вернуться к натуральным размерам, их надо делить на него.
+  const appliedRef = useRef(1);
 
   useLayoutEffect(() => {
     const fit = () => {
@@ -45,22 +50,46 @@ function FitScreen({ children }: { children: React.ReactNode }) {
       if (!box || !inner) return;
       const avail = Math.max(200, window.innerHeight - box.getBoundingClientRect().top);
       setBoxH((prev) => (prev === null || Math.abs(prev - avail) > 1 ? avail : prev));
-      // Трансформация не влияет на раскладку, поэтому scrollHeight здесь —
-      // всегда натуральный размер, даже когда масштаб уже применён.
+
+      // scrollHeight не учитывает абсолютно позиционированные элементы —
+      // например, карточку «нажал первым», которая лежит в секции
+      // фиксированной высоты и вылезает за неё. Без этого длинное название
+      // команды просто обрезалось нижним краем экрана.
+      const applied = appliedRef.current || 1;
+      const top = inner.getBoundingClientRect().top;
+      let needed = inner.scrollHeight;
+      inner.querySelectorAll('[class*="absolute"], [class*="fixed"]').forEach((el) => {
+        const r = (el as HTMLElement).getBoundingClientRect();
+        if (r.height > 0) needed = Math.max(needed, (r.bottom - top) / applied);
+      });
+
+      // Контейнер должен ЗНАТЬ про вылезающую карточку: иначе он центрирует
+      // свою (меньшую) высоту, и низ карточки всё равно уходит за край.
+      setInnerH((prev) => (prev === null || Math.abs(prev - needed) > 1 ? needed : prev));
+
       const k = Math.min(
         1,
-        avail / Math.max(1, inner.scrollHeight),
+        avail / Math.max(1, needed),
         box.clientWidth / Math.max(1, inner.scrollWidth)
       );
+      appliedRef.current = k;
       setScale((prev) => (Math.abs(prev - k) > 0.005 ? k : prev));
     };
     fit();
+    // Карточка «нажал первым» появляется абсолютным блоком: размер контейнера
+    // при этом не меняется, и ResizeObserver молчит. Поэтому пересчитываем
+    // ещё и по watch — строке, которая меняется вместе с фазой и карточкой.
+    const t = window.setTimeout(fit, 60); // после анимации появления
     const ro = new ResizeObserver(fit);
     if (innerRef.current) ro.observe(innerRef.current);
     if (boxRef.current) ro.observe(boxRef.current);
     window.addEventListener('resize', fit);
-    return () => { ro.disconnect(); window.removeEventListener('resize', fit); };
-  }, []);
+    return () => {
+      window.clearTimeout(t);
+      ro.disconnect();
+      window.removeEventListener('resize', fit);
+    };
+  }, [watch]);
 
   return (
     <div
@@ -71,7 +100,10 @@ function FitScreen({ children }: { children: React.ReactNode }) {
       <div
         ref={innerRef}
         className="w-full"
-        style={scale < 1 ? { transform: `scale(${scale})`, transformOrigin: 'center center' } : undefined}
+        style={{
+          ...(innerH ? { minHeight: `${innerH}px` } : {}),
+          ...(scale < 1 ? { transform: `scale(${scale})`, transformOrigin: 'center center' } : {}),
+        }}
       >
         {children}
       </div>
@@ -112,7 +144,6 @@ export default function MusicScreen() {
   const [qr, setQr] = useState<string | null>(null);
   const [joinUrl, setJoinUrl] = useState('');
   const [flyReactions, setFlyReactions] = useState<ReactionFlyItem[]>([]);
-  const [screenTheme, setScreenTheme] = useState<'classic' | 'cyberpunk' | 'party' | 'synthwave'>('classic');
   // Анимации центра: вспышка верно/неверно и показ обложки.
   const [flash, setFlash] = useState<'green' | 'red' | null>(null);
   const [showCover, setShowCover] = useState(false);
@@ -789,7 +820,7 @@ export default function MusicScreen() {
   else if (flash === 'red') centerCls = 'border-rose-400 bg-rose-500/25 shadow-[0_0_80px_rgba(244,63,94,0.6)]';
   else if (phase === 'buzzed') centerCls = 'border-amber-300 bg-surface/70 qgs-pulse';
 
-  const themeStyles = {
+  const THEME_STYLES = {
     classic: '',
     cyberpunk: 'bg-[#06030e] text-cyan-200 bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-fuchsia-950/40 via-cyan-950/20 to-black min-h-screen',
     party: 'bg-[#0f0701] text-amber-100 bg-[radial-gradient(circle_at_center,_var(--tw-gradient-stops))] from-amber-600/25 via-purple-950/30 to-black min-h-screen',
@@ -798,7 +829,7 @@ export default function MusicScreen() {
 
   if (inRound) {
     return (
-      <div className={themeStyles[screenTheme]}>
+      <div className={THEME_STYLES[state?.screenTheme || 'classic']}>
         {needGate && (
           <button
             onClick={unlock}
@@ -817,7 +848,7 @@ export default function MusicScreen() {
             </div>
           </div>
         )}
-      <FitScreen>
+      <FitScreen watch={`${phase}|${buzzCard?.id || ''}|${buzzCard?.answer || ''}|${buzzCard?.name.length || 0}`}>
       <div className="px-6 py-4 text-center">
 
         <main className="qgs-fade-in mx-auto grid min-h-[calc(100vh-2rem)] max-w-5xl grid-rows-[220px_520px_160px] items-center justify-items-center">
@@ -973,7 +1004,7 @@ export default function MusicScreen() {
   }
 
   return (
-    <div className={themeStyles[screenTheme]}>
+    <div className={THEME_STYLES[state?.screenTheme || 'classic']}>
       {needGate && (
         <button
           onClick={unlock}
@@ -982,7 +1013,7 @@ export default function MusicScreen() {
           🔊 Нажмите, чтобы включить звук
         </button>
       )}
-      <FitScreen>
+      <FitScreen watch={`${phase}|${state?.teams?.length || 0}|${state?.blocks?.length || 0}`}>
       <div className="flex flex-col items-center justify-center px-6 py-6 text-center">
 
       {state?.paused && (
@@ -1249,33 +1280,6 @@ export default function MusicScreen() {
       </FitScreen>
       <FloatingReactions reactions={flyReactions} />
 
-      {/* Переключатель темы на проекторе */}
-      <div className="fixed top-3 right-3 z-50 flex items-center gap-1 bg-black/60 p-1 rounded-full border border-white/10 backdrop-blur-md opacity-40 hover:opacity-100 transition">
-        <button
-          onClick={() => setScreenTheme('classic')}
-          className={`px-2.5 py-1 text-xs rounded-full font-bold transition ${screenTheme === 'classic' ? 'bg-violet-600 text-white' : 'text-zinc-400 hover:text-white'}`}
-        >
-          Classic
-        </button>
-        <button
-          onClick={() => setScreenTheme('cyberpunk')}
-          className={`px-2.5 py-1 text-xs rounded-full font-bold transition ${screenTheme === 'cyberpunk' ? 'bg-cyan-600 text-white' : 'text-zinc-400 hover:text-white'}`}
-        >
-          Cyberpunk
-        </button>
-        <button
-          onClick={() => setScreenTheme('party')}
-          className={`px-2.5 py-1 text-xs rounded-full font-bold transition ${screenTheme === 'party' ? 'bg-amber-600 text-white' : 'text-zinc-400 hover:text-white'}`}
-        >
-          Party
-        </button>
-        <button
-          onClick={() => setScreenTheme('synthwave')}
-          className={`px-2.5 py-1 text-xs rounded-full font-bold transition ${screenTheme === 'synthwave' ? 'bg-pink-600 text-white' : 'text-zinc-400 hover:text-white'}`}
-        >
-          Synthwave
-        </button>
-      </div>
     </div>
   );
 }
