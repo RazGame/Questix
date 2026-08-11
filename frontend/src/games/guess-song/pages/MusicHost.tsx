@@ -84,13 +84,6 @@ export default function MusicHost() {
     navigate('/admin?tab=music');
   };
 
-  if (isLoading) {
-    return <div className="text-center py-20 text-zinc-400">Инициализация пульта ведущего...</div>;
-  }
-
-  // id текущей песни приходит с сервера — индекс плейлиста нельзя применять
-  // к gameData.songs (порядок в БД может отличаться от порядка блоков).
-  const currentSongId = live?.currentSongId;
   // Песни ищем по индексу, а не перебором: пульт перерисовывается на каждое
   // состояние (нажатие баззера, готовность, смена фазы), а плейлист на 200
   // песен давал до 40 тысяч сравнений на каждую такую перерисовку.
@@ -99,6 +92,17 @@ export default function MusicHost() {
     gameData?.songs.forEach((s) => map.set(String(s._id), s));
     return map;
   }, [gameData]);
+
+  // ВАЖНО: все хуки — выше этого return. Пока пульт грузится, компонент
+  // выходит здесь, и хук, объявленный ниже, на первом рендере не вызвался бы,
+  // а на втором вызвался — React падает с «rendered more hooks».
+  if (isLoading) {
+    return <div className="text-center py-20 text-zinc-400">Инициализация пульта ведущего...</div>;
+  }
+
+  // id текущей песни приходит с сервера — индекс плейлиста нельзя применять
+  // к gameData.songs (порядок в БД может отличаться от порядка блоков).
+  const currentSongId = live?.currentSongId;
   const currentSong = currentSongId ? songsById.get(String(currentSongId)) : undefined;
   const displayRound =
     live && live.total > 0
