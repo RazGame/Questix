@@ -30,6 +30,10 @@ interface AudioEngine {
  * Оверлеи с position:fixed заворачивать сюда нельзя: трансформация у предка
  * превращает их в absolute. Поэтому они остаются снаружи.
  */
+// Воздух под самым нижним вылезающим блоком, в натуральных пикселях
+// (масштаб применится к нему вместе со всем содержимым).
+const OVERFLOW_GAP = 32;
+
 function FitScreen({ children, watch }: { children: React.ReactNode; watch?: string }) {
   const boxRef = useRef<HTMLDivElement | null>(null);
   const innerRef = useRef<HTMLDivElement | null>(null);
@@ -63,7 +67,9 @@ function FitScreen({ children, watch }: { children: React.ReactNode; watch?: str
         for (let n: HTMLElement | null = el; n && n !== inner; n = n.offsetParent as HTMLElement | null) {
           bottom += n.offsetTop;
         }
-        needed = Math.max(needed, bottom);
+        // Запас снизу: раз высоту задаёт именно этот блок, без него он
+        // ужимается ровно до края экрана и выглядит приклеенным.
+        needed = Math.max(needed, bottom + OVERFLOW_GAP);
       });
 
       // Контейнер должен ЗНАТЬ про вылезающую карточку: иначе он центрирует
