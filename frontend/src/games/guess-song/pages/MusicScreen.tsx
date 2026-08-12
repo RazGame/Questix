@@ -715,10 +715,18 @@ export default function MusicScreen() {
         fadeResume(m.fadeMs);
       }
       else if (m.action === 'playOn') {
-        // Доигрываем дальше: снимаем ограничение отрезка и продолжаем с места
-        // остановки. У обратного раунда буфер уже вырезан по отрезку, дальше
-        // играть нечего — просто продолжаем то, что осталось.
-        if (!reverseRoundRef.current) segmentRef.current.end = null;
+        if (reverseRoundRef.current) {
+          // Развёрнутого продолжения не существует: буфер вырезан ровно по
+          // отрезку и уже доигран, возобновлять нечего — раньше здесь
+          // наступала тишина. Ведущий просит послушать дальше, поэтому дальше
+          // и играем, только прямо: с конца отрезка и до конца песни.
+          const last = lastPlayRef.current;
+          stopReverse();
+          if (last) playFrom(last.fileUrl, last.endSec ?? last.startSec, null);
+          return;
+        }
+        // Доигрываем дальше: снимаем ограничение отрезка и продолжаем с места остановки.
+        segmentRef.current.end = null;
         fadeResume(m.fadeMs);
       }
       else if (m.action === 'fadeAndStop') { fadeAndStop(m.playMs, m.fadeMs); }
