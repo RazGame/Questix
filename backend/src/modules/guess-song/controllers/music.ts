@@ -779,6 +779,7 @@ async function runDownload(gameId: string, songId: string): Promise<void> {
       quality,
       song.title || '',
       song.artist || '',
+      String(song.duration || ''),
     ]);
   } finally {
     clearInterval(progressTimer);

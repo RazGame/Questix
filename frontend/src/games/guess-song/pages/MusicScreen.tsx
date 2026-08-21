@@ -161,6 +161,26 @@ const ANSWER_RESUME_FADE_IN_MS = 450;
 const ANSWER_FADE_OUT_MS = 320;
 const SEGMENT_FADE_OUT_MS = 1200; // затухание в конце отрезка вместо обрыва
 
+const LISTENING_PROMPTS = [
+  'Слушаем… кто угадает?',
+  'Узнали с первых нот?',
+  'Что это за трек?',
+  'Кажется знакомым?',
+  'Кто первым назовёт песню?',
+  'Ловите знакомый мотив…',
+  'Вспоминаем исполнителя…',
+  'Ответ уже вертится на языке?',
+];
+
+// Одна и та же песня всегда получает одну фразу: текст меняется между
+// треками, но не прыгает из-за обновлений таймера и состояния сокета.
+function listeningPrompt(gameId: string | undefined, songIndex: number | undefined) {
+  let gameOffset = 0;
+  for (const char of gameId || '') gameOffset = (gameOffset * 31 + char.charCodeAt(0)) >>> 0;
+  const index = Math.max(0, songIndex ?? 0);
+  return LISTENING_PROMPTS[(gameOffset + index) % LISTENING_PROMPTS.length];
+}
+
 export default function MusicScreen() {
   const { gameId } = useParams<{ gameId: string }>();
   const engineRef = useRef<AudioEngine | null>(null);
@@ -549,7 +569,12 @@ export default function MusicScreen() {
       cctx.clearRect(0, 0, w, h);
 
       const e = engineRef.current;
-      const playing = e && !e.audio.paused;
+      // Обычная песня играет через <audio>, а reverse — через отдельный
+      // AudioBufferSourceNode (сам <audio> в это время намеренно на паузе).
+      // Проверка только audio.paused превращала эквалайзер reverse-раунда в
+      // статичное «дыхание», хотя звук через analyser действительно шёл.
+      const reversePlaying = !!e && !!reverseNodeRef.current && e.ctx.state === 'running';
+      const playing = !!e && (!e.audio.paused || reversePlaying);
       const visualGain = playing ? Math.max(0, Math.min(1, e!.gain.gain.value || 0)) : 0;
       if (playing) {
         // Снимаем спектр кадра — дальше его читают расчёты баса и столбиков.
@@ -716,13 +741,19 @@ export default function MusicScreen() {
       }
       else if (m.action === 'playOn') {
         if (reverseRoundRef.current) {
-          // Развёрнутого продолжения не существует: буфер вырезан ровно по
-          // отрезку и уже доигран, возобновлять нечего — раньше здесь
-          // наступала тишина. Ведущий просит послушать дальше, поэтому дальше
-          // и играем, только прямо: с конца отрезка и до конца песни.
+          // Буфер исходного отрезка уже доигран и повторно запустить его
+          // нельзя. Декодируем оставшуюся часть отдельно, но сохраняем режим
+          // раунда: «Продолжить» в реверсе не должно переключать песню на
+          // обычное воспроизведение. Исходный отрезок шёл end→start, поэтому
+          // бесшовное продолжение — от start к началу песни.
           const last = lastPlayRef.current;
-          stopReverse();
-          if (last) playFrom(last.fileUrl, last.endSec ?? last.startSec, null);
+          if (last) {
+            void playReversed(last.fileUrl, 0, last.startSec).catch(() => {
+              // Если Web Audio не смог декодировать файл, оставляем рабочий
+              // запасной путь — продолжаем песню обычным способом.
+              playFrom(last.fileUrl, last.endSec ?? last.startSec, null);
+            });
+          }
           return;
         }
         // Доигрываем дальше: снимаем ограничение отрезка и продолжаем с места остановки.
@@ -1176,7 +1207,11 @@ export default function MusicScreen() {
               </div>
             )}
 
-            {phase === 'playing' && !buzzCard && <p className="text-zinc-400 text-xl">Слушаем… кто угадает?</p>}
+            {phase === 'playing' && !buzzCard && (
+              <p className="text-zinc-400 text-xl">
+                {listeningPrompt(state?.gameId, state?.currentIndex)}
+              </p>
+            )}
             {phase === 'ended' && !buzzCard && <p className="text-zinc-400 text-xl">Фрагмент закончился. Ждём ведущего…</p>}
             {phase === 'reveal' && state?.reveal && !buzzCard && (
               <div>

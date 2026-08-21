@@ -23,6 +23,7 @@ import os
 import sys
 import time
 import glob
+import subprocess
 
 AUDIO_EXT = (".flac", ".mp3", ".m4a", ".ogg", ".opus", ".wav", ".webm")
 
@@ -82,6 +83,83 @@ def find_audio_files(out_dir, before, started):
     return new_files
 
 
+def parse_duration(value):
+    try:
+        seconds = float(value)
+        return seconds if seconds > 0 else None
+    except Exception:  # noqa: BLE001
+        return None
+
+
+def yt_dlp_fallback(title, artist, duration, out_dir, started):
+    """Direct YouTube fallback for cases where SpotiFLAC matches a wrong-length video.
+
+    SpotiFLAC removes files that fail duration validation. For popular/new tracks its
+    internal YouTube query can occasionally choose a remix or long video. A targeted
+    yt-dlp search with a duration check is good enough for game snippets and keeps
+    the admin workflow alive.
+    """
+    query = " ".join(part for part in [artist, title, "audio"] if part).strip()
+    if not query:
+        return None
+
+    expected = parse_duration(duration)
+    dump = subprocess.run(
+        ["yt-dlp", "--dump-json", f"ytsearch10:{query}"],
+        cwd=out_dir,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.DEVNULL,
+        timeout=90,
+        check=False,
+    )
+    if dump.returncode != 0 or not dump.stdout.strip():
+        return None
+
+    candidates = []
+    for line in dump.stdout.splitlines():
+        try:
+            item = json.loads(line)
+        except Exception:  # noqa: BLE001
+            continue
+        url = item.get("webpage_url")
+        got_duration = parse_duration(item.get("duration"))
+        if not url or not got_duration:
+            continue
+        delta = abs(got_duration - expected) if expected else 0
+        if expected and delta > max(8, expected * 0.08):
+            continue
+        candidates.append((delta, url))
+
+    if not candidates:
+        return None
+
+    candidates.sort(key=lambda x: x[0])
+    dest = os.path.join(out_dir, "yt-dlp-fallback.%(ext)s")
+    download = subprocess.run(
+        [
+            "yt-dlp",
+            "-f",
+            "bestaudio[ext=m4a]/bestaudio",
+            "--no-playlist",
+            "-o",
+            dest,
+            candidates[0][1],
+        ],
+        cwd=out_dir,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        timeout=180,
+        check=False,
+    )
+    if download.returncode != 0:
+        return None
+
+    files = find_audio_files(out_dir, set(), started)
+    return files[0] if files else None
+
+
 def main():
     if len(sys.argv) < 3:
         finish({"ok": False, "error": "usage: spotiflac_download.py <url> <output_dir>"}, 1)
@@ -124,6 +202,15 @@ def main():
     # Ищем новый аудиофайл.
     new_files = find_audio_files(out_dir, before, started)
     if not new_files:
+        fallback = yt_dlp_fallback(
+            title=sys.argv[4] if len(sys.argv) > 4 else "",
+            artist=sys.argv[5] if len(sys.argv) > 5 else "",
+            duration=sys.argv[6] if len(sys.argv) > 6 else os.environ.get("MUSIC_EXPECTED_DURATION", ""),
+            out_dir=out_dir,
+            started=started,
+        )
+        if fallback:
+            finish({"ok": True, "file": os.path.abspath(fallback)})
         finish({"ok": False, "error": "файл не найден после загрузки"}, 1)
 
     finish({"ok": True, "file": os.path.abspath(new_files[0])})
