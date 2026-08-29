@@ -192,7 +192,17 @@ export default function MusicScreen() {
   const segmentRef = useRef<{ start: number; end: number | null; active: boolean; ended: boolean }>({
     start: 0, end: null, active: false, ended: false,
   });
-  const pendingPlayRef = useRef<{ fileUrl: string; startSec: number; endSec: number | null; nextUrl?: string | null } | null>(null);
+  const pendingPlayRef = useRef<{
+    fileUrl: string;
+    startSec: number;
+    endSec: number | null;
+    nextUrl?: string | null;
+    generation: number;
+  } | null>(null);
+  // Номер текущей операции воспроизведения. Асинхронные play()/fetch/decode
+  // от старой песни не имеют права менять состояние уже запущенной новой.
+  const playbackGenerationRef = useRef(0);
+  const pauseTimerRef = useRef<number | null>(null);
   // Узел обратного воспроизведения: <audio> задом наперёд не умеет, поэтому
   // отрезок декодируется в буфер и разворачивается по сэмплам.
   const reverseNodeRef = useRef<AudioBufferSourceNode | null>(null);
@@ -354,6 +364,14 @@ export default function MusicScreen() {
         const p = pendingPlayRef.current;
         pendingPlayRef.current = null;
         playFrom(p.fileUrl, p.startSec, p.endSec, p.nextUrl);
+      } else if (state?.phase === 'playing' && state.fileUrl) {
+        // Если pending уже успел очиститься/устареть из-за гонки play-pause,
+        // кнопка всё равно должна восстановить именно текущую песню.
+        if (state.reverseMode) {
+          void playReversed(state.fileUrl, state.startSec || 0, state.endSec ?? null);
+        } else {
+          playFrom(state.fileUrl, state.startSec || 0, state.endSec ?? null, state.nextUrl);
+        }
       } else {
         e.audio.play().then(() => e.audio.pause()).catch(() => {});
       }
@@ -363,12 +381,21 @@ export default function MusicScreen() {
     setNeedGate(false);
   };
 
-  const stopReverse = () => {
+  const stopReverse = (invalidatePending = true) => {
+    if (invalidatePending) playbackGenerationRef.current += 1;
     reverseRoundRef.current = false;
     const node = reverseNodeRef.current;
     reverseNodeRef.current = null;
     if (!node) return;
     try { node.onended = null; node.stop(); } catch { /* уже остановлен */ }
+  };
+
+  const handleAudioPlayError = (err: any, generation = playbackGenerationRef.current) => {
+    if (generation !== playbackGenerationRef.current || err?.name === 'AbortError') return;
+    console.warn('Audio playback failed:', err);
+    // Оверлей нужен только тогда, когда браузер требует жест пользователя.
+    // Ошибки сети/формата и штатный AbortError кликом исправить невозможно.
+    if (err?.name === 'NotAllowedError') setNeedGate(true);
   };
 
   /**
@@ -378,15 +405,32 @@ export default function MusicScreen() {
    * проекторе продолжал жить.
    */
   const playReversed = async (fileUrl: string, startSec: number, endSec: number | null) => {
+    if (pauseTimerRef.current !== null) window.clearTimeout(pauseTimerRef.current);
+    pauseTimerRef.current = null;
     const e = initAudio();
-    stopReverse();
+    const generation = ++playbackGenerationRef.current;
+    stopReverse(false);
     reverseRoundRef.current = true; // до await: декодирование не мгновенное
     if (e.ctx.state === 'suspended') await e.ctx.resume();
+    if (generation !== playbackGenerationRef.current) return;
     e.audio.pause();
     segmentRef.current = { start: startSec || 0, end: endSec, active: true, ended: false };
 
-    const raw = await fetch(apiOrigin + fileUrl).then((r) => r.arrayBuffer());
-    const decoded = await e.ctx.decodeAudioData(raw);
+    let decoded: AudioBuffer;
+    try {
+      const raw = await fetch(apiOrigin + fileUrl).then((r) => {
+        if (!r.ok) throw new Error(`Не удалось загрузить аудио: HTTP ${r.status}`);
+        return r.arrayBuffer();
+      });
+      if (generation !== playbackGenerationRef.current) return;
+      decoded = await e.ctx.decodeAudioData(raw);
+    } catch (err) {
+      // Ошибка уже отменённой старой песни не должна запускать её fallback
+      // поверх новой композиции.
+      if (generation !== playbackGenerationRef.current) return;
+      throw err;
+    }
+    if (generation !== playbackGenerationRef.current) return;
     const from = Math.max(0, startSec || 0);
     const to = Math.min(decoded.duration, endSec ?? decoded.duration);
     const rate = decoded.sampleRate;
@@ -419,7 +463,10 @@ export default function MusicScreen() {
   };
 
   const playFrom = (fileUrl: string, startSec: number, endSec: number | null, nextUrl?: string | null) => {
-    stopReverse(); // заодно снимает признак обратного раунда
+    if (pauseTimerRef.current !== null) window.clearTimeout(pauseTimerRef.current);
+    pauseTimerRef.current = null;
+    const generation = ++playbackGenerationRef.current;
+    stopReverse(false); // заодно снимает признак обратного раунда
     const e = initAudio();
     if (e.ctx.state === 'suspended') e.ctx.resume();
     // Сбросываем калибровку динамического диапазона и сглаживание для нового трека
@@ -434,7 +481,7 @@ export default function MusicScreen() {
     if (e.audio.src !== src) {
       e.audio.src = src;
     }
-    pendingPlayRef.current = { fileUrl, startSec, endSec, nextUrl };
+    pendingPlayRef.current = { fileUrl, startSec, endSec, nextUrl, generation };
     try {
       e.audio.currentTime = startSec || 0;
     } catch { /* ignore */ }
@@ -445,16 +492,25 @@ export default function MusicScreen() {
     e.audio.addEventListener('loadedmetadata', seek);
     e.audio.play()
       .then(() => {
-        pendingPlayRef.current = null;
+        if (generation !== playbackGenerationRef.current) return;
+        if (pendingPlayRef.current?.generation === generation) pendingPlayRef.current = null;
+        setNeedGate(false);
       })
       .catch((err) => {
-        console.warn('Playback blocked, showing interaction gate:', err);
-        setNeedGate(true);
+        // pause(), смена src и запуск следующей песни штатно прерывают старый
+        // play() с AbortError. Это не блокировка autoplay и кнопка поверх
+        // проектора здесь бесполезна.
+        handleAudioPlayError(err, generation);
       });
     if (nextUrl) e.next.src = apiOrigin + nextUrl;
   };
 
   const fadeAndStop = (playMs: number, fadeMs: number) => {
+    if (pauseTimerRef.current !== null) window.clearTimeout(pauseTimerRef.current);
+    pauseTimerRef.current = null;
+    // Отменяет отложенную паузу от баззера, если ведущий успел отметить
+    // ответ раньше окончания fade-out.
+    playbackGenerationRef.current += 1;
     segmentRef.current.active = false; // во время доигрыша/фейда не считаем конец отрезка
     const e = engineRef.current;
     if (reverseRoundRef.current && e) {
@@ -473,17 +529,22 @@ export default function MusicScreen() {
       e.gain.gain.setValueAtTime(0.0001, e.ctx.currentTime);
       e.gain.gain.linearRampToValueAtTime(1, e.ctx.currentTime + ANSWER_RESUME_FADE_IN_MS / 1000);
       if (e.audio.paused) {
-        e.audio.play().catch(() => setNeedGate(true));
+        const playGeneration = playbackGenerationRef.current;
+        e.audio.play().catch((err) => handleAudioPlayError(err, playGeneration));
       }
     }
+    const generation = playbackGenerationRef.current;
     setTimeout(() => {
+      if (generation !== playbackGenerationRef.current) return;
       const current = engineRef.current;
       if (!current) return;
       const now = current.ctx.currentTime;
       current.gain.gain.cancelScheduledValues(now);
       current.gain.gain.setValueAtTime(current.gain.gain.value, now);
       current.gain.gain.linearRampToValueAtTime(0.0001, now + fadeMs / 1000);
-      setTimeout(() => current.audio.pause(), fadeMs + 100);
+      setTimeout(() => {
+        if (generation === playbackGenerationRef.current) current.audio.pause();
+      }, fadeMs + 100);
     }, playMs);
   };
 
@@ -502,7 +563,11 @@ export default function MusicScreen() {
     e.gain.gain.cancelScheduledValues(now);
     e.gain.gain.setValueAtTime(e.gain.gain.value, now);
     e.gain.gain.linearRampToValueAtTime(0.0001, now + fadeMs / 1000);
-    window.setTimeout(() => {
+    const generation = playbackGenerationRef.current;
+    if (pauseTimerRef.current !== null) window.clearTimeout(pauseTimerRef.current);
+    pauseTimerRef.current = window.setTimeout(() => {
+      pauseTimerRef.current = null;
+      if (generation !== playbackGenerationRef.current) return;
       const current = engineRef.current;
       if (!current || !reverseRoundRef.current) return;
       // Конец отрезка сервер тоже шлёт паузой. Узел к этому моменту уже
@@ -513,6 +578,8 @@ export default function MusicScreen() {
   };
 
   const fadeResumeReverse = (fadeMs = ANSWER_RESUME_FADE_IN_MS) => {
+    if (pauseTimerRef.current !== null) window.clearTimeout(pauseTimerRef.current);
+    pauseTimerRef.current = null;
     const e = engineRef.current;
     if (!e) return;
     segmentRef.current.active = true;
@@ -533,7 +600,11 @@ export default function MusicScreen() {
     e.gain.gain.cancelScheduledValues(now);
     e.gain.gain.setValueAtTime(e.gain.gain.value, now);
     e.gain.gain.linearRampToValueAtTime(0.0001, now + fadeMs / 1000);
-    window.setTimeout(() => {
+    const generation = playbackGenerationRef.current;
+    if (pauseTimerRef.current !== null) window.clearTimeout(pauseTimerRef.current);
+    pauseTimerRef.current = window.setTimeout(() => {
+      pauseTimerRef.current = null;
+      if (generation !== playbackGenerationRef.current) return;
       const current = engineRef.current;
       if (!current) return;
       current.audio.pause();
@@ -542,6 +613,9 @@ export default function MusicScreen() {
 
   const fadeResume = (fadeMs = ANSWER_RESUME_FADE_IN_MS) => {
     if (reverseRoundRef.current) { fadeResumeReverse(fadeMs); return; }
+    if (pauseTimerRef.current !== null) window.clearTimeout(pauseTimerRef.current);
+    pauseTimerRef.current = null;
+    playbackGenerationRef.current += 1;
     const e = engineRef.current;
     if (!e) return;
     if (e.ctx.state === 'suspended') e.ctx.resume();
@@ -551,7 +625,8 @@ export default function MusicScreen() {
     e.gain.gain.cancelScheduledValues(now);
     e.gain.gain.setValueAtTime(0.0001, now);
     e.gain.gain.linearRampToValueAtTime(1, now + fadeMs / 1000);
-    e.audio.play().catch(() => setNeedGate(true));
+    const generation = playbackGenerationRef.current;
+    e.audio.play().catch((err) => handleAudioPlayError(err, generation));
   };
 
   // ---------- круговой эквалайзер ----------
@@ -723,6 +798,12 @@ export default function MusicScreen() {
     });
     socket.on('cmd', (m: any) => {
       if (m.action === 'play') {
+        // Убираем ответ предыдущей песни до первого кадра новой. Иначе
+        // анимация ухода обложки ещё ~340 мс лежала поверх уже начавшегося
+        // следующего раунда и выглядела как скачок состояния.
+        setShowCover(false);
+        setCoverLeaving(false);
+        setFlash(null);
         lastPlayRef.current = { fileUrl: m.fileUrl, startSec: m.startSec, endSec: m.endSec ?? null };
         if (m.reverse) {
           void playReversed(m.fileUrl, m.startSec, m.endSec ?? null).catch(() => {
@@ -762,8 +843,11 @@ export default function MusicScreen() {
       }
       else if (m.action === 'fadeAndStop') { fadeAndStop(m.playMs, m.fadeMs); }
       else if (m.action === 'stop') {
+        if (pauseTimerRef.current !== null) window.clearTimeout(pauseTimerRef.current);
+        pauseTimerRef.current = null;
         segmentRef.current.active = false;
         stopReverse();
+        pendingPlayRef.current = null;
         const e = engineRef.current;
         if (e) { e.audio.pause(); e.audio.currentTime = 0; }
       }
@@ -848,6 +932,16 @@ export default function MusicScreen() {
     const phase = state.phase;
     const curFile = state.fileUrl;
 
+    // Восстановление проектора/сокета посреди reverse-раунда. Команда play
+    // могла пройти до готовности аудио, поэтому одного cmd недостаточно —
+    // актуальное серверное состояние тоже умеет поднять обратный буфер.
+    if (phase === 'playing' && state.reverseMode && curFile && !state.paused && !reverseRoundRef.current) {
+      void playReversed(curFile, state.startSec || 0, state.endSec ?? null).catch((err) => {
+        console.warn('Reverse playback recovery failed:', err);
+      });
+      return;
+    }
+
     // Обратным раундом управляют только команды ведущего. Синхронизация
     // здесь работает с тегом <audio>, а он в этом режиме молчит: если ей не
     // запретить, она запускает обычную дорожку поверх развёрнутой — и зал
@@ -877,7 +971,8 @@ export default function MusicScreen() {
           if (e.audio.paused) {
             segmentRef.current.active = true;
             segmentRef.current.ended = false;
-            e.audio.play().catch(() => setNeedGate(true));
+            const generation = playbackGenerationRef.current;
+            e.audio.play().catch((err) => handleAudioPlayError(err, generation));
           }
         } else if (phase === 'buzzed') {
           if (!e.audio.paused) {

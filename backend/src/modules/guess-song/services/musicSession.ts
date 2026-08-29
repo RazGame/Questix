@@ -39,6 +39,10 @@ class Session {
   code = '';
   mode: Mode = 'solo'; // solo: счёт/баззер по игроку; team: по команде
   players = new Map<string, Player>();
+  // У одного телефона на короткое время могут жить два сокета: старый ещё
+  // закрывается, а новый уже восстановил соединение. Считаем подключения,
+  // чтобы поздний disconnect старого сокета не помечал живого игрока офлайн.
+  playerConnections = new Map<string, Set<string>>();
   teamScores = new Map<string, number>(); // teamId -> очки (team-режим)
   // Каноничное написание названия команды: ad-hoc команды матчатся ключом
   // без регистра («стол 1» = «Стол 1»), показываем первое введённое.
@@ -63,6 +67,7 @@ class Session {
   freePlay = false; // «доигрываем дальше»: отрезок закончился, играем без ограничения
   revealGuessed = true; // reveal после верного ответа (false — ведущий показал сам)
   screenReady = false;
+  private readyScreenConnections = new Set<string>();
   // Оформление проектора выбирает ведущий из пульта. Хранится в сессии, а не
   // в самом экране: тогда тема переживает перезагрузку окна проектора и не
   // требует, чтобы кто-то шёл к ноутбуку у экрана.
@@ -83,6 +88,8 @@ class Session {
   // Освобождение ресурсов сессии перед удалением из реестра.
   destroy() {
     this.clearSchedule();
+    this.playerConnections.clear();
+    this.readyScreenConnections.clear();
   }
 
   // Единая точка отложенных переходов: помнит колбэк и дедлайн ради паузы.
@@ -128,7 +135,17 @@ class Session {
   }
 
   // --- игроки ---
-  upsertPlayer(playerId: string, name?: string, team?: { teamId: string; teamName: string }) {
+  upsertPlayer(
+    playerId: string,
+    name?: string,
+    team?: { teamId: string; teamName: string },
+    connectionId?: string,
+  ) {
+    if (connectionId) {
+      const connections = this.playerConnections.get(playerId) || new Set<string>();
+      connections.add(connectionId);
+      this.playerConnections.set(playerId, connections);
+    }
     if (team) {
       // Первое написание закрепляется за командой, дальше все видят его.
       const canonical = this.teamNames.get(team.teamId);
@@ -144,7 +161,8 @@ class Session {
         existing.teamId = team.teamId;
         existing.teamName = team.teamName;
       }
-      existing.connected = true;
+      // rename без connectionId не меняет сетевое состояние; join — меняет.
+      if (connectionId) existing.connected = true;
     } else {
       this.players.set(playerId, {
         id: playerId,
@@ -170,6 +188,18 @@ class Session {
     if (p) { p.connected = connected; this.broadcast(); }
   }
 
+  disconnectPlayer(playerId: string, connectionId: string) {
+    const connections = this.playerConnections.get(playerId);
+    if (connections) {
+      connections.delete(connectionId);
+      if (connections.size === 0) this.playerConnections.delete(playerId);
+    }
+    const p = this.players.get(playerId);
+    if (!p) return;
+    p.connected = (this.playerConnections.get(playerId)?.size || 0) > 0;
+    this.broadcast();
+  }
+
   isArmed(playerId: string) {
     const p = this.players.get(playerId);
     if (!p || this.phase !== 'playing' || this.paused) return false;
@@ -186,8 +216,14 @@ class Session {
   }
 
   // --- управление игрой ---
-  setScreenReady(ready: boolean) {
-    this.screenReady = ready;
+  setScreenReady(ready: boolean, connectionId?: string) {
+    if (connectionId) {
+      if (ready) this.readyScreenConnections.add(connectionId);
+      else this.readyScreenConnections.delete(connectionId);
+      this.screenReady = this.readyScreenConnections.size > 0;
+    } else {
+      this.screenReady = ready;
+    }
     this.broadcast();
   }
 
@@ -375,6 +411,7 @@ class Session {
   // Отцепить игрока (ушёл, дубль, случайный зашедший).
   kickPlayer(playerId: string) {
     if (!this.players.delete(playerId)) return;
+    this.playerConnections.delete(playerId);
     this.broadcast();
   }
 
@@ -382,7 +419,11 @@ class Session {
   removeTeam(teamId: string) {
     let changed = false;
     for (const [id, p] of this.players) {
-      if (p.teamId === teamId) { this.players.delete(id); changed = true; }
+      if (p.teamId === teamId) {
+        this.players.delete(id);
+        this.playerConnections.delete(id);
+        changed = true;
+      }
     }
     this.teamScores.delete(teamId);
     this.teamNames.delete(teamId);
@@ -395,7 +436,11 @@ class Session {
   dropDisconnected() {
     let changed = false;
     for (const [id, p] of this.players) {
-      if (!p.connected) { this.players.delete(id); changed = true; }
+      if (!p.connected) {
+        this.players.delete(id);
+        this.playerConnections.delete(id);
+        changed = true;
+      }
     }
     return changed;
   }

@@ -110,16 +110,20 @@ export const registerMusicSockets = (io: Server): void => {
         playerTeam = { teamId: `t:${rawTeam.toLowerCase()}`, teamName: rawTeam };
       }
 
+      // join содержит запросы к Mongo. Если вкладка/старый сокет успели
+      // закрыться за время await, не создаём из уже мёртвого подключения
+      // «призрачного» игрока, которого disconnect больше не сможет убрать.
+      if (!socket.connected) return;
+
       socket.join(`g:${gameId}`);
       if (role === 'screen') {
         socket.join(`g:${gameId}:screen`);
-        session.setScreenReady(false);
       }
       if (role === 'admin') socket.join(`g:${gameId}:admin`);
 
       if (role === 'player') {
         playerId = data.playerId || newPlayerId();
-        session.upsertPlayer(playerId!, playerName, playerTeam);
+        session.upsertPlayer(playerId!, playerName, playerTeam, socket.id);
         socket.emit('joined', {
           playerId,
           gameName: game.title,
@@ -167,7 +171,7 @@ export const registerMusicSockets = (io: Server): void => {
 
     socket.on('player:offline', () => {
       if (role !== 'player' || !gameId || !playerId) return;
-      getSession(io, gameId).setConnected(playerId, false);
+      getSession(io, gameId).disconnectPlayer(playerId, socket.id);
     });
 
     // Реакции летят на проектор перед всем залом, поэтому: только игроки,
@@ -235,7 +239,7 @@ export const registerMusicSockets = (io: Server): void => {
 
     socket.on('screen:audio-ready', () => {
       if (role !== 'screen' || !gameId) return;
-      getSession(io, gameId).setScreenReady(true);
+      getSession(io, gameId).setScreenReady(true, socket.id);
     });
 
     socket.on('disconnect', () => {
@@ -243,8 +247,8 @@ export const registerMusicSockets = (io: Server): void => {
       // обрыв связи воскрешал бы сессию, только что убранную свипером.
       const session = gameId ? sessions.get(gameId) : null;
       if (!session) return;
-      if (role === 'screen') session.setScreenReady(false);
-      if (role === 'player' && playerId) session.setConnected(playerId, false);
+      if (role === 'screen') session.setScreenReady(false, socket.id);
+      if (role === 'player' && playerId) session.disconnectPlayer(playerId, socket.id);
     });
   });
 };

@@ -261,6 +261,27 @@ async function emitBuzzBurst(playerSockets, state, lockedIds = new Set()) {
     }, 5000);
     check('reconnect restores same player', true, disconnectedVictim.name);
 
+    // Мобильная сеть может открыть новый websocket до того, как старый
+    // успел прислать disconnect. Закрытие старого соединения не должно
+    // уронить уже восстановленного игрока в offline.
+    const overlappingReconnect = connectSocket('player-overlapping-reconnect');
+    sockets.push(overlappingReconnect);
+    overlappingReconnect.on('joined', (data) => {
+      overlappingReconnect._playerId = data.playerId;
+      playerSockets.set(data.playerId, overlappingReconnect);
+    });
+    overlappingReconnect.emit('join', {
+      role: 'player',
+      code: game.code,
+      name: disconnectedVictim.name,
+      playerId: disconnectedVictim.id,
+    });
+    await waitFor('overlapping reconnect joined', () => overlappingReconnect._playerId, 5000);
+    reconnected.close();
+    await sleep(300);
+    const stillOnline = admin._state?.players?.find((item) => item.id === disconnectedVictim.id);
+    check('old socket disconnect keeps replacement online', stillOnline?.connected === true, disconnectedVictim.name);
+
     for (let round = 0; round < SONGS; round += 1) {
       await waitFor(`round ${round + 1} playing`, () => admin._state?.phase === 'playing' || admin._state?.phase === 'finished', BLOCK_WAIT_MS);
       if (admin._state.phase === 'finished') break;

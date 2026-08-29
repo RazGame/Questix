@@ -168,10 +168,23 @@ export default function MusicPlay() {
   }, [codeFromUrl]);
 
   const pidKey = (c: string) => `qgs_pid_${c}`;
+  const ensurePlayerId = (targetCode: string) => {
+    const key = pidKey(targetCode);
+    const saved = localStorage.getItem(key);
+    if (saved) return saved;
+    // Сохраняем ID ДО отправки join. Если React/сеть успеют открыть второй
+    // сокет раньше ответа сервера, оба подключения обновят одного игрока,
+    // а не создадут две строки с одинаковым именем.
+    const created = typeof crypto.randomUUID === 'function'
+      ? crypto.randomUUID()
+      : `p-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    localStorage.setItem(key, created);
+    return created;
+  };
   const emitJoin = (targetCode: string, targetName: string, targetTeam?: string) => {
     joinedCodeRef.current = targetCode;
     joinedNameRef.current = targetName;
-    const savedPid = localStorage.getItem(pidKey(targetCode));
+    const savedPid = ensurePlayerId(targetCode);
     playerIdRef.current = savedPid;
     socketRef.current?.emit('join', {
       role: 'player',
@@ -224,7 +237,8 @@ export default function MusicPlay() {
 
     socket.on('joined', (d: { playerId: string }) => {
       playerIdRef.current = d.playerId;
-      if (code) localStorage.setItem(pidKey(code), d.playerId);
+      const joinedCode = joinedCodeRef.current || code;
+      if (joinedCode) localStorage.setItem(pidKey(joinedCode), d.playerId);
       joinedRef.current = true;
       setJoined(true);
       setError('');
@@ -468,6 +482,11 @@ export default function MusicPlay() {
   const phase = state?.phase;
 
   const inRoundPhase = phase === 'playing' || phase === 'buzzed' || phase === 'ended' || phase === 'reveal';
+  const standingRows = [...(isTeam
+    ? (state?.teams || []).map((t) => ({ id: t.id, name: `👥 ${t.name}`, score: t.score }))
+    : (state?.players || []).map((p) => ({ id: p.id, name: p.name, score: p.score })))]
+    .sort((a, b) => b.score - a.score);
+  const myStandingPlace = standingRows.findIndex((row) => row.id === myGroupId) + 1;
 
   return (
     <div className="h-[calc(100dvh-4rem)] overflow-hidden flex flex-col px-4 py-4 text-center">
@@ -615,6 +634,56 @@ export default function MusicPlay() {
           <p className="mt-4 text-sm text-zinc-500">
             Игроков: {state?.players.length}. Ждём ведущего…
           </p>
+        </div>
+      )}
+
+      {phase === 'standings' && (
+        <div className="glass flex max-h-[72vh] w-full max-w-sm flex-col overflow-hidden p-5">
+          <div className="mb-3 shrink-0">
+            <div className="font-display text-2xl font-extrabold bg-gradient-to-r from-amber-300 via-violet-300 to-fuchsia-300 bg-clip-text text-transparent">
+              🏆 Промежуточные итоги
+            </div>
+            {myStandingPlace > 0 && (
+              <p className="mt-1 text-sm text-zinc-300">
+                {isTeam ? 'Ваша команда' : 'Вы'} сейчас на{' '}
+                <span className="font-bold text-violet-300">{myStandingPlace}-м месте</span>
+              </p>
+            )}
+          </div>
+
+          <div className="min-h-0 flex-1 space-y-2 overflow-y-auto pr-1">
+            {standingRows.map((row, index) => {
+              const isMe = row.id === myGroupId;
+              const medal = index === 0 ? '🥇' : index === 1 ? '🥈' : index === 2 ? '🥉' : `#${index + 1}`;
+              return (
+                <div
+                  key={row.id}
+                  className={`flex items-center gap-2.5 rounded-xl border px-3 py-2.5 ${
+                    isMe
+                      ? 'border-violet-400/40 bg-violet-500/15 ring-1 ring-violet-400/30'
+                      : index === 0
+                        ? 'border-amber-400/25 bg-amber-500/10'
+                        : 'border-white/5 bg-white/[0.03]'
+                  }`}
+                >
+                  <span className="w-7 shrink-0 text-center text-sm font-bold text-zinc-500">{medal}</span>
+                  <span className={`min-w-0 flex-1 truncate text-left text-sm font-semibold ${isMe ? 'text-violet-100' : 'text-zinc-200'}`}>
+                    {row.name}
+                    {isMe && (
+                      <span className="ml-1.5 rounded bg-violet-500/20 px-1.5 py-0.5 text-[9px] font-bold uppercase text-violet-300">
+                        вы
+                      </span>
+                    )}
+                  </span>
+                  <span className={`shrink-0 font-mono font-bold ${index === 0 ? 'text-amber-300' : 'text-violet-300'}`}>
+                    {row.score}
+                  </span>
+                </div>
+              );
+            })}
+          </div>
+
+          <p className="mt-3 shrink-0 text-xs text-zinc-500">Следующий блок скоро начнётся…</p>
         </div>
       )}
 
