@@ -6,6 +6,7 @@ import { verifyToken } from '../../../core/utils/jwt';
 import { isGameModerator } from '../../../core/services/gamePermissions';
 import { getSession, sessions } from '../services/musicSession';
 import { newPlayerId } from '../services/musicStore';
+import { musicLog } from '../services/musicLogger';
 
 // Проверка, что сокет принадлежит модератору игры (для admin-команд).
 // Игрок и экран НЕ проверяются — это держит хот-путь баззера тонким.
@@ -25,6 +26,14 @@ const verifyAdmin = (socket: Socket, game: any): boolean => {
 // проектор как есть, а это корпоратив.
 const ALLOWED_REACTIONS = new Set(['❤️', '🔥', '🎉', '🎵', '👏', '💩']);
 const REACTION_INTERVAL_MS = 1000;
+const ALLOWED_SCREEN_LOG_EVENTS = new Set([
+  'audio_unlocked',
+  'playback_started',
+  'reverse_started',
+  'playback_failed',
+  'reverse_failed_fallback',
+  'reverse_recovery_failed',
+]);
 
 export const registerMusicSockets = (io: Server): void => {
   io.on('connection', (socket: Socket) => {
@@ -32,13 +41,30 @@ export const registerMusicSockets = (io: Server): void => {
     let gameId: string | null = null;
     let playerId: string | null = null;
 
-    socket.on('join', async (data: any) => {
+    musicLog('debug', 'socket_connected', {
+      connectionId: socket.id,
+      address: socket.handshake.address,
+    });
+
+    socket.on('join', (data: any) => {
+      void (async () => {
       role = data.role;
+      musicLog('debug', 'join_requested', {
+        connectionId: socket.id,
+        role,
+        requestedGameId: data.gameId,
+        code: typeof data.code === 'string' ? data.code.slice(0, 8) : undefined,
+        hasPlayerId: !!data.playerId,
+      });
       // Игру грузим ровно один раз: игрок — по коду, экран/ведущий — по gameId.
       let game = null;
       if (role === 'player') {
         game = await Game.findOne({ code: (data.code || '').toUpperCase(), kind: 'guess_song' });
-        if (!game) { socket.emit('error-msg', { message: 'Игра не найдена по коду.' }); return; }
+        if (!game) {
+          musicLog('warn', 'join_rejected', { connectionId: socket.id, role, reason: 'code_not_found' });
+          socket.emit('error-msg', { message: 'Игра не найдена по коду.' });
+          return;
+        }
         gameId = String(game._id);
       } else {
         gameId = data.gameId;
@@ -46,12 +72,14 @@ export const registerMusicSockets = (io: Server): void => {
       }
 
       if (!gameId || !game || game.kind !== 'guess_song') {
+        musicLog('warn', 'join_rejected', { connectionId: socket.id, role, gameId, reason: 'game_not_found' });
         socket.emit('error-msg', { message: 'Игра не найдена.' });
         return;
       }
 
       // admin-роль требует прав модератора
       if (role === 'admin' && !verifyAdmin(socket, game)) {
+        musicLog('warn', 'join_rejected', { connectionId: socket.id, role, gameId, reason: 'admin_forbidden' });
         socket.emit('error-msg', { message: 'Нет прав ведущего.' });
         return;
       }
@@ -72,11 +100,13 @@ export const registerMusicSockets = (io: Server): void => {
         let payload: any = null;
         try { payload = token ? verifyToken(token) : null; } catch { payload = null; }
         if (!payload) {
+          session.logEvent('join_rejected', { connectionId: socket.id, role, reason: 'auth_required' }, 'warn');
           socket.emit('error-msg', { message: 'Эта игра требует входа в аккаунт.' });
           return;
         }
         const user = await User.findById(payload.id).lean();
         if (!user) {
+          session.logEvent('join_rejected', { connectionId: socket.id, role, reason: 'user_not_found' }, 'warn');
           socket.emit('error-msg', { message: 'Аккаунт не найден.' });
           return;
         }
@@ -90,6 +120,7 @@ export const registerMusicSockets = (io: Server): void => {
             $or: [{ captain: payload.id }, { members: payload.id }],
           }).lean();
           if (!team) {
+            session.logEvent('join_rejected', { connectionId: socket.id, role, reason: 'team_required' }, 'warn');
             socket.emit('error-msg', { message: 'Чтобы играть в командном режиме, вступите в команду Questix.' });
             return;
           }
@@ -99,10 +130,12 @@ export const registerMusicSockets = (io: Server): void => {
         // team + open: команда приходит названием с телефона.
         const rawTeam = String(data.teamName || '').replace(/\s+/g, ' ').trim();
         if (!rawTeam) {
+          session.logEvent('join_rejected', { connectionId: socket.id, role, reason: 'team_name_empty' }, 'warn');
           socket.emit('error-msg', { message: 'Укажите название команды.' });
           return;
         }
         if (rawTeam.length > 24) {
+          session.logEvent('join_rejected', { connectionId: socket.id, role, reason: 'team_name_too_long' }, 'warn');
           socket.emit('error-msg', { message: 'Название команды до 24 символов.' });
           return;
         }
@@ -113,7 +146,10 @@ export const registerMusicSockets = (io: Server): void => {
       // join содержит запросы к Mongo. Если вкладка/старый сокет успели
       // закрыться за время await, не создаём из уже мёртвого подключения
       // «призрачного» игрока, которого disconnect больше не сможет убрать.
-      if (!socket.connected) return;
+      if (!socket.connected) {
+        session.logEvent('join_abandoned', { connectionId: socket.id, role, reason: 'socket_disconnected' }, 'debug');
+        return;
+      }
 
       socket.join(`g:${gameId}`);
       if (role === 'screen') {
@@ -132,23 +168,46 @@ export const registerMusicSockets = (io: Server): void => {
           teamName: playerTeam?.teamName || null,
         });
       }
+      session.logEvent('socket_joined_game', {
+        connectionId: socket.id,
+        role,
+        playerId,
+      });
       socket.emit('state', session.publicState());
+      })().catch((error) => {
+        musicLog('error', 'join_failed', {
+          connectionId: socket.id,
+          role,
+          gameId,
+          playerId,
+          error,
+        });
+        socket.emit('error-msg', { message: 'Не удалось подключиться к игре.' });
+      });
     });
 
     // Предпросмотр лобби до входа: телефон на экране «вход в игру» видит,
     // какие команды уже создали другие, и обновления приходят живьём.
     // Отдаём то же публичное состояние, что и так висит на экране-проекторе.
-    socket.on('peek', async (data: any) => {
-      const game = await Game.findOne({
-        code: String(data?.code || '').toUpperCase(),
-        kind: 'guess_song',
-      }).lean();
-      if (!game) return;
-      const id = String(game._id);
-      socket.join(`g:${id}`); // подписка на обновления лобби
-      // Сессию НЕ создаём: если ведущий ещё не открывал игру, команд и так нет.
-      const existing = sessions.get(id);
-      if (existing) socket.emit('state', existing.publicState());
+    socket.on('peek', (data: any) => {
+      void (async () => {
+        const game = await Game.findOne({
+          code: String(data?.code || '').toUpperCase(),
+          kind: 'guess_song',
+        }).lean();
+        if (!game) return;
+        const id = String(game._id);
+        socket.join(`g:${id}`); // подписка на обновления лобби
+        // Сессию НЕ создаём: если ведущий ещё не открывал игру, команд и так нет.
+        const existing = sessions.get(id);
+        if (existing) socket.emit('state', existing.publicState());
+      })().catch((error) => {
+        musicLog('error', 'lobby_peek_failed', {
+          connectionId: socket.id,
+          code: typeof data?.code === 'string' ? data.code.slice(0, 8) : undefined,
+          error,
+        });
+      });
     });
 
     socket.on('player:ready', (data: any) => {
@@ -197,8 +256,8 @@ export const registerMusicSockets = (io: Server): void => {
     });
 
     // команды ведущего (только admin-роль, права уже проверены на join)
-    const adminActions: Record<string, (s: ReturnType<typeof getSession>) => void> = {
-      'admin:start': (s) => { s.start(); },
+    const adminActions: Record<string, (s: ReturnType<typeof getSession>) => unknown> = {
+      'admin:start': (s) => s.start(),
       'admin:replay': (s) => s.replayCurrent(),
       'admin:playon': (s) => s.playOn(),
       'admin:correct': (s) => s.correct(),
@@ -214,7 +273,21 @@ export const registerMusicSockets = (io: Server): void => {
     for (const [evt, fn] of Object.entries(adminActions)) {
       socket.on(evt, () => {
         if (role !== 'admin' || !gameId) return;
-        fn(getSession(io, gameId));
+        const session = getSession(io, gameId);
+        const action = evt.slice('admin:'.length);
+        session.logEvent('admin_action', { action, connectionId: socket.id });
+        try {
+          const result = fn(session);
+          if (result && typeof (result as PromiseLike<unknown>).then === 'function') {
+            void Promise.resolve(result).catch((error) => {
+              session.logEvent('admin_action_failed', { action, connectionId: socket.id, error }, 'error');
+              socket.emit('error-msg', { message: 'Команда ведущего завершилась с ошибкой.' });
+            });
+          }
+        } catch (error) {
+          session.logEvent('admin_action_failed', { action, connectionId: socket.id, error }, 'error');
+          socket.emit('error-msg', { message: 'Команда ведущего завершилась с ошибкой.' });
+        }
       });
     }
 
@@ -242,11 +315,42 @@ export const registerMusicSockets = (io: Server): void => {
       getSession(io, gameId).setScreenReady(true, socket.id);
     });
 
-    socket.on('disconnect', () => {
+    // Ошибки Web Audio происходят в браузере проектора и иначе остаются
+    // только в DevTools. Принимаем закрытый список диагностических событий,
+    // ограничиваем поля и пишем их в тот же журнал сессии.
+    socket.on('screen:log', (data: any) => {
+      if (role !== 'screen' || !gameId) return;
+      const event = typeof data?.event === 'string' ? data.event : '';
+      if (!ALLOWED_SCREEN_LOG_EVENTS.has(event)) return;
+      const details = data?.details && typeof data.details === 'object'
+        ? Object.fromEntries(Object.entries(data.details).slice(0, 20))
+        : {};
+      getSession(io, gameId).logEvent(`screen_${event}`, {
+        connectionId: socket.id,
+        details,
+      }, event.includes('failed') ? 'warn' : 'info');
+    });
+
+    socket.on('disconnect', (reason) => {
       // Берём только существующую сессию: getSession её создаёт, и поздний
       // обрыв связи воскрешал бы сессию, только что убранную свипером.
       const session = gameId ? sessions.get(gameId) : null;
-      if (!session) return;
+      if (!session) {
+        musicLog('debug', 'socket_disconnected', {
+          connectionId: socket.id,
+          role,
+          gameId,
+          playerId,
+          reason,
+        });
+        return;
+      }
+      session.logEvent('socket_disconnected', {
+        connectionId: socket.id,
+        role,
+        playerId,
+        reason,
+      });
       if (role === 'screen') session.setScreenReady(false, socket.id);
       if (role === 'player' && playerId) session.disconnectPlayer(playerId, socket.id);
     });

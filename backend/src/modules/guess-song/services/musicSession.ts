@@ -3,6 +3,7 @@ import { Server } from 'socket.io';
 import { buildPlaylist, PlaylistItem } from './musicStore';
 import { Game } from '../../../core/models/Game';
 import { SessionResult } from '../../../core/models/SessionResult';
+import { musicLog, MusicLogFields, MusicLogLevel } from './musicLogger';
 
 // Тайминги после правильного ответа (мс): доиграть, затем плавно затихнуть.
 const REVEAL_PLAY_MS = 5000;
@@ -35,6 +36,7 @@ type Mode = 'solo' | 'team';
 class Session {
   io: Server;
   gameId: string;
+  readonly sessionId = crypto.randomBytes(6).toString('hex');
   gameName = ''; // кэш меты игры — не меняется за сессию, снимаем БД с хот-пути
   code = '';
   mode: Mode = 'solo'; // solo: счёт/баззер по игроку; team: по команде
@@ -77,6 +79,21 @@ class Session {
   constructor(io: Server, gameId: string) {
     this.io = io;
     this.gameId = gameId;
+    this.logEvent('session_created');
+  }
+
+  logEvent(event: string, fields: MusicLogFields = {}, level: MusicLogLevel = 'info') {
+    const song = this.playlist[this.currentIndex];
+    musicLog(level, event, {
+      gameId: this.gameId,
+      sessionId: this.sessionId,
+      phase: this.phase,
+      songIndex: this.currentIndex,
+      songId: song?._id ? String(song._id) : null,
+      players: this.players.size,
+      connectedPlayers: Array.from(this.players.values()).filter((player) => player.connected).length,
+      ...fields,
+    });
   }
 
   // Мета игры кэшируется при входе (sockets знают game) — без запроса в БД на каждый broadcast.
@@ -87,6 +104,7 @@ class Session {
 
   // Освобождение ресурсов сессии перед удалением из реестра.
   destroy() {
+    this.logEvent('session_destroyed');
     this.clearSchedule();
     this.playerConnections.clear();
     this.readyScreenConnections.clear();
@@ -115,6 +133,7 @@ class Session {
   rAdmin() { return `g:${this.gameId}:admin`; }
 
   cmd(action: string, payload: Record<string, unknown> = {}) {
+    this.logEvent('screen_command', { action, payload }, 'debug');
     this.io.to(this.rScreen()).emit('cmd', { action, ...payload });
   }
 
@@ -153,6 +172,7 @@ class Session {
       else this.teamNames.set(team.teamId, team.teamName);
     }
     const existing = this.players.get(playerId);
+    const wasConnected = existing?.connected === true;
     if (existing) {
       if (name) existing.name = name;
       // Сменить команду можно только в лобби: посреди игры реджойн с другим
@@ -174,13 +194,27 @@ class Session {
         teamName: team?.teamName ?? null,
       });
     }
+    const player = this.players.get(playerId)!;
+    this.logEvent(existing ? 'player_rejoined' : 'player_joined', {
+      playerId,
+      playerName: player.name,
+      teamId: player.teamId,
+      teamName: player.teamName,
+      connectionId,
+      connections: this.playerConnections.get(playerId)?.size || 0,
+      wasConnected,
+    });
     this.broadcast();
-    return this.players.get(playerId)!;
+    return player;
   }
 
   setReady(playerId: string, ready: boolean) {
     const p = this.players.get(playerId);
-    if (p) { p.ready = ready; this.broadcast(); }
+    if (p) {
+      p.ready = ready;
+      this.logEvent('player_ready_changed', { playerId, ready, teamId: p.teamId });
+      this.broadcast();
+    }
   }
 
   setConnected(playerId: string, connected: boolean) {
@@ -197,6 +231,13 @@ class Session {
     const p = this.players.get(playerId);
     if (!p) return;
     p.connected = (this.playerConnections.get(playerId)?.size || 0) > 0;
+    this.logEvent('player_connection_closed', {
+      playerId,
+      teamId: p.teamId,
+      connectionId,
+      stillConnected: p.connected,
+      remainingConnections: this.playerConnections.get(playerId)?.size || 0,
+    });
     this.broadcast();
   }
 
@@ -224,6 +265,12 @@ class Session {
     } else {
       this.screenReady = ready;
     }
+    this.logEvent('screen_ready_changed', {
+      ready,
+      connectionId,
+      effectiveReady: this.screenReady,
+      readyScreens: this.readyScreenConnections.size,
+    });
     this.broadcast();
   }
 
@@ -231,11 +278,13 @@ class Session {
     const allowed = ['classic', 'cyberpunk', 'party', 'synthwave'] as const;
     if (!(allowed as readonly string[]).includes(theme)) return;
     this.screenTheme = theme as typeof this.screenTheme;
+    this.logEvent('screen_theme_changed', { theme });
     this.broadcast();
   }
 
   async start() {
     if (!this.screenReady) {
+      this.logEvent('game_start_rejected', { reason: 'screen_not_ready' }, 'warn');
       this.io.to(this.rAdmin()).emit('error-msg', { message: 'Сначала нажмите «включить звук» на экране проектора.' });
       return false;
     }
@@ -248,6 +297,7 @@ class Session {
     const all = await buildPlaylist(this.gameId);
     const ready = all.filter((s) => s.status === 'ready' && s.file);
     if (ready.length === 0) {
+      this.logEvent('game_start_rejected', { reason: 'playlist_empty', totalSongs: all.length }, 'warn');
       this.io.to(this.rAdmin()).emit('error-msg', { message: 'Нет ни одной загруженной песни.' });
       return false;
     }
@@ -262,6 +312,13 @@ class Session {
     this.phase = 'intro';
     this.buzzed = null;
     this.locked.clear();
+    this.logEvent('game_started', {
+      mode: this.mode,
+      songs: ready.length,
+      blocks: this.blockNames.length,
+      answerSeconds: this.answerSeconds,
+      screenReady: this.screenReady,
+    });
     this.broadcast();
     this.schedule(() => this.loadCurrent(), GAME_INTRO_MS);
     return true;
@@ -274,6 +331,16 @@ class Session {
     this.locked.clear();
     this.phase = 'playing';
     const song = this.playlist[this.currentIndex];
+    this.logEvent('song_started', {
+      title: song.title,
+      artist: song.artist,
+      blockName: song.blockName,
+      startSec: song.startSec || 0,
+      endSec: song.endSec ?? null,
+      reverse: !!song.reverseMode,
+      blitz: !!song.blitzMode,
+      coverHint: !!song.coverHint,
+    });
     this.cmd('play', {
       fileUrl: `/media/${song.file}`,
       startSec: song.startSec || 0,
@@ -294,14 +361,24 @@ class Session {
   }
 
   replayCurrent() {
-    if (this.paused) return;
+    if (this.paused) {
+      this.logEvent('song_replay_rejected', { reason: 'paused' }, 'debug');
+      return;
+    }
     const song = this.playlist[this.currentIndex];
-    if (!song || !song.file) return;
-    if (this.phase !== 'ended' && this.phase !== 'playing') return;
+    if (!song || !song.file) {
+      this.logEvent('song_replay_rejected', { reason: 'song_missing' }, 'warn');
+      return;
+    }
+    if (this.phase !== 'ended' && this.phase !== 'playing') {
+      this.logEvent('song_replay_rejected', { reason: 'invalid_phase' }, 'debug');
+      return;
+    }
 
     this.freePlay = false;
     this.phase = 'playing';
     this.buzzed = null;
+    this.logEvent('song_replayed');
     this.cmd('play', {
       fileUrl: `/media/${song.file}`,
       startSec: song.startSec || 0,
@@ -317,8 +394,12 @@ class Session {
   }
 
   clipEnded() {
-    if (this.phase !== 'playing') return;
+    if (this.phase !== 'playing') {
+      this.logEvent('clip_end_ignored', { reason: 'invalid_phase' }, 'debug');
+      return;
+    }
     this.phase = 'ended';
+    this.logEvent('clip_ended');
     this.cmd('pause');
     this.broadcast();
   }
@@ -326,20 +407,37 @@ class Session {
   // Никто не угадал фрагмент: продолжаем песню с места остановки,
   // без ограничения отрезка (до конца файла или до баззера).
   playOn() {
-    if (this.paused) return;
-    if (this.phase !== 'ended') return;
+    if (this.paused) {
+      this.logEvent('play_on_rejected', { reason: 'paused' }, 'debug');
+      return;
+    }
+    if (this.phase !== 'ended') {
+      this.logEvent('play_on_rejected', { reason: 'invalid_phase' }, 'debug');
+      return;
+    }
     const song = this.playlist[this.currentIndex];
     if (!song || !song.file) return;
     this.freePlay = true;
     this.phase = 'playing';
     this.buzzed = null;
+    this.logEvent('play_on_started', { reverse: !!song.reverseMode });
     this.cmd('playOn', { fadeMs: RESUME_FADE_IN_MS });
     this.broadcast();
   }
 
   buzz(playerId: string, answer?: string) {
-    if (this.phase !== 'playing') return;
-    if (!this.isArmed(playerId)) return;
+    if (this.phase !== 'playing') {
+      this.logEvent('buzz_rejected', { playerId, reason: 'invalid_phase' }, 'debug');
+      return;
+    }
+    if (!this.isArmed(playerId)) {
+      this.logEvent('buzz_rejected', {
+        playerId,
+        reason: this.paused ? 'paused' : this.locked.has(this.groupId(playerId)) ? 'locked' : 'not_armed',
+        groupId: this.groupId(playerId),
+      }, 'debug');
+      return;
+    }
     const p = this.players.get(playerId)!;
     const g = this.groupId(playerId);
     // В блице игрок жмёт не «баззер», а конкретный вариант — ведущему важно
@@ -365,17 +463,31 @@ class Session {
     } else {
       this.answerEndsAt = null;
     }
+    this.logEvent('buzz_accepted', {
+      playerId,
+      playerName: p.name,
+      groupId: g,
+      teamId: p.teamId,
+      teamName: p.teamName,
+      blitzAnswer: picked,
+      answerDeadline: this.answerEndsAt ? new Date(this.answerEndsAt).toISOString() : null,
+    });
     this.broadcast();
   }
 
   /** Время вышло — то же самое, что неверный ответ, но без участия ведущего. */
   private answerTimeout() {
     if (this.phase !== 'buzzed') return;
+    this.logEvent('answer_timed_out', { groupId: this.buzzed?.id });
     this.wrong();
   }
 
   correct() {
-    if (this.phase !== 'buzzed') return;
+    if (this.phase !== 'buzzed') {
+      this.logEvent('correct_rejected', { reason: 'invalid_phase' }, 'debug');
+      return;
+    }
+    const winner = this.buzzed ? { ...this.buzzed } : null;
     this.answerEndsAt = null;
     this.revealGuessed = true;
     if (this.buzzed) {
@@ -388,13 +500,23 @@ class Session {
       }
     }
     this.phase = 'reveal';
+    this.logEvent('answer_marked_correct', {
+      groupId: winner?.id,
+      groupName: winner?.name,
+      answeredBy: winner?.by,
+      answer: winner?.answer,
+    });
     this.cmd('fadeAndStop', { playMs: REVEAL_PLAY_MS, fadeMs: REVEAL_FADE_MS });
     this.broadcast();
     this.schedule(() => this.advance(), REVEAL_PLAY_MS + REVEAL_FADE_MS + 200);
   }
 
   wrong() {
-    if (this.phase !== 'buzzed') return;
+    if (this.phase !== 'buzzed') {
+      this.logEvent('wrong_rejected', { reason: 'invalid_phase' }, 'debug');
+      return;
+    }
+    const rejected = this.buzzed ? { ...this.buzzed } : null;
     this.clearSchedule(); // снимаем счётчик ответа, если он ещё тикал
     this.answerEndsAt = null;
     if (this.buzzed) this.locked.add(this.buzzed.id); // выбывает до конца песни
@@ -402,7 +524,15 @@ class Session {
     this.phase = 'playing';
     // Ошиблись все — снимаем блокировки и даём ещё круг. Иначе песня доигрывает
     // в тишине: нажать некому, а ведущему остаётся только пропустить.
-    if (!this.anyArmed()) this.locked.clear();
+    const resetLocks = !this.anyArmed();
+    if (resetLocks) this.locked.clear();
+    this.logEvent('answer_marked_wrong', {
+      groupId: rejected?.id,
+      groupName: rejected?.name,
+      answeredBy: rejected?.by,
+      resetLocks,
+      lockedGroups: Array.from(this.locked),
+    });
     this.cmd('resume', { fadeMs: RESUME_FADE_IN_MS });
     this.broadcast();
   }
@@ -412,36 +542,45 @@ class Session {
   kickPlayer(playerId: string) {
     if (!this.players.delete(playerId)) return;
     this.playerConnections.delete(playerId);
+    this.logEvent('player_kicked', { playerId });
     this.broadcast();
   }
 
   // Убрать команду целиком вместе с её игроками.
   removeTeam(teamId: string) {
     let changed = false;
+    let removedPlayers = 0;
     for (const [id, p] of this.players) {
       if (p.teamId === teamId) {
         this.players.delete(id);
         this.playerConnections.delete(id);
         changed = true;
+        removedPlayers += 1;
       }
     }
     this.teamScores.delete(teamId);
     this.teamNames.delete(teamId);
     this.locked.delete(teamId);
-    if (changed) this.broadcast();
+    if (changed) {
+      this.logEvent('team_removed', { teamId, removedPlayers });
+      this.broadcast();
+    }
   }
 
   // Перед стартом выкидываем тех, кто уже отвалился: иначе в списке висят
   // пустые команды от людей, закрывших вкладку на этапе сбора.
   dropDisconnected() {
     let changed = false;
+    let removedPlayers = 0;
     for (const [id, p] of this.players) {
       if (!p.connected) {
         this.players.delete(id);
         this.playerConnections.delete(id);
         changed = true;
+        removedPlayers += 1;
       }
     }
+    if (removedPlayers > 0) this.logEvent('offline_players_dropped', { removedPlayers });
     return changed;
   }
 
@@ -449,11 +588,16 @@ class Session {
   // Очки не начисляются; отличается от correct() только этим и флагом,
   // чтобы игроки не видели «Правильно!», когда никто не ответил.
   revealAnswer() {
-    if (!['playing', 'ended', 'buzzed'].includes(this.phase)) return;
-    if (this.paused) return;
+    if (!['playing', 'ended', 'buzzed'].includes(this.phase) || this.paused) {
+      this.logEvent('answer_reveal_rejected', {
+        reason: this.paused ? 'paused' : 'invalid_phase',
+      }, 'debug');
+      return;
+    }
     this.buzzed = null;
     this.revealGuessed = false;
     this.phase = 'reveal';
+    this.logEvent('answer_revealed_without_score');
     this.cmd('fadeAndStop', { playMs: REVEAL_PLAY_MS, fadeMs: REVEAL_FADE_MS });
     this.broadcast();
     this.schedule(() => this.advance(), REVEAL_PLAY_MS + REVEAL_FADE_MS + 200);
@@ -469,7 +613,11 @@ class Session {
   }
 
   skip() {
-    if (this.paused) return;
+    if (this.paused) {
+      this.logEvent('skip_rejected', { reason: 'paused' }, 'debug');
+      return;
+    }
+    this.logEvent('skip_requested');
     // Во время заставки «пропустить» = запустить песню, а не потерять её.
     if (this.phase === 'intro' || this.phase === 'blockIntro') {
       this.continueNow();
@@ -483,6 +631,7 @@ class Session {
   showBlockIntro() {
     this.clearSchedule();
     this.phase = 'blockIntro';
+    this.logEvent('block_intro_started', { blockName: this.playlist[this.currentIndex]?.blockName });
     this.broadcast();
     this.schedule(() => this.loadCurrent(), BLOCK_INTRO_MS);
   }
@@ -490,12 +639,16 @@ class Session {
   // Завершить игру досрочно: итоги подводятся так же, как если бы доиграли
   // весь плейлист — со снапшотом в базу и таблицей на экране.
   finishNow() {
-    if (this.phase === 'lobby' || this.phase === 'finished') return;
+    if (this.phase === 'lobby' || this.phase === 'finished') {
+      this.logEvent('finish_rejected', { reason: 'invalid_phase' }, 'debug');
+      return;
+    }
     this.clearSchedule();
     this.paused = false;
     this.buzzed = null;
     this.locked.clear();
     this.phase = 'finished';
+    this.logEvent('game_finished_early', { scores: this.scoreSnapshot() });
     this.cmd('stop');
     this.broadcast();
     this.saveResultSnapshot();
@@ -504,10 +657,15 @@ class Session {
   advance() {
     this.clearSchedule();
     const prev = this.playlist[this.currentIndex];
+    const previousIndex = this.currentIndex;
     this.currentIndex += 1;
     if (this.currentIndex >= this.playlist.length) {
       this.currentIndex = Math.max(0, this.playlist.length - 1);
       this.phase = 'finished';
+      this.logEvent('game_finished', {
+        previousSongIndex: previousIndex,
+        scores: this.scoreSnapshot(),
+      });
       this.cmd('stop');
       this.broadcast();
       // Снапшот итогов в Mongo (ROADMAP этап 5) — вне хот-пути, fire-and-forget.
@@ -521,9 +679,19 @@ class Session {
         this.phase = 'standings';
         this.buzzed = null;
         this.locked.clear();
+        this.logEvent('standings_started', {
+          previousBlock: prev.blockName,
+          nextBlock: next.blockName,
+          scores: this.scoreSnapshot(),
+        });
         this.broadcast();
         this.schedule(() => this.showBlockIntro(), STANDINGS_MS);
       } else {
+        this.logEvent('song_advance_scheduled', {
+          previousSongIndex: previousIndex,
+          nextSongIndex: this.currentIndex,
+          delayMs: NEXT_TRACK_PAUSE_MS,
+        }, 'debug');
         this.schedule(() => this.loadCurrent(), NEXT_TRACK_PAUSE_MS);
       }
     }
@@ -531,11 +699,17 @@ class Session {
 
   // Пауза ведущего: замораживает баззеры, звук и отложенные переходы.
   pause() {
-    if (this.paused) return;
+    if (this.paused) {
+      this.logEvent('pause_rejected', { reason: 'already_paused' }, 'debug');
+      return;
+    }
     // Пауза доступна в любой игровой фазе, включая 'buzzed' и 'reveal':
     // ведущему бывает нужно остановиться прямо посреди ответа, а прыгающая
     // кнопка в пульте только мешала. В лобби и финале паузить нечего.
-    if (['lobby', 'finished'].includes(this.phase)) return;
+    if (['lobby', 'finished'].includes(this.phase)) {
+      this.logEvent('pause_rejected', { reason: 'invalid_phase' }, 'debug');
+      return;
+    }
     this.paused = true;
     if (this.advanceTimer) {
       clearTimeout(this.advanceTimer);
@@ -545,22 +719,31 @@ class Session {
       this.pendingRemaining = null;
     }
     if (this.phase === 'playing') this.cmd('pause', { fadeMs: BUZZ_FADE_OUT_MS });
+    this.logEvent('game_paused', { pendingRemainingMs: this.pendingRemaining });
     this.broadcast();
   }
 
   resume() {
-    if (!this.paused) return;
+    if (!this.paused) {
+      this.logEvent('resume_rejected', { reason: 'not_paused' }, 'debug');
+      return;
+    }
     this.paused = false;
     const fn = this.pendingAction;
     if (fn && this.pendingRemaining != null) this.schedule(fn, this.pendingRemaining);
     this.pendingRemaining = null;
     if (this.phase === 'playing') this.cmd('resume', { fadeMs: RESUME_FADE_IN_MS });
+    this.logEvent('game_resumed');
     this.broadcast();
   }
 
   // Ведущий пропускает ожидание интро-заставки и сразу запускает песню.
   continueNow() {
-    if (this.paused) return;
+    if (this.paused) {
+      this.logEvent('continue_rejected', { reason: 'paused' }, 'debug');
+      return;
+    }
+    this.logEvent('continue_requested');
     // С экрана итогов «продолжить» ведёт к анонсу блока, а не сразу к песне.
     if (this.phase === 'standings') { this.showBlockIntro(); return; }
     if (this.phase !== 'intro' && this.phase !== 'blockIntro') return;
@@ -583,6 +766,7 @@ class Session {
     this.playlist = [];
     this.blockNames = [];
     for (const p of this.players.values()) { p.ready = false; p.score = 0; }
+    this.logEvent('game_reset');
     this.cmd('stop');
     this.broadcast();
   }
@@ -591,7 +775,10 @@ class Session {
   // эфемерный — это единственное место, где он персистится. Отправкой в
   // облако занимается core (/results/send), здесь только фиксация.
   saveResultSnapshot() {
-    if (this.players.size === 0) return;
+    if (this.players.size === 0) {
+      this.logEvent('result_snapshot_skipped', { reason: 'no_players' }, 'debug');
+      return;
+    }
 
     const toUserId = (playerId: string) =>
       playerId.startsWith('u:') ? playerId.slice(2) : null;
@@ -626,17 +813,28 @@ class Session {
         }));
     }
 
+    const resultId = crypto.randomUUID();
     SessionResult.create({
-      resultId: crypto.randomUUID(),
+      resultId,
       gameId: this.gameId,
       kind: 'guess_song',
       title: this.gameName,
       mode: this.mode,
       finishedAt: new Date(),
       standings,
-    }).catch((error) => {
-      console.error('Не удалось сохранить итог вечеринки:', error);
-    });
+    })
+      .then(() => this.logEvent('result_snapshot_saved', { resultId, rows: standings.length }))
+      .catch((error) => {
+        this.logEvent('result_snapshot_failed', { resultId, error }, 'error');
+      });
+  }
+
+  private scoreSnapshot() {
+    return this.mode === 'team'
+      ? this.teamSummary().map((team) => ({ id: team.id, name: team.name, score: team.score }))
+      : Array.from(this.players.values())
+          .map((player) => ({ id: player.id, name: player.name, score: player.score }))
+          .sort((a, b) => b.score - a.score);
   }
 
   // Сводка по командам (team-режим): очки + кто в сети/готов.

@@ -39,6 +39,9 @@ services:
       # Токен опционален — только для автоотправки на старте.
       QUESTIX_CLOUD_URL: ${QUESTIX_CLOUD_URL:-}
       QUESTIX_CLOUD_TOKEN: ${QUESTIX_CLOUD_TOKEN:-}
+      # Диагностический JSONL-журнал музыкальной игры (дневные файлы).
+      MUSIC_LOG_DIR: /app/logs
+      MUSIC_LOG_RETENTION_DAYS: ${MUSIC_LOG_RETENTION_DAYS:-30}
     ports:
       - "5000:5000"
     depends_on:
@@ -48,6 +51,8 @@ services:
       - media_data:/app/media
       # ключи (станции нужен только jwt.pub; каталог может быть пустым)
       - ./secrets:/app/secrets:ro
+      # сохраняем журнал между пересозданиями контейнера
+      - ./logs:/app/logs
     networks:
       - quest-network
 

@@ -40,9 +40,12 @@ services:
       BCRYPT_ROUNDS: 10
       TRUST_PROXY: 1
       CORS_ORIGIN: ${CORS_ORIGIN:-}
+      MUSIC_LOG_DIR: /app/logs
+      MUSIC_LOG_RETENTION_DAYS: ${MUSIC_LOG_RETENTION_DAYS:-30}
     volumes:
       - media_data:/app/media
       - ./secrets:/app/secrets:ro
+      - ./logs:/app/logs
     depends_on: [mongodb]
     networks: [questix]
 

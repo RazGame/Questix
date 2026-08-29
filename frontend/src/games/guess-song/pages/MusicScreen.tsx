@@ -378,6 +378,10 @@ export default function MusicScreen() {
     } catch { /* ignore */ }
     audioReadyRef.current = true;
     socketRef.current?.emit('screen:audio-ready');
+    socketRef.current?.emit('screen:log', {
+      event: 'audio_unlocked',
+      details: { contextState: engineRef.current?.ctx.state, phase: state?.phase },
+    });
     setNeedGate(false);
   };
 
@@ -390,9 +394,22 @@ export default function MusicScreen() {
     try { node.onended = null; node.stop(); } catch { /* уже остановлен */ }
   };
 
+  const reportScreenLog = (event: string, details: Record<string, unknown> = {}) => {
+    socketRef.current?.emit('screen:log', { event, details });
+  };
+
   const handleAudioPlayError = (err: any, generation = playbackGenerationRef.current) => {
     if (generation !== playbackGenerationRef.current || err?.name === 'AbortError') return;
     console.warn('Audio playback failed:', err);
+    reportScreenLog('playback_failed', {
+      errorName: err?.name,
+      errorMessage: err?.message,
+      generation,
+      contextState: engineRef.current?.ctx.state,
+      audioPaused: engineRef.current?.audio.paused,
+      phase: state?.phase,
+      songId: state?.currentSongId,
+    });
     // Оверлей нужен только тогда, когда браузер требует жест пользователя.
     // Ошибки сети/формата и штатный AbortError кликом исправить невозможно.
     if (err?.name === 'NotAllowedError') setNeedGate(true);
@@ -460,6 +477,13 @@ export default function MusicScreen() {
     reverseNodeRef.current = node;
     reverseStartedRef.current = e.ctx.currentTime;
     node.start();
+    reportScreenLog('reverse_started', {
+      fileUrl,
+      startSec,
+      endSec,
+      generation,
+      duration: out.duration,
+    });
   };
 
   const playFrom = (fileUrl: string, startSec: number, endSec: number | null, nextUrl?: string | null) => {
@@ -495,6 +519,13 @@ export default function MusicScreen() {
         if (generation !== playbackGenerationRef.current) return;
         if (pendingPlayRef.current?.generation === generation) pendingPlayRef.current = null;
         setNeedGate(false);
+        reportScreenLog('playback_started', {
+          fileUrl,
+          startSec,
+          endSec,
+          generation,
+          contextState: e.ctx.state,
+        });
       })
       .catch((err) => {
         // pause(), смена src и запуск следующей песни штатно прерывают старый
@@ -806,7 +837,12 @@ export default function MusicScreen() {
         setFlash(null);
         lastPlayRef.current = { fileUrl: m.fileUrl, startSec: m.startSec, endSec: m.endSec ?? null };
         if (m.reverse) {
-          void playReversed(m.fileUrl, m.startSec, m.endSec ?? null).catch(() => {
+          void playReversed(m.fileUrl, m.startSec, m.endSec ?? null).catch((err) => {
+            reportScreenLog('reverse_failed_fallback', {
+              errorName: err?.name,
+              errorMessage: err?.message,
+              fileUrl: m.fileUrl,
+            });
             // не смогли развернуть — играем как обычно, раунд важнее эффекта
             playFrom(m.fileUrl, m.startSec, m.endSec ?? null, m.nextUrl);
           });
@@ -829,7 +865,13 @@ export default function MusicScreen() {
           // бесшовное продолжение — от start к началу песни.
           const last = lastPlayRef.current;
           if (last) {
-            void playReversed(last.fileUrl, 0, last.startSec).catch(() => {
+            void playReversed(last.fileUrl, 0, last.startSec).catch((err) => {
+              reportScreenLog('reverse_failed_fallback', {
+                errorName: err?.name,
+                errorMessage: err?.message,
+                fileUrl: last.fileUrl,
+                operation: 'play_on',
+              });
               // Если Web Audio не смог декодировать файл, оставляем рабочий
               // запасной путь — продолжаем песню обычным способом.
               playFrom(last.fileUrl, last.endSec ?? last.startSec, null);
@@ -938,6 +980,12 @@ export default function MusicScreen() {
     if (phase === 'playing' && state.reverseMode && curFile && !state.paused && !reverseRoundRef.current) {
       void playReversed(curFile, state.startSec || 0, state.endSec ?? null).catch((err) => {
         console.warn('Reverse playback recovery failed:', err);
+        reportScreenLog('reverse_recovery_failed', {
+          errorName: err?.name,
+          errorMessage: err?.message,
+          fileUrl: curFile,
+          songId: state.currentSongId,
+        });
       });
       return;
     }
